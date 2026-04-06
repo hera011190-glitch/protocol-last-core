@@ -127,6 +127,9 @@ function writeCachedSdCharacters(rows) {
   } catch {}
 }
 
+function getSpriteImage(character) {
+  return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
+}
 
 async function fetchCharactersWithFallback() {
   const now = Date.now();
@@ -151,6 +154,8 @@ const FALLBACK_MAPS = [
 ];
 
 function CharacterSprite({ character, quote, moving, onClick }) {
+  const spriteImage = getSpriteImage(character);
+  if (!spriteImage) return null;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintOpacity = Math.max(0, Math.min(0.82, corrosion / 100));
   return (
@@ -163,9 +168,9 @@ function CharacterSprite({ character, quote, moving, onClick }) {
       ) : null}
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
       <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
-        {character.investigationImage ? (
+        {spriteImage ? (
           <>
-            <img src={character.investigationImage} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }} />
+            <img src={spriteImage} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }} />
             <div
               aria-hidden
               style={{
@@ -176,8 +181,8 @@ function CharacterSprite({ character, quote, moving, onClick }) {
                 pointerEvents: "none",
                 mixBlendMode: "multiply",
                 background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) ${Math.max(0, 94 - corrosion * 0.55)}%, rgba(255,92,92,0.18) ${Math.max(12, 70 - corrosion * 0.2)}%, rgba(170,0,0,0.96) 100%)`,
-                maskImage: `url(${character.investigationImage})`,
-                WebkitMaskImage: `url(${character.investigationImage})`,
+                maskImage: `url(${spriteImage})`,
+                WebkitMaskImage: `url(${spriteImage})`,
                 maskRepeat: "no-repeat",
                 WebkitMaskRepeat: "no-repeat",
                 maskPosition: "center",
@@ -187,12 +192,6 @@ function CharacterSprite({ character, quote, moving, onClick }) {
               }}
             />
           </>
-        ) : (character.image || character.mainImage) ? (
-          <img
-            src={character.image || character.mainImage}
-            alt={character.name}
-            style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
-          />
         ) : null}
       </div>
     </div>
@@ -266,16 +265,15 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!maps.length) return undefined;
-    let raf = 0;
-    const step = (ts) => {
+    const step = () => {
       if (document.visibilityState !== "visible") {
-        lastFrameRef.current = ts;
-        raf = requestAnimationFrame(step);
+        lastFrameRef.current = Date.now();
         return;
       }
-      if (!lastFrameRef.current) lastFrameRef.current = ts;
-      const dt = Math.min(42, ts - lastFrameRef.current || 16.7);
-      lastFrameRef.current = ts;
+      const now = Date.now();
+      if (!lastFrameRef.current) lastFrameRef.current = now;
+      const dt = Math.min(95, Math.max(55, now - lastFrameRef.current || 90));
+      lastFrameRef.current = now;
       setCharacters((prev) => prev.map((character, _, arr) => {
         let currentMap = character.currentMap || maps[0]?.id || "";
         let x = Number(character.x || 0);
@@ -341,10 +339,10 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
         return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs };
       }));
-      raf = requestAnimationFrame(step);
+
     };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    const timer = window.setInterval(step, 90);
+    return () => window.clearInterval(timer);
   }, [maps]);
 
   useEffect(() => {

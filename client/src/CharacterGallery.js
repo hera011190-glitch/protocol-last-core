@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import CharacterProfile from "./CharacterProfile";
 import DesignPageFrame from "./DesignPageFrame";
 import socket from "./socket";
+import { buildApiUrl } from "./api";
 import { ProfileCard } from "./profileCardShared";
 
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
@@ -28,14 +29,14 @@ function writeCachedCharacters(rows) {
 }
 
 function CharacterCard({ character, onClick, theme }) {
-  return <ProfileCard character={character} onClick={onClick} theme={theme} isOnline={!!character.isOnline} />;
+  return <ProfileCard character={{ ...character, image: character?.cardImage || character?.image || "" }} onClick={onClick} theme={theme} isOnline={!!character.isOnline} />;
 }
 
 
 async function fetchCharactersWithFallback() {
   const urls = [
-    `http://localhost:3001/characters-lite?t=${Date.now()}`,
-    `http://localhost:3001/characters?t=${Date.now()}`,
+    buildApiUrl(`/characters-lite?t=${Date.now()}`),
+    buildApiUrl(`/characters?t=${Date.now()}`),
   ];
   for (const url of urls) {
     try {
@@ -49,7 +50,7 @@ async function fetchCharactersWithFallback() {
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(`http://localhost:3001/character/${characterId}?t=${Date.now()}`, { cache: "no-store" });
+  const res = await fetch(buildApiUrl(`/character/${characterId}?t=${Date.now()}`), { cache: "no-store" });
   const data = await res.json();
   return data?.character || null;
 }

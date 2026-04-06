@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const compression = require("compression");
 const fs = require("fs");
 const path = require("path");
 const defaultDesign = require("./defaultDesign");
@@ -69,13 +70,18 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
 
 app.use((req, res, next) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
+  const lowerPath = String(req.path || "").toLowerCase();
+  const isStaticAsset = lowerPath.startsWith("/static/") || /\.(js|css|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json)$/.test(lowerPath);
+  if (!isStaticAsset) {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+  }
   next();
 });
 
@@ -2484,12 +2490,16 @@ function attachRelationsToCharacter(character) {
 
 function summarizeCharacter(character) {
   if (!character) return character;
+  const cardImage = character.image || character.mainImage || "";
+  const spriteImage = character.investigationImage || cardImage || "";
   return {
     id: character.id,
     ownerId: character.ownerId,
     name: character.name,
     approved: character.approved,
-    image: character.image || "",
+    image: cardImage,
+    cardImage,
+    spriteImage,
     currentMap: character.currentMap || "",
     oneLine: character.oneLine || "",
     rank: character.rank || "",
@@ -2504,7 +2514,6 @@ function summarizeCharacter(character) {
     sdQuotes: Array.isArray(character.sdQuotes) ? character.sdQuotes : [],
     profileBgm: character.profileBgm || "",
     profileBgmVolume: Number.isFinite(Number(character.profileBgmVolume)) ? Math.max(0, Math.min(1, Number(character.profileBgmVolume))) : 1,
-    mainImage: character.mainImage || "",
     mainImageFrame: character.mainImageFrame || undefined,
   };
 }
@@ -2909,7 +2918,16 @@ app.post("/endInvestigationOnly", (req, res) => {
 
 const clientBuildPath = path.join(__dirname, "client", "build");
 if (fs.existsSync(clientBuildPath)) {
-  app.use(express.static(clientBuildPath));
+  app.use(express.static(clientBuildPath, {
+    etag: true,
+    lastModified: true,
+    maxAge: "7d",
+    setHeaders(res, filePath) {
+      if (String(filePath || "").toLowerCase().endswith(".html")) {
+        res.setHeader("Cache-Control", "no-cache");
+      }
+    },
+  }));
   app.get("*", (req, res) => {
     if (req.path.startsWith("/socket.io")) return res.status(404).end();
     res.sendFile(path.join(clientBuildPath, "index.html"));
