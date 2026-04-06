@@ -67,3 +67,10 @@ npm start
 ## 나중에 더 안정적으로 바꾸려면
 지금 구조로도 바로 공개는 가능하지만, 사람이 많아지면 JSON 파일 저장 대신 DB로 옮기는 게 좋아.
 일단은 이 버전으로 Render에 올려서 운영 시작하기엔 충분하게 정리해둔 상태야.
+
+
+## 배포 메모
+- Render 환경변수에 `NODE_VERSION=20.12.2`
+- Render 환경변수에 `NPM_CONFIG_REGISTRY=https://registry.npmjs.org/`
+- Build Command는 `npm install && npm run build`
+- 이전 빌드가 실패했다면 **Clear build cache & deploy** 권장
