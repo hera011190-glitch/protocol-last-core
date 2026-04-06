@@ -1,0 +1,13 @@
+[
+  {
+    "id": "relreq-1775140274112",
+    "fromCharacterId": 1775113184993,
+    "fromCharacter": "1",
+    "toCharacterId": 1775113279450,
+    "toCharacter": "2",
+    "relationName": "관계 이름",
+    "description": "관계 설명",
+    "status": "approved",
+    "createdAt": "2026-04-02T14:31:14.112Z"
+  }
+]

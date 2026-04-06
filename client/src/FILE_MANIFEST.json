@@ -1,0 +1,212 @@
+[
+  {
+    "file": "AdminInvestigationBuilder.js",
+    "size": 36599,
+    "sha256": "569031ac0ae95ba8fac8682ee20c81811281137dbea6835fa8552818be44e1e7"
+  },
+  {
+    "file": "AdminInvestigations.js",
+    "size": 6645,
+    "sha256": "cd1c1fd24a10c68df9484b91051fd44ed44db3a5955280eb87b368e089866cae"
+  },
+  {
+    "file": "AdminMapManager.js",
+    "size": 21990,
+    "sha256": "ed5edb8891b9f29f9af675754b1e40c3be4a6b0a1f388cd9d5528cb226499f8b"
+  },
+  {
+    "file": "AdminPage.js",
+    "size": 19774,
+    "sha256": "ea6e173b3526d2ac7c08c3d9081cd5b0ac71f790e4aee3155586e0e769becff8"
+  },
+  {
+    "file": "AdminRelations.js",
+    "size": 3754,
+    "sha256": "442fcf053e6ffba4135e793fc05cba7d9f9fff4501917ffc5a6f3b50d7025ff7"
+  },
+  {
+    "file": "AdminShopManager.js",
+    "size": 12868,
+    "sha256": "6ec511c21da5b522b8242a3147188c5006928c9e359796e15432bece7298cbb9"
+  },
+  {
+    "file": "App.css",
+    "size": 564,
+    "sha256": "c5ac42e56bf8c34eb741d752bc879144f186d7ca0a48fcbb73b967177f7a9240"
+  },
+  {
+    "file": "App.js",
+    "size": 19528,
+    "sha256": "45e4b6bf3d1d161482e91c866c80f5309f20c0c2af22ef16cce284ca0d15b025"
+  },
+  {
+    "file": "COMPARE_REPORT.md",
+    "size": 4230,
+    "sha256": "149ce272dbf373f48e87d96c67b11de8f0e0a948937edae03c4a6a6eb6b28b5b"
+  },
+  {
+    "file": "CharacterGallery.js",
+    "size": 4930,
+    "sha256": "19fc400f8331517457a357adc52c6de62e58f98dcea76e14ceff8c06f32a3cfb"
+  },
+  {
+    "file": "CharacterProfile.js",
+    "size": 13563,
+    "sha256": "4e1f5fd0ab8eaf8feaffb3d634dc024fecb212e2390e2dba517a5bf9e5627847"
+  },
+  {
+    "file": "CharacterSelect.js",
+    "size": 3904,
+    "sha256": "ac82cb63416dda5758191ad5108b2bd25038ff70a654e39b18874f0e0af20ecf"
+  },
+  {
+    "file": "CreateCharacter.js",
+    "size": 3154,
+    "sha256": "590b6570c29d32d15702831c61fe557537ee890141bfadf69cd25e51b460ba30"
+  },
+  {
+    "file": "DesignPageFrame.js",
+    "size": 2423,
+    "sha256": "70d7e8f0cea3b56f0b5591c055b4a0bf60f73f421c02017216a52125070093c5"
+  },
+  {
+    "file": "HomePage.js",
+    "size": 16069,
+    "sha256": "e16642dc4256d29910180397c29c2cf9ed226b7bb5504258d473b0ca8a167435"
+  },
+  {
+    "file": "ImageDropInput.js",
+    "size": 3821,
+    "sha256": "7beff3c8325528e155f6466b12049465ecfbf65cdb107393862ac92eb5753504"
+  },
+  {
+    "file": "InvestigationList.js",
+    "size": 13041,
+    "sha256": "5927a90d61341249075a255c70f986b649f7ff8e2d7844af58cdc1eabf1399c7"
+  },
+  {
+    "file": "InvestigationLobby.js",
+    "size": 20917,
+    "sha256": "80177592b45f0d8bf373df03c7cc0f8acf400554becc754e740d6bfbb472df30"
+  },
+  {
+    "file": "InvestigationPage.js",
+    "size": 95309,
+    "sha256": "0c242061df9242aaa30ef928ec4ae28734050960ed9056105b9bf5f413e69915"
+  },
+  {
+    "file": "Login.js",
+    "size": 5025,
+    "sha256": "94504df50b19122f66166ecbb586a89c6d3c1816281821b96023cbc68c99bbb6"
+  },
+  {
+    "file": "MyPage.js",
+    "size": 33263,
+    "sha256": "067b2dca1abc0566419230abb50d51628a02f40e5cdfb4e4d73a1a2585b2d643"
+  },
+  {
+    "file": "SDPage.js",
+    "size": 17386,
+    "sha256": "6287d52eb9132bf292216256cd59be88514f3f090c99e563b633b19e8e8e187a"
+  },
+  {
+    "file": "ShopPage.js",
+    "size": 21390,
+    "sha256": "a3f83a33be82f9103ea247f4e5f1d53ddf9aaa09d2827a6a4518d084f45c180f"
+  },
+  {
+    "file": "ThemeEditor.js",
+    "size": 35161,
+    "sha256": "0daead70717bc3d2e3275eb16d468d28032daef9221e891914ee84723bb6ebe9"
+  },
+  {
+    "file": "api.js",
+    "size": 434,
+    "sha256": "0dc8a1fdbb03b00e6b3be38f3d4bcc8ae630761cc965b7144d2fffc0a7370cb7"
+  },
+  {
+    "file": "customInvestigations.json",
+    "size": 12147,
+    "sha256": "eece19b1d4c858bec81f60155f657c8833f0d41d6e60392bae934c6abb970008"
+  },
+  {
+    "file": "defaultDesign.js",
+    "size": 5272,
+    "sha256": "159a9adb35b48e8d6001e1b57a726244922feaa24290e4ce1143e2e79e576c40"
+  },
+  {
+    "file": "designConfig.json",
+    "size": 3,
+    "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+  },
+  {
+    "file": "hpUtils.js",
+    "size": 558,
+    "sha256": "e727ef88d6911c1d37e9dde1a7cc0d5c6f001c709e6a94c3ea6553c17a5de7e0"
+  },
+  {
+    "file": "index.css",
+    "size": 9194,
+    "sha256": "576af929f5f5caa05b86964db7f4e8128bc3707196ee4508a539067a71de73a6"
+  },
+  {
+    "file": "index.js",
+    "size": 534,
+    "sha256": "a0485d1062e8b675955592c0d51a2dcba12c2c9b70ad88f3efa98e14dd34debf"
+  },
+  {
+    "file": "manifest.json",
+    "size": 1527,
+    "sha256": "c4ae5dab998813a7b8a7f38c4c1abf12e1081bbe90ead3b2b78019a558437f88"
+  },
+  {
+    "file": "package-lock.json",
+    "size": 39642,
+    "sha256": "b69c0ee5a9a366cb98b36432f4363d0bb3cfac18fd48129ec2a91f72086d38f7"
+  },
+  {
+    "file": "package.json",
+    "size": 364,
+    "sha256": "258394eb810d801c07e4a5e77e3ceaadde849e27196226fb04694bb8e96ad191"
+  },
+  {
+    "file": "profileCardShared.js",
+    "size": 3643,
+    "sha256": "f3bf1026b5b87595ab94abae974de0e3f4dae5c63cc2f0605531079e02f5477c"
+  },
+  {
+    "file": "renderElement.js",
+    "size": 3807,
+    "sha256": "3f31f30defe773e2c9e3d300d4916ca1be0320a42af8c8949f37ed2467d2fae4"
+  },
+  {
+    "file": "reportWebVitals.js",
+    "size": 362,
+    "sha256": "714851669856152806c289f9aac6240b414bbac50c60ee4f7e6247f31eac0c1c"
+  },
+  {
+    "file": "server.js",
+    "size": 95575,
+    "sha256": "0e74efbdcf9deab3755cb67b07e2500fe923ef58f5873e6f1f82ad655f6975aa"
+  },
+  {
+    "file": "setupTests.js",
+    "size": 241,
+    "sha256": "22583759d0045fdf8d62c9db0aacba9fd8bddde79c671aa08c97dcfd4e930cc6"
+  },
+  {
+    "file": "shopItems.json",
+    "size": 1075,
+    "sha256": "89e40f25bd3a9478fcad7fec769bf8c9a8356db4491ba4c4711b535d9e5b9e60"
+  },
+  {
+    "file": "socket.js",
+    "size": 200,
+    "sha256": "0227c120601630893856f1c34d5d2777f036c3a9aa13f5209c222d949e2d7c76"
+  },
+  {
+    "file": "storageHelpers.js",
+    "size": 1743,
+    "sha256": "f406095f713c2cfb48e0919c9e0b4710e959946cd2a9386470960be94b544968"
+  }
+]

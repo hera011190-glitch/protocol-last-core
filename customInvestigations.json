@@ -1,0 +1,295 @@
+[
+  {
+    "id": "custom-group-test-01",
+    "title": "[테스트] 격리동 합동조사",
+    "type": "group",
+    "createdAt": "2026-03-31T14:10:00+09:00",
+    "json": {
+      "id": "custom-group-test-01",
+      "title": "[테스트] 격리동 합동조사",
+      "type": "group",
+      "data": {
+        "start": "gate",
+        "backgroundImage": "",
+        "nodes": {
+          "gate": {
+            "name": "격리문 앞",
+            "log": "붉은 경보등이 느리게 깜빡이는 격리동 입구다.",
+            "image": "",
+            "investigations": ["출입 단말 조사", "격리문 손잡이 조사"],
+            "npc": ["경비 교신 로그"],
+            "mapX": 16,
+            "mapY": 54,
+            "choices": [
+              { "text": "병실 구역으로 이동", "target": "ward" },
+              { "text": "보관실로 이동", "target": "storage" }
+            ],
+            "actionResults": {
+              "출입 단말 조사": {
+                "log": "단말기 기록에서 코드 블랙 직전, 병실 구역으로 인원이 몰린 흔적을 찾았다.",
+                "points": 6,
+                "clue": "출입 단말 로그",
+                "clueText": "오전 02:14 이후, 병실 구역 출입 기록만 비정상적으로 누락되어 있다."
+              },
+              "격리문 손잡이 조사": {
+                "log": "문 손잡이에 굳은 혈흔과 검은 침식 흔적이 남아 있다.",
+                "points": 4,
+                "reward": "입구 조사 완료"
+              }
+            }
+          },
+          "ward": {
+            "name": "병실 구역",
+            "log": "침대 커튼이 반쯤 열린 병실 구역이다. 공기가 유난히 차갑다.",
+            "image": "",
+            "investigations": ["침대 아래 조사", "벽 낙서 조사"],
+            "mapX": 38,
+            "mapY": 28,
+            "onEnterDamage": 4,
+            "choices": [
+              { "text": "격리문 앞으로 돌아가기", "target": "gate" },
+              { "text": "반응로실로 이동", "target": "reactor" }
+            ],
+            "npcScene": {
+              "name": "잔류 의무병",
+              "image": "",
+              "lines": [
+                { "text": "…늦었어. 그래도 아직 잠금은 완전히 풀리지 않았어.", "options": [] },
+                {
+                  "text": "내가 마지막으로 본 건, 반응로실로 끌려가던 연구원들이었어. 무엇을 넘겨줄까?",
+                  "options": [
+                    {
+                      "text": "병실 출입키를 받는다",
+                      "nextIndex": 2,
+                      "rewardItem": "병실 출입키",
+                      "clue": {
+                        "title": "의무병의 증언",
+                        "text": "폭주 직전, 누군가 반응로실 전원을 강제로 인가했다.",
+                        "description": "폭주 직전, 누군가 반응로실 전원을 강제로 인가했다."
+                      }
+                    },
+                    {
+                      "text": "짧게 상황 설명만 듣는다",
+                      "nextIndex": 2,
+                      "rewardStatPoints": 1
+                    }
+                  ]
+                },
+                { "text": "반응로실에 남은 걸 회수하면 이 구역은 정리할 수 있을 거야.", "options": [] }
+              ]
+            },
+            "clues": [
+              {
+                "id": "ward-note",
+                "title": "병실 메모",
+                "text": "환자 대신 실험체라고 적힌 차트가 병상 옆에 놓여 있었다."
+              }
+            ],
+            "actionResults": {
+              "침대 아래 조사": {
+                "log": "침대 아래에서 부서진 바이알과 환자 식별 팔찌를 발견했다.",
+                "points": 5,
+                "item": "식별 팔찌"
+              },
+              "벽 낙서 조사": {
+                "log": "벽면에 '전원은 안쪽에 있다'라는 문장이 반복해서 긁혀 있다.",
+                "points": 4,
+                "clue": "벽면 낙서",
+                "clueText": "격리동의 핵심 전원은 반응로실에 있으며, 누군가 그 사실을 반복해서 남겼다."
+              }
+            }
+          },
+          "storage": {
+            "name": "보관실",
+            "log": "약품과 장비가 뒤섞여 넘어져 있는 보관실이다.",
+            "image": "",
+            "investigations": ["약품 선반 조사", "파손 상자 조사"],
+            "mapX": 36,
+            "mapY": 72,
+            "choices": [
+              { "text": "격리문 앞으로 돌아가기", "target": "gate" },
+              { "text": "반응로실로 이동", "target": "reactor" }
+            ],
+            "actionResults": {
+              "약품 선반 조사": {
+                "log": "멀쩡한 응급용 주사기와 해독제를 일부 확보했다.",
+                "points": 5,
+                "item": "응급 해독제"
+              },
+              "파손 상자 조사": {
+                "log": "깨진 상자 아래에서 출입권한이 있는 키카드 케이스를 찾았다.",
+                "points": 6,
+                "reward": "보관실 회수품 정리"
+              }
+            }
+          },
+          "reactor": {
+            "name": "반응로실",
+            "log": "심장처럼 뛰는 붉은 빛이 실내 전체를 물들이는 반응로실이다.",
+            "image": "",
+            "investigations": ["제어 패널 조사"],
+            "mapX": 70,
+            "mapY": 50,
+            "choices": [
+              { "text": "병실 구역으로 후퇴", "target": "ward" },
+              { "text": "보관실로 후퇴", "target": "storage" }
+            ],
+            "battle": {
+              "name": "폭주한 수복기",
+              "hp": 34,
+              "maxHp": 34,
+              "atk": 7,
+              "def": 2,
+              "agi": 5,
+              "aoe_chance": 0.2,
+              "finisher_chance": 0.03,
+              "finisherType": "single",
+              "rewardPoints": 18,
+              "rewardItem": "격리동 코어 샘플",
+              "image": ""
+            },
+            "actionResults": {
+              "제어 패널 조사": {
+                "log": "패널의 마지막 명령 기록이 남아 있다. 수복기를 방호 모드가 아닌 제거 모드로 바꾼 흔적이다.",
+                "points": 7,
+                "clue": "제어 패널 기록",
+                "clueText": "누군가 의도적으로 수복기의 행동 규칙을 바꿔 격리동 전체를 봉쇄했다."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "custom-daily-test-01",
+    "title": "[테스트] 야간 진료실 일일조사",
+    "type": "daily",
+    "createdAt": "2026-03-31T14:10:00+09:00",
+    "json": {
+      "id": "custom-daily-test-01",
+      "title": "[테스트] 야간 진료실 일일조사",
+      "type": "daily",
+      "data": {
+        "start": "reception",
+        "backgroundImage": "",
+        "nodes": {
+          "reception": {
+            "name": "접수실",
+            "log": "불이 꺼진 접수실에 모니터만 미세하게 깜빡인다.",
+            "investigations": ["접수대 조사", "전광판 조사"],
+            "mapX": 18,
+            "mapY": 50,
+            "choices": [
+              { "text": "기록 보관실로 이동", "target": "archive" },
+              { "text": "처치실로 이동", "target": "treatment" }
+            ],
+            "actionResults": {
+              "접수대 조사": {
+                "log": "마감 직전 등록된 환자 명단에서 이름 없는 한 칸을 발견했다.",
+                "points": 4,
+                "clue": "익명 환자 등록표",
+                "clueText": "마지막 예약자 칸이 비어 있는데도 처리 시간만 남아 있다."
+              },
+              "전광판 조사": {
+                "log": "전광판 하단에 짧은 정전 경고와 함께 '서고 우선 점검' 문구가 남아 있다.",
+                "points": 3
+              }
+            }
+          },
+          "archive": {
+            "name": "기록 보관실",
+            "log": "철제 캐비닛과 종이 차트가 가득한 기록 보관실이다.",
+            "investigations": ["차트 보관함 조사", "봉인 상자 조사"],
+            "mapX": 42,
+            "mapY": 24,
+            "choices": [
+              { "text": "접수실로 돌아가기", "target": "reception" },
+              { "text": "처치실로 이동", "target": "treatment" }
+            ],
+            "npcScene": {
+              "name": "야간 근무 기록관",
+              "image": "",
+              "lines": [
+                { "text": "찾는 기록이 있으면 빨리 고르세요. 오늘은 오래 있고 싶지 않네요.", "options": [] },
+                {
+                  "text": "어느 쪽을 먼저 보실 건가요?",
+                  "options": [
+                    {
+                      "text": "환자 차트를 본다",
+                      "nextIndex": 2,
+                      "clue": {
+                        "title": "누락된 차트",
+                        "text": "한 환자의 경과 기록만 의도적으로 뜯겨 나가 있었다.",
+                        "description": "한 환자의 경과 기록만 의도적으로 뜯겨 나가 있었다."
+                      }
+                    },
+                    {
+                      "text": "응급 약품 위치를 묻는다",
+                      "nextIndex": 2,
+                      "rewardItem": "멸균 장갑"
+                    }
+                  ]
+                },
+                { "text": "처치실 전원을 먼저 확인해 보세요. 소리가 거기서 들렸거든요.", "options": [] }
+              ]
+            },
+            "clues": [
+              {
+                "id": "archive-slip",
+                "title": "보관실 전표",
+                "text": "응급 약품이 평소보다 두 배 가까이 빠져나간 기록이 남아 있다."
+              }
+            ],
+            "actionResults": {
+              "차트 보관함 조사": {
+                "log": "서랍 안쪽에서 찢긴 진료 차트 조각을 확보했다.",
+                "points": 5,
+                "item": "차트 조각"
+              },
+              "봉인 상자 조사": {
+                "log": "봉인 상자 안은 비어 있지만, 누군가 급히 가져간 흔적이 선명하다.",
+                "points": 4,
+                "reward": "보관실 단서 확보"
+              }
+            }
+          },
+          "treatment": {
+            "name": "처치실",
+            "log": "심전도 기계가 꺼진 채로 늘어진 전선만 남아 있는 처치실이다.",
+            "investigations": ["응급 카트 조사"],
+            "mapX": 70,
+            "mapY": 56,
+            "onEnterDamage": 3,
+            "choices": [
+              { "text": "접수실로 돌아가기", "target": "reception" },
+              { "text": "기록 보관실로 돌아가기", "target": "archive" }
+            ],
+            "battle": {
+              "name": "오작동 수술 보조기",
+              "hp": 22,
+              "maxHp": 22,
+              "atk": 5,
+              "def": 1,
+              "agi": 4,
+              "aoe_chance": 0.1,
+              "finisher_chance": 0.02,
+              "finisherType": "single",
+              "rewardPoints": 9,
+              "rewardItem": "",
+              "image": ""
+            },
+            "actionResults": {
+              "응급 카트 조사": {
+                "log": "응급 카트 하단에서 정전 직전의 수기 메모를 찾았다.",
+                "points": 6,
+                "clue": "수기 메모",
+                "clueText": "정전 전에 이미 처치실 기기가 혼자 켜졌다 꺼졌다는 기록이 남아 있다."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+]

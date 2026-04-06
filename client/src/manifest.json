@@ -1,0 +1,67 @@
+{
+  "base_files_copied": [
+    "server.js",
+    "App.js",
+    "App.css",
+    "HomePage.js",
+    "Login.js",
+    "SDPage.js",
+    "CharacterGallery.js",
+    "CharacterProfile.js",
+    "CharacterSelect.js",
+    "CreateCharacter.js",
+    "MyPage.js",
+    "ShopPage.js",
+    "ThemeEditor.js",
+    "DesignPageFrame.js",
+    "AdminPage.js",
+    "AdminInvestigations.js",
+    "AdminInvestigationBuilder.js",
+    "AdminMapManager.js",
+    "AdminRelations.js",
+    "AdminShopManager.js",
+    "InvestigationList.js",
+    "InvestigationLobby.js",
+    "InvestigationPage.js",
+    "api.js",
+    "socket.js",
+    "storageHelpers.js",
+    "defaultDesign.js",
+    "renderElement.js",
+    "index.js",
+    "index.css",
+    "package.json",
+    "package-lock.json",
+    "reportWebVitals.js",
+    "setupTests.js",
+    "shopItems.json",
+    "customInvestigations.json"
+  ],
+  "missing_from_container": [],
+  "overlays_applied": [
+    {
+      "file": "server.js",
+      "source_zip": "investigation_core_patch_v42.zip"
+    },
+    {
+      "file": "InvestigationPage.js",
+      "source_zip": "investigation_core_patch_v45.zip"
+    },
+    {
+      "file": "InvestigationList.js",
+      "source_zip": "investigation_core_patch_v32.zip"
+    },
+    {
+      "file": "AdminInvestigations.js",
+      "source_zip": "investigation_core_patch_v32.zip"
+    },
+    {
+      "file": "AdminInvestigationBuilder.js",
+      "source_zip": "investigation_core_patch_v46.zip"
+    },
+    {
+      "file": "MyPage.js",
+      "source_zip": "manual_hotfix_in_bundle"
+    }
+  ]
+}

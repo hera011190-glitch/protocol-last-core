@@ -1,0 +1,20 @@
+[
+  {
+    "id": "relreq-1775140274112-a",
+    "characterId": 1775113184993,
+    "characterName": "1",
+    "otherCharacterId": 1775113279450,
+    "otherCharacter": "2",
+    "relationName": "관계 이름",
+    "description": "관계 설명"
+  },
+  {
+    "id": "relreq-1775140274112-b",
+    "characterId": 1775113279450,
+    "characterName": "2",
+    "otherCharacterId": 1775113184993,
+    "otherCharacter": "1",
+    "relationName": "관계 이름",
+    "description": "관계 설명"
+  }
+]

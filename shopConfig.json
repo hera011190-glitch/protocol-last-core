@@ -1,0 +1,10 @@
+{
+  "blackjackDealerImage": "",
+  "ebeasts": [
+    { "key": "E-01", "image": "" },
+    { "key": "E-02", "image": "" },
+    { "key": "E-03", "image": "" },
+    { "key": "E-04", "image": "" },
+    { "key": "E-05", "image": "" }
+  ]
+}

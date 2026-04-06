@@ -1,0 +1,52 @@
+[
+  {
+    "id": "heal_pack",
+    "name": "응급 치료 키트",
+    "price": 30,
+    "sellPrice": 15,
+    "description": "체력을 회복하는 아이템",
+    "useType": "heal",
+    "useValue": 20,
+    "hidden": false
+  },
+  {
+    "id": "sharp_blade",
+    "name": "예리한 단검",
+    "price": 60,
+    "sellPrice": 30,
+    "description": "공격력을 높여주는 장비",
+    "useType": "atk",
+    "useValue": 1,
+    "hidden": false
+  },
+  {
+    "name": "ㅁㄴㅇ",
+    "price": 1,
+    "sellPrice": 1,
+    "description": "설명",
+    "useType": "heal",
+    "useValue": 10,
+    "hidden": false,
+    "id": "item-1774626430009"
+  },
+  {
+    "name": "스킬북 관통 타격",
+    "price": 0,
+    "sellPrice": 0,
+    "description": "스킬북",
+    "useType": "skill",
+    "useValue": "pierce_strike",
+    "hidden": false,
+    "id": "item-1774630132522"
+  },
+  {
+    "name": "사용불가",
+    "price": 0,
+    "sellPrice": 0,
+    "description": "사용 불가 스킬",
+    "useType": "none",
+    "useValue": 0,
+    "hidden": false,
+    "id": "item-1774630183378"
+  }
+]
