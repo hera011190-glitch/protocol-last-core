@@ -52,7 +52,7 @@ function InventoryModal({ items, catalog, onClose, onSell }) {
                 </div>
               </div>
             );
-          }) : <div style={{ color: "#5d7a95" }}>아이템이 없어.</div>}
+          }) : <div style={{ color: "#5d7a95" }}>아이템이 없습니다.</div>}
         </div>
       </div>
     </div>
@@ -244,7 +244,7 @@ function BlackJackGame({ bet, onClose, onResolve, dealerImage = "", playerImage 
                 <button type="button" className="home-primary-button" onClick={hit} disabled={!!result} style={{ minWidth: 140, boxShadow: "0 0 22px rgba(56,189,248,0.18)" }}>카드 받기</button>
                 <button type="button" className="ghost-button" onClick={stand} disabled={!!result} style={{ minWidth: 140, boxShadow: "0 0 18px rgba(255,255,255,0.08)" }}>멈추기</button>
               </div>
-              <div style={{ color: "#cbd5e1", fontSize: 13 }}>딜러는 17 이상이 될 때까지 카드를 뽑아.</div>
+              <div style={{ color: "#cbd5e1", fontSize: 13 }}>딜러는 17 이상이 될 때까지 카드를 뽑습니다.</div>
             </section>
 
             <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 96px", gap: 16, alignItems: "center", padding: "16px 18px", borderRadius: 24, background: "linear-gradient(180deg, rgba(15,23,42,0.5), rgba(15,23,42,0.68))", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 14px 30px rgba(2,6,23,0.22)" }}>
@@ -283,7 +283,7 @@ const E_BEASTS = [
 function EBeastGame({ bet, onClose, onResolve, beastImages = [] }) {
   const [selected, setSelected] = useState("");
   const [positions, setPositions] = useState([0, 0, 0, 0, 0]);
-  const [logs, setLogs] = useState(["이비스트를 선택해줘."]);
+  const [logs, setLogs] = useState(["E-Beats를 선택해주세요."]);
   const [racing, setRacing] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -299,10 +299,10 @@ function EBeastGame({ bet, onClose, onResolve, beastImages = [] }) {
         if (Math.random() < 0.35) {
           const chosen = E_BEASTS[eventIndex].key;
           const lines = [
-            `${chosen} 가속!`,
-            `${chosen} 흔들림!`,
-            `${chosen} 선두 추격!`,
-            `${chosen} 라인 변경!`,
+            `${chosen} 가 응원을 받아 속도를 올린다!`,
+            `${chosen} 의 마음이 흔들렸다!`,
+            `${chosen} 가 선두를 추격한다!!`,
+            `${chosen} 가 라인 변경을 노린다!`,
           ];
           setLogs((old) => [{ text: lines[Math.floor(Math.random() * lines.length)], beast: chosen }, ...old].slice(0, 5));
         }
@@ -416,7 +416,7 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
   };
 
   const buyItem = async (item) => {
-    if (Number(activeCharacter?.coins || 0) < Number(item.price || 0)) return alert("코인이 부족해.");
+    if (Number(activeCharacter?.coins || 0) < Number(item.price || 0)) return alert("코인이 부족합니다.");
     await saveCharacter({ coins: Number(activeCharacter.coins || 0) - Number(item.price || 0), items: [...inventory, item.name] });
     alert(`${item.name} 구매 완료`);
   };

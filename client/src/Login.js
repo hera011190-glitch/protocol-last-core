@@ -25,7 +25,7 @@ function Login({ setUser, design, theme }) {
     const nextPw = pw.trim();
 
     if (!nextId || !nextPw) {
-      alert("아이디와 비밀번호를 입력해줘.");
+      alert("아이디와 비밀번호를 입력해주세요.");
       return;
     }
 
@@ -52,7 +52,7 @@ function Login({ setUser, design, theme }) {
       }
 
       if (!res.ok) {
-        alert(data.message || "서버 응답이 올바르지 않아. 다시 시도해줘.");
+        alert(data.message || "서버 응답이 올바르지 않습니다. 다시 시도해주세요.");
         return;
       }
 
@@ -75,7 +75,7 @@ function Login({ setUser, design, theme }) {
       }
     } catch (error) {
       console.error("login error", error);
-      alert("서버 연결에 실패했어. 서버가 켜져 있는지 확인해줘.");
+      alert("서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
     } finally {
       setPending(false);
     }

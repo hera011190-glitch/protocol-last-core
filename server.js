@@ -981,6 +981,24 @@ function applyNodeEntryEffects(item, node) {
   }
 }
 
+function increaseParticipantCorrosion(item, amount) {
+  const delta = Number(amount || 0);
+  if (delta <= 0) return [];
+  const affected = [];
+  (Array.isArray(item?.participants) ? item.participants : []).forEach((participant) => {
+    const matched = charactersDB.find((character) => String(character.id || "") === String(participant?.id || ""))
+      || charactersDB.find((character) => String(character.name || "") === String(participant?.name || "") && String(character.ownerId || "") === String(participant?.ownerId || ""))
+      || charactersDB.find((character) => String(character.name || "") === String(participant?.name || ""));
+    if (!matched) return;
+    matched.corrosion = Math.max(0, Math.min(100, Number(matched.corrosion || 0) + delta));
+    affected.push(`${matched.name} ${matched.corrosion}%`);
+  });
+  if (affected.length > 0) {
+    writeJsonArraySafe(charactersPath, charactersDB);
+  }
+  return affected;
+}
+
 function applyActionRewards(item, result, locationName) {
   if (!result) return { changed: false, text: `[${locationName}] 특별한 성과는 없었다.` };
   const textParts = [result.log || `[${locationName}] ${locationName}에서 단서를 조사했다.`];
@@ -1039,6 +1057,12 @@ function applyActionRewards(item, result, locationName) {
       state.mutedUntil = until;
     });
     textParts.push(`${result.muteMinutes}분간 채팅 금지`);
+    changed = true;
+  }
+
+  if (typeof result.corrosionIncrease === "number" && result.corrosionIncrease > 0) {
+    const affected = increaseParticipantCorrosion(item, result.corrosionIncrease);
+    textParts.push(affected.length > 0 ? `침식 진행도 +${result.corrosionIncrease} (${affected.join(", ")})` : `침식 진행도 +${result.corrosionIncrease}`);
     changed = true;
   }
 

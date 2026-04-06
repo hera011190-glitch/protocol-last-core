@@ -215,7 +215,7 @@ function InvestigationLobby({
       data = {};
     }
     if (!data.success) {
-      alert(data.message || "리더 저장에 실패했어.");
+      alert(data.message || "리더 저장에 실패했습니다.");
       return;
     }
 
@@ -240,7 +240,7 @@ function InvestigationLobby({
       let leaderData = {};
       try { leaderData = await leaderRes.json(); } catch { leaderData = {}; }
       if (!leaderData.success) {
-        alert(leaderData.message || "리더 저장에 실패했어.");
+        alert(leaderData.message || "리더 저장에 실패했습니다.");
         return;
       }
     }
@@ -289,9 +289,9 @@ function InvestigationLobby({
             startGame();
             return;
           }
-          alert(data.message || "조사 시작에 실패했어.");
+          alert(data.message || "조사 시작에 실패했습니다.");
         } catch {
-          alert(data.message || "조사 시작에 실패했어.");
+          alert(data.message || "조사 시작에 실패했습니다.");
         }
       }, 450);
       return;
@@ -308,7 +308,7 @@ function InvestigationLobby({
       body: JSON.stringify({ id: investigationId, character }),
     });
     const data = await res.json();
-    if (!data.success) return alert(data.message || "조사 참여에 실패했어.");
+    if (!data.success) return alert(data.message || "조사 참여에 실패했습니다.");
     if (data.investigation) {
       setInvestigation(data.investigation);
       if (Array.isArray(data.investigation?.leaders)) setSelectedLeaders(data.investigation.leaders);
@@ -324,7 +324,7 @@ function InvestigationLobby({
       body: JSON.stringify({ id: investigationId, characterName: character.name }),
     });
     const data = await res.json();
-    if (!data.success) return alert("조사 나가기에 실패했어.");
+    if (!data.success) return alert("조사 나가기에 실패했습니다.");
     if (data.item) {
       setInvestigation(data.item);
       if (Array.isArray(data.item?.leaders)) setSelectedLeaders(data.item.leaders);
@@ -406,7 +406,7 @@ function InvestigationLobby({
               </div>
 
               {participants.length === 0 ? (
-                <div style={{ color: "#94a3b8" }}>아직 참여한 인원이 없어.</div>
+                <div style={{ color: "#94a3b8" }}>아직 참여한 인원이 없습니다.</div>
               ) : (
                 <div style={{ display: "grid", gap: "12px" }}>
                   {participants.map((p) => {

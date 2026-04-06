@@ -128,7 +128,17 @@ function writeCachedSdCharacters(rows) {
 }
 
 function getSpriteImage(character) {
-  return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
+  const sprite = character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || character?.cardImage || "";
+  if (sprite) return sprite;
+  return "";
+}
+
+function preloadSpriteImage(character) {
+  const src = getSpriteImage(character);
+  if (!src) return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = src;
 }
 
 async function fetchCharactersWithFallback() {
@@ -170,7 +180,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
       <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {spriteImage ? (
           <>
-            <img src={spriteImage} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }} />
+            <img src={spriteImage} alt="" loading="eager" decoding="async" fetchPriority="high" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }} />
             <div
               aria-hidden
               style={{
@@ -230,6 +240,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const fallbackRows = readCachedSdCharacters();
       const finalRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
       const next = mergeCharacterStates([], finalRows, maps);
+      next.forEach(preloadSpriteImage);
       setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
       if (next.length > 0) writeCachedSdCharacters(next);
       if (!activeMapId) {

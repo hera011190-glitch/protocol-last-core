@@ -190,13 +190,13 @@ export default function CharacterProfile({ character, goBack, theme, viewerChara
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "관계 신청에 실패했어.");
+      alert(data.message || "관계 신청에 실패했습니다.");
       return;
     }
     setRelationOpen(false);
     setRelationName("");
     setRelationDescription("");
-    alert("관계 신청을 보냈어.");
+    alert("관계 신청을 보냈습니다.");
   };
 
   return (

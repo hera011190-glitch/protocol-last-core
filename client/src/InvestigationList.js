@@ -162,8 +162,8 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
   };
 
   const startDaily = () => {
-    if (dailyPool.length === 0) return alert("활성화된 일일조사가 없어.");
-    if (dailyLeft <= 0) return alert("남은 일일조사 횟수가 없어.");
+    if (dailyPool.length === 0) return alert("활성화된 일일조사가 없습니다.");
+    if (dailyLeft <= 0) return alert("남은 일일조사 횟수가 없습니다.");
     const picked = dailyPool[Math.floor(Math.random() * dailyPool.length)];
     onEnter(picked, { mode: "daily" });
   };
@@ -255,7 +255,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                   </div>
                 );
               })}
-              {groups.length === 0 ? <div style={{ color: theme?.textSoft || "#4f7390" }}>등록된 단체조사가 없어.</div> : null}
+              {groups.length === 0 ? <div style={{ color: theme?.textSoft || "#4f7390" }}>등록된 단체조사가 없습니다.</div> : null}
 
               <div style={{ marginTop: 10 }}>
                 <div className="section-eyebrow">COMPLETED</div>
@@ -279,7 +279,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                       </div>
                     </div>
                   ))}
-                  {completedGroups.length === 0 ? <div style={{ color: theme?.textSoft || "#4f7390" }}>완료된 단체조사가 아직 없어.</div> : null}
+                  {completedGroups.length === 0 ? <div style={{ color: theme?.textSoft || "#4f7390" }}>완료된 단체조사가 아직 없습니다.</div> : null}
                 </div>
               </div>
             </div>
@@ -302,7 +302,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                     ) : null}
                     <div style={{ padding: 16, borderRadius: 18, background: "rgba(255,255,255,0.96)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, display: "grid", gap: 8 }}>
                       <div style={{ fontWeight: 900 }}>공유 로그</div>
-                      {(completedDetail?.sharedLogs || []).length ? (completedDetail.sharedLogs.map((entry, idx) => <div key={entry?.id || idx} style={{ padding: 12, borderRadius: 14, background: "rgba(239,249,255,0.86)", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{entry?.text || ""}</div>)) : <div style={{ color: theme?.textSoft || "#4f7390" }}>기록된 로그가 없어.</div>}
+                      {(completedDetail?.sharedLogs || []).length ? (completedDetail.sharedLogs.map((entry, idx) => <div key={entry?.id || idx} style={{ padding: 12, borderRadius: 14, background: "rgba(239,249,255,0.86)", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{entry?.text || ""}</div>)) : <div style={{ color: theme?.textSoft || "#4f7390" }}>기록된 로그가 없습니다.</div>}
                     </div>
                   </div>
                 </div>

@@ -181,7 +181,7 @@ function NoticeCards({ title, items = [], onEdit, editable }) {
             <div style={{ fontWeight: 800 }}>{item.title}</div>
             {item.desc ? <div style={{ color: "#4f7390", marginTop: 6, whiteSpace: "pre-wrap" }}>{item.desc}</div> : null}
           </div>
-        )) : <div style={{ color: "#4f7390" }}>등록된 항목이 없어.</div>}
+        )) : <div style={{ color: "#4f7390" }}>등록된 항목이 없습니다.</div>}
       </div>
     </div>
   );
@@ -239,7 +239,7 @@ function SchedulePanel({ title, items, onEdit, editable, minHeight }) {
               {item.desc ? <div style={{ color: "#4f7390", fontSize: 14, whiteSpace: "pre-wrap" }}>{item.desc}</div> : null}
             </div>
           </div>
-        )) : <div style={{ color: "#4f7390" }}>등록된 일정이 없어.</div>}
+        )) : <div style={{ color: "#4f7390" }}>등록된 일정이 없습니다.</div>}
       </div>
     </div>
   );
@@ -280,7 +280,7 @@ function CurrentCharacter({ activeCharacter, openMy, height }) {
             </div>
           </div>
         </>
-      ) : <div style={{ color: "#4f7390" }}>선택된 캐릭터가 없어.</div>}
+      ) : <div style={{ color: "#4f7390" }}>선택된 캐릭터가 없습니다.</div>}
       <button type="button" className="home-primary-button" onClick={openMy}>MY 열기</button>
     </div>
   );

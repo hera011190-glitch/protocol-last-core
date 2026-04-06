@@ -146,7 +146,7 @@ export default function CharacterSelect({ user, setCharacter, goBack, design, th
               }}
             />
           ))}
-          {filteredChars.length === 0 ? <div style={{ color: theme?.textSoft || "#4f7390" }}>캐릭터가 없어.</div> : null}
+          {filteredChars.length === 0 ? <div style={{ color: theme?.textSoft || "#4f7390" }}>캐릭터가 없습니다.</div> : null}
         </div>
 
         {selectedProfile ? (

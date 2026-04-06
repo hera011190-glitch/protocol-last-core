@@ -25,7 +25,7 @@ function CreateCharacter({ user, refresh }) {
 
   const create = async () => {
     if (!name.trim()) {
-      showToast("캐릭터 이름을 입력해줘.");
+      showToast("캐릭터 이름을 입력해주세요.");
       return;
     }
 
@@ -46,7 +46,7 @@ function CreateCharacter({ user, refresh }) {
       });
 
       if (!res.ok) {
-        showToast("이미지가 너무 크거나 서버 요청에 실패했어.");
+        showToast("이미지가 너무 크거나 서버 요청에 실패했습니다.");
         return;
       }
 

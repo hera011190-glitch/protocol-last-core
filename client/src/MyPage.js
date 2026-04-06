@@ -59,7 +59,7 @@ function ItemUsePanel({ items, catalog, onUse, style = {} }) {
                 </button>
               );
             })
-          : <div style={{ color: "#6a87a3" }}>보유 아이템이 없어.</div>}
+          : <div style={{ color: "#6a87a3" }}>보유 아이템이 없습니다.</div>}
       </div>
     </div>
   );
@@ -96,7 +96,7 @@ function MailDetail({ mail, onClose, onReceive }) {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: "16px" }}>
           <div style={{ color: mail.received ? "#2563eb" : "#6a87a3", fontWeight: 800 }}>
-            {mail.received ? "이미 받은 우편이야." : "아직 받지 않은 우편이야."}
+            {mail.received ? "이미 받은 우편입니다." : "받지 않은 우편입니다."}
           </div>
           {!mail.received ? <button type="button" className="home-primary-button" onClick={() => onReceive(mail)}>우편 받기</button> : null}
         </div>
@@ -172,7 +172,7 @@ function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {} }) 
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
-      <div style={{ fontWeight: 800, color: "#16324a" }}>전신 이미지 카드 미리보기</div>
+      <div style={{ fontWeight: 800, color: "#16324a" }}>프로필 카드 미리보기</div>
       <div onPointerDown={startDrag} style={{ width: 112, maxWidth: "100%", cursor: image ? "grab" : "default", marginLeft: 56 }}>
         <ProfileCard character={{ name: previewCharacter?.name || "미리보기", rank: previewCharacter?.rank || "대원", oneLine: previewCharacter?.oneLine || "카드 미리보기", mainImage: image, mainImageFrame: safeFrame }} />
       </div>
@@ -181,7 +181,7 @@ function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {} }) 
         <label>세로 위치<input type="range" min="0" max="60" step="1" value={safeFrame.y} onChange={(e) => onChange({ ...safeFrame, y: Number(e.target.value) })} /></label>
       </div>
       <label>크기<input type="range" min="0.7" max="1.5" step="0.01" value={safeFrame.scale} onChange={(e) => onChange({ ...safeFrame, scale: Number(e.target.value) })} /></label>
-      <div style={{ color: "#6a87a3", fontSize: 12 }}>이미지를 드래그해서 위치를 맞추고, 슬라이더로 세밀하게 조정해.</div>
+      <div style={{ color: "#6a87a3", fontSize: 12 }}>이미지를 드래그해서 위치를 맞추거나 슬라이더로 조정할 수 있습니다.</div>
     </div>
   );
 }
@@ -422,7 +422,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
       profileBgm: profileEdit.profileBgm,
       profileBgmVolume: Math.max(0, Math.min(1, Number(profileEdit.profileBgmVolume ?? 1) || 1)),
     });
-    if (data.success) alert("프로필을 저장했어.");
+    if (data.success) alert("프로필을 저장했습니다.");
   };
 
   const saveCharacterPatch = async (patch) => {
@@ -457,6 +457,8 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
       patch.currentHp = Math.min(maxHp, Number(currentUser.currentHp || maxHp) + useValue);
     } else if (useType === "statPoint") {
       patch.statPoints = Number(currentUser.statPoints || 0) + useValue;
+    } else if (useType === "corrosionHeal") {
+      patch.corrosion = Math.max(0, Number(currentUser.corrosion || 0) - useValue);
     } else if (useType === "skill") {
       const nextSkill = meta.skillKey || meta.skillName || meta.useValue;
       if (nextSkill && !skills.some((skill) => getSkillLabel(skill) === String(nextSkill))) {
@@ -476,7 +478,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
       stats[useType] = Number(stats[useType] || 0) + useValue;
       patch.stats = stats;
     } else if (useType === "none" || useType === "unusable") {
-      alert("이 아이템은 사용할 수 없어.");
+      alert("이 아이템은 사용할 수 없습니다.");
       return;
     }
 
@@ -486,15 +488,15 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
   const sendMail = async () => {
     if (!receiverOptions.length) await loadAllCharacters();
-    if (!receiverId) return alert("받는 사람을 선택해줘.");
-    if (!itemToSend && Number(coinToSend || 0) <= 0 && !letter.trim()) return alert("보낼 내용이 없어.");
+    if (!receiverId) return alert("받는 사람을 선택해주세요.");
+    if (!itemToSend && Number(coinToSend || 0) <= 0 && !letter.trim()) return alert("보낼 내용이 없습니다.");
     const nextItems = [...inventory];
     if (itemToSend) {
       const idx = nextItems.findIndex((v) => v === itemToSend);
-      if (idx < 0) return alert("선택한 아이템이 없어.");
+      if (idx < 0) return alert("선택한 아이템이 없습니다.");
       nextItems.splice(idx, 1);
     }
-    if (Number(coinToSend || 0) > Number(currentUser.coins || 0)) return alert("코인이 부족해.");
+    if (Number(coinToSend || 0) > Number(currentUser.coins || 0)) return alert("코인이 부족합니다.");
     const receiver = receiverOptions.find((v) => String(v.id) === String(receiverId)) || {};
     const res = await fetch("http://localhost:3001/mails/send", {
       method: "POST",
@@ -518,7 +520,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     setItemToSend("");
     setCoinToSend(0);
     setLetter("");
-    alert(`${receiver.name || "상대"}에게 우편을 보냈어.`);
+    alert(`${receiver.name || "상대"}에게 우편을 보냈습니다.`);
   };
 
   const saveStats = async () => {
@@ -539,7 +541,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     });
     if (data.success) {
       setDraftDelta({ hp: 0, def: 0, atk: 0, agi: 0 });
-      alert("스텟이 저장되었어.");
+      alert("스텟이 저장되었습니다.");
     }
   };
 
@@ -625,7 +627,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
                     ))}
                   </div>
                   <div style={card({ padding: "12px 14px", borderRadius: "16px", background: "rgba(255,255,255,0.62)" })}>
-                    보유한 스텟 포인트 {availableStatPoints}
+                    스텟 포인트 {availableStatPoints}
                     {pendingSpent > 0 ? <span style={{ color: "#0ea5e9", marginLeft: "8px" }}>(대기 {pendingSpent})</span> : null}
                   </div>
                   {pendingSpent > 0 ? (
@@ -670,7 +672,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
                     {mail.title || `${mail.fromName}의 우편`}{mail.received ? " · 수령완료" : ""}
                   </button>
                 ))}
-                {mailList.length === 0 ? <div style={{ color: "#6a87a3" }}>도착한 우편이 없어.</div> : null}
+                {mailList.length === 0 ? <div style={{ color: "#6a87a3" }}>도착한 우편이 없습니다.</div> : null}
               </div>
             </div>
 
@@ -700,7 +702,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 620px) minmax(360px, 1fr)", gap: 12, alignItems: "stretch", marginBottom: "18px" }}>
           <div style={card({ padding: "12px 14px", borderRadius: "18px", maxWidth: 660, width: "100%" })}>
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>캐릭터 수정</h3>
-            <div style={{ color: "#6a87a3", marginBottom: 10 }}>일반 유저는 이미지 3종만 수정할 수 있어. 이름/프로필 내용 수정은 운영에서 진행해.</div>
+            <div style={{ color: "#6a87a3", marginBottom: 10 }}>이미지 3종을 수정할 수 있습니다.</div>
             <div style={{ display: "grid", gridTemplateColumns: ownerUser?.isAdmin ? "220px minmax(0, 1fr)" : "minmax(0, 1fr)", gap: 10, alignItems: "start" }}>
               {ownerUser?.isAdmin ? (
                 <div style={card({ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.62)" })}>
@@ -734,13 +736,13 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
                 <div style={card({ padding: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.62)", gridColumn: "1 / -1" })}>
                   <div style={{ fontWeight: 900, marginBottom: 10 }}>프로필 내용</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                    <button type="button" className="ghost-button" onClick={wrapSelectionAsTitle}>선택 부분 제목 만들기</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[b]", "[/b]")}>선택 굵게</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[i]", "[/i]")}>선택 기울기</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[size=24]", "[/size]")}>선택 크게</button>
+                    <button type="button" className="ghost-button" onClick={wrapSelectionAsTitle}>제목</button>
+                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[b]", "[/b]")}>굵게</button>
+                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[i]", "[/i]")}>기울기</button>
+                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[size=24]", "[/size]")}>크게</button>
                     <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[center]", "[/center]")}>가운데 정렬</button>
                     <select defaultValue="" onChange={(e) => { applyFontToSelection(e.target.value); e.target.value = ""; }} style={{ ...inputStyle, width: 180, padding: "10px 12px" }}>
-                      <option value="">선택 글씨체</option>
+                      <option value="">글씨체</option>
                       {PROFILE_FONT_OPTIONS.map((option) => <option key={option.label} value={option.value}>{option.label}</option>)}
                     </select>
                     <button type="button" className="ghost-button" onClick={insertProfileTemplate}>제목/내용 양식 추가</button>
@@ -763,7 +765,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
               style={{ minHeight: 220, height: "100%" }}
               onSave={async (next) => {
                 const data = await saveCharacterPatch({ sdQuotes: next });
-                if (data.success) alert("SD 대사를 저장했어.");
+                if (data.success) alert("SD 대사를 저장했습니다.");
               }}
             />
             <div style={card({ padding: "12px 14px", borderRadius: "16px", minHeight: 220, height: "100%" })}>

@@ -217,7 +217,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
               }
             }} theme={theme} />)}
           </div>
-          {filteredCharacters.length === 0 ? <div style={{ marginTop: "18px", color: theme?.textSoft || "#4f7390" }}>표시할 캐릭터가 없어.</div> : null}
+          {filteredCharacters.length === 0 ? <div style={{ marginTop: "18px", color: theme?.textSoft || "#4f7390" }}>표시할 캐릭터가 없습니다.</div> : null}
         </div>
       )}
     </DesignPageFrame>

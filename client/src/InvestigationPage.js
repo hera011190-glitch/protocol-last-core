@@ -501,7 +501,7 @@ useEffect(() => {
     return keys.some((key) => now - Number(onlineSeenRef.current[key] || 0) < 30000);
   };
 
-  const blocked = () => alert("리더 또는 운영자만 사용할 수 있어.");
+  const blocked = () => alert("리더 또는 운영자만 사용할 수 있습니다.");
 
   const selfState = investigation?.participantStates?.[character?.name || ""] || null;
   const muted = !!(selfState?.mutedUntil && Number(selfState.mutedUntil) > Date.now());
@@ -524,7 +524,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "공지 전송에 실패했어.");
+      alert(data.message || "공지 전송에 실패했습니다.");
       return;
     }
     setInput("");
@@ -537,7 +537,7 @@ useEffect(() => {
     if (!input.trim()) return;
     if (!character) return;
     if (!canSpeak) {
-      alert(muted ? "현재 채팅할 수 없는 상태야." : "HP가 0인 상태에서는 채팅할 수 없어.");
+      alert(muted ? "현재 채팅할 수 없는 상태입니다." : "HP가 0인 상태에서는 채팅할 수 없습니다.");
       return;
     }
     const message = { name: character.name, text: input, image: character.image || "", createdAt: new Date().toISOString(), isAdminNotice: false };
@@ -548,7 +548,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "채팅 전송에 실패했어.");
+      alert(data.message || "채팅 전송에 실패했습니다.");
       return;
     }
     setInput("");
@@ -584,7 +584,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "이동에 실패했어.");
+      alert(data.message || "이동에 실패했습니다.");
       return;
     }
     loadInvestigation();
@@ -600,7 +600,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "조사 실행에 실패했어.");
+      alert(data.message || "조사 실행에 실패했습니다.");
       return;
     }
     loadInvestigation();
@@ -612,11 +612,11 @@ useEffect(() => {
     const res = await apiFetch("/battleAction", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ investigationId, actionName: "파티 도주" }),
+      body: JSON.stringify({ investigationId, actionName: "도주" }),
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "도주 처리에 실패했어.");
+      alert(data.message || "도주 처리에 실패했습니다.");
       return;
     }
     if (data.character) {
@@ -628,12 +628,12 @@ useEffect(() => {
   const saveMyBattleAction = async (actionOverride = "") => {
     if (!character || battleActionSubmitting) return;
     if (!selfState || Number(selfState.hp || 0) <= 0) {
-      alert("행동할 수 없는 상태야.");
+      alert("행동할 수 없는 상태입니다.");
       return;
     }
     const nextAction = String(actionOverride || myBattleAction || "");
     if (!nextAction) {
-      alert("행동을 먼저 골라줘.");
+      alert("행동을 먼저 골라주세요.");
       return;
     }
     setLocalPendingActions((prev) => ({ ...(prev || {}), [character.name]: nextAction }));
@@ -651,7 +651,7 @@ useEffect(() => {
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.message || "행동 저장에 실패했어.");
+        alert(data.message || "행동 저장에 실패했습니다.");
         loadInvestigation();
         return;
       }
@@ -673,7 +673,7 @@ useEffect(() => {
       }
     } catch (err) {
       console.error("saveMyBattleAction error", err);
-      alert("행동 저장 중 오류가 발생했어.");
+      alert("행동 저장 중 오류가 발생했습니다.");
       loadInvestigation();
     } finally {
       setBattleActionSubmitting(false);
@@ -697,7 +697,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "턴 처리에 실패했어.");
+      alert(data.message || "턴 처리에 실패했습니다.");
       return;
     }
     loadInvestigation();
@@ -712,7 +712,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "조사 종료에 실패했어.");
+      alert(data.message || "조사 종료에 실패했습니다.");
       return;
     }
     setShowResult(true);
@@ -833,6 +833,7 @@ useEffect(() => {
       })
     : [];
   const battleInputLocked = battlePlaybackLocked;
+  const shownBattleTurn = battleActive ? Math.max(1, Number(investigation?.battleTurn || 1) - (battlePlaybackLocked ? 1 : 0)) : Number(investigation?.battleTurn || 1);
 
   useEffect(() => {
     if (!battleActive) return;
@@ -1038,7 +1039,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "보상 배분에 실패했어.");
+      alert(data.message || "보상 배분에 실패했습니다.");
       return;
     }
     loadInvestigation();
@@ -1084,11 +1085,11 @@ useEffect(() => {
     const data = await res.json();
     if (!data.success) {
       const message = String(data.message || "");
-      if (message.includes("진행 중인 NPC 대화가 없습니다") || message.includes("선택지를 골라야 해")) {
+      if (message.includes("진행 중인 NPC 대화가 없습니다") || message.includes("선택지를 골라야 합니다")) {
         loadInvestigation();
         return;
       }
-      alert(data.message || "다음 대사로 진행할 수 없어.");
+      alert(data.message || "다음 대사로 진행할 수 없습니다.");
       return;
     }
     loadInvestigation();
@@ -1106,7 +1107,7 @@ useEffect(() => {
         loadInvestigation();
         return;
       }
-      alert(data.message || "선택지를 처리할 수 없어.");
+      alert(data.message || "선택지를 처리할 수 없습니다.");
       return;
     }
     loadInvestigation();
@@ -1120,7 +1121,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "리더 재지정에 실패했어.");
+      alert(data.message || "리더 재지정에 실패했습니다.");
       return;
     }
     loadInvestigation();
@@ -1136,11 +1137,11 @@ useEffect(() => {
             <div style={overlaySectionTitleStyle}>이 조사에서 획득한 아이템</div>
             {foundItems.length > 0 ? (
               <div style={overlayListStyle}>{foundItems.map((item, idx) => <div key={`${item}-${idx}`} style={overlayBadgeStyle}>{item}</div>)}</div>
-            ) : <div style={overlayEmptyStyle}>아직 획득한 조사 아이템이 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>아직 획득한 조사 아이템이 없습니다.</div>}
             <div style={overlaySectionTitleStyle}>발견 NPC</div>
             {foundNPCs.length > 0 ? (
               <div style={overlayListStyle}>{foundNPCs.map((npc, idx) => <div key={`${npc}-${idx}`} style={overlayBadgeStyle}>{npc}</div>)}</div>
-            ) : <div style={overlayEmptyStyle}>아직 발견한 NPC가 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>아직 발견한 NPC가 없습니다.</div>}
           </OverlayPanel>
         )}
 
@@ -1149,7 +1150,7 @@ useEffect(() => {
             <div style={overlaySectionTitleStyle}>현재 소지 중인 아이템</div>
             {inventoryItems.length > 0 ? (
               <div style={overlayListStyle}>{inventoryItems.map((item, idx) => <div key={`${item}-${idx}`} style={overlayBadgeStyle}>{item}</div>)}</div>
-            ) : <div style={overlayEmptyStyle}>현재 소지 중인 아이템이 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>현재 소지 중인 아이템이 없습니다.</div>}
           </OverlayPanel>
         )}
 
@@ -1167,7 +1168,7 @@ useEffect(() => {
                     </div>
                   ))}
                 </div>
-              ) : <div style={overlayEmptyStyle}>아직 방문 기록이 없어.</div>}
+              ) : <div style={overlayEmptyStyle}>아직 방문 기록이 없습니다.</div>}
             </div>
           </OverlayPanel>
         )}
@@ -1182,7 +1183,7 @@ useEffect(() => {
                   </button>
                 ))}
               </div>
-            ) : <div style={overlayEmptyStyle}>사용 가능한 전투 아이템이 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>사용 가능한 전투 아이템이 없습니다.</div>}
           </OverlayPanel>
         )}
 
@@ -1208,7 +1209,7 @@ useEffect(() => {
                   );
                 })}
               </div>
-            ) : <div style={overlayEmptyStyle}>사용 가능한 스킬이 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>사용 가능한 스킬이 없습니다.</div>}
           </OverlayPanel>
         )}
 
@@ -1269,10 +1270,10 @@ useEffect(() => {
                         </div>
                       ))}
                     </div>
-                  ) : <div style={overlayEmptyStyle}>현재 관전 중인 캐릭터가 없어.</div>}
+                  ) : <div style={overlayEmptyStyle}>현재 관전 중인 캐릭터가 없습니다.</div>}
                 </div>
               </div>
-            ) : <div style={overlayEmptyStyle}>아직 참여 인원이 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>아직 참여 인원이 없습니다.</div>}
           </OverlayPanel>
         )}
 
@@ -1309,7 +1310,7 @@ useEffect(() => {
                   </div>
                 ))}
               </div>
-            ) : <div style={overlayEmptyStyle}>아직 얻은 단서가 없어.</div>}
+            ) : <div style={overlayEmptyStyle}>아직 얻은 단서가 없습니다.</div>}
           </OverlayPanel>
         )}
 
@@ -1387,10 +1388,10 @@ useEffect(() => {
           <div style={{ position: "fixed", inset: 0, zIndex: 1180, display: "grid", placeItems: "center", pointerEvents: "none" }}>
             <div style={{ width: "min(920px, calc(100vw - 48px))", borderRadius: 28, background: "rgba(8,15,30,0.9)", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 24px 56px rgba(0,0,0,0.34)", padding: 24, pointerEvents: "auto" }}>
               <div className="section-eyebrow">REWARD ASSIGN</div>
-              <h3 style={{ marginTop: 10, marginBottom: 8 }}>누가 가질까?</h3>
+              <h3 style={{ marginTop: 10, marginBottom: 8 }}>누구에게 줄까?</h3>
               <div style={{ color: "#fde68a", fontWeight: 800 }}>{formatPendingRewardLabel(pendingReward)} 획득 대기</div>
               <div style={{ marginTop: 8, color: "#9fb0c7", lineHeight: 1.7 }}>
-                조사 참여 캐릭터 중 한 명을 골라 보상을 배분해. 배분이 끝나야 다음 진행으로 넘어갈 수 있어.
+                조사 참여 캐릭터 중 한 명을 골라 보상을 배분하세요. 배분이 끝나야 다음 진행으로 넘어갈 수 있습니다.
                 {!isDaily && !isAdmin && !isLeader ? " 현재는 리더만 배분할 수 있어." : ""}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, marginTop: 18 }}>
@@ -1440,7 +1441,7 @@ useEffect(() => {
                 {investigation.endedReason === "전멸" ? "FAILED" : "COMPLETE"}
               </div>
               <div style={{ color: "#dbe7f5", whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
-                {investigation.resultSummary || investigation.endedReason || "조사가 종료되었어."}
+                {investigation.resultSummary || investigation.endedReason || "조사가 종료되었습니다."}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
                 <div style={topChipStyle}>방문 {visitedNodeCount}/{totalNodeCount || "-"}</div>
@@ -1450,9 +1451,9 @@ useEffect(() => {
                 <div style={topChipStyle}>보상 {rewards.length}개</div>
               </div>
               <div style={{ marginTop: "12px", color: "#9fb0c7", lineHeight: 1.7 }}>
-                최종 목적지 도달이 아니라 모든 구역 방문이 완료 기준이야.<br />
-                확인한 인원: {endConfirmations.join(", ") || "아직 없음"}<br />
-                전투 중 HP 0이었던 인원은 종료 시 HP 10으로 복구돼. 확인 버튼을 누르면 조사에서 나가게 돼.
+                완료 기준: 모든 구역 방문 및 조사<br />
+                확인한 인원: {endConfirmations.join(", ") || "없음"}<br />
+                전투 중 HP 0이었던 인원은 종료 시 HP 10으로 복구됩니다. 확인 버튼을 누르면 조사에서 나갑니다.
               </div>
             </div>
             {(foundItems.length > 0 || clues.length > 0 || rewards.length > 0) ? (
@@ -1510,7 +1511,7 @@ useEffect(() => {
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>현재 위치: {currentNode?.name || "-"}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {overallProgressPercent}%</div>
-                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {investigation.battleTurn || 1}</div> : null}
+                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {shownBattleTurn}</div> : null}
                   </div>
                   {leaderDown ? (
                     <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
@@ -1528,10 +1529,10 @@ useEffect(() => {
                             >
                               {participant.name} 지정
                             </button>
-                          )) : <div style={{ color: "#fecaca", fontSize: 12 }}>지정 가능한 생존 인원이 없어.</div>}
+                          )) : <div style={{ color: "#fecaca", fontSize: 12 }}>지정 가능한 생존 인원이 없습니다.</div>}
                         </div>
                       ) : (
-                        <div style={{ color: "#fecaca", fontSize: 12 }}>운영자가 새 리더를 지정해야 해.</div>
+                        <div style={{ color: "#fecaca", fontSize: 12 }}>운영자가 새 리더를 지정해야 합니다.</div>
                       )}
                     </div>
                   ) : null}
@@ -1559,7 +1560,7 @@ useEffect(() => {
                 ) : (
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
-                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} />
+                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} shownBattleTurn={shownBattleTurn} />
                       <div style={{ marginTop: 12 }}>
                         <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                       </div>
@@ -1574,7 +1575,7 @@ useEffect(() => {
                           {canControl ? <button type="button" onClick={fleeFromBattle} style={runButtonStyle} disabled={battleInputLocked}>파티 도주</button> : null}
                         </div>
                       ) : (
-                        <div style={{ ...dangerMessageStyle, textAlign: "center" }}>현재 관전 상태라 전투 행동을 선택할 수 없어.</div>
+                        <div style={{ ...dangerMessageStyle, textAlign: "center" }}>현재 관전 상태라 전투 행동을 선택할 수 없습니다.</div>
                       )}
                       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
                                                 {endedReadonly ? <div style={readyBadgeStyle}>종료된 조사 기록 열람 중</div> : null}
@@ -1647,7 +1648,7 @@ useEffect(() => {
                   <div className="section-eyebrow">CHAT</div>
                   <h3 style={{ marginTop: "10px", marginBottom: "14px" }}>채팅</h3>
 
-                  {!canSpeak && <div style={{ marginBottom: "12px", ...dangerMessageStyle }}>HP가 0인 상태라 관전만 가능해. 채팅은 사용할 수 없어.</div>}
+                  {!canSpeak && <div style={{ marginBottom: "12px", ...dangerMessageStyle }}>HP가 0인 상태라 관전만 가능합니다. 채팅은 사용할 수 없습니다.</div>}
 
                   <div style={{ position: "relative", minHeight: 0, flex: 1 }}>
                     <div ref={chatScrollRef} onScroll={onChatScroll} style={chatBoxStyle}>
@@ -1669,7 +1670,7 @@ useEffect(() => {
                           </div>
                         </div>
                       ))
-                    ) : <div style={{ color: "#94a3b8" }}>아직 채팅이 없어.</div>}
+                    ) : <div style={{ color: "#94a3b8" }}>아직 채팅이 없습니다.</div>}
                     </div>
                     {showNewChatCue ? (
                       <button
@@ -1691,7 +1692,7 @@ useEffect(() => {
                     <input
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder={canSpeak ? (isAdmin ? "운영 공지 또는 채팅 입력" : "채팅 입력") : (isAdmin ? "운영 공지를 입력할 수 있어." : "관전 상태에서는 채팅 불가")}
+                      placeholder={canSpeak ? (isAdmin ? "운영 공지 또는 채팅 입력" : "채팅 입력") : (isAdmin ? "운영 공지를 입력할 수 있습니다." : "관전 상태에서는 채팅 불가")}
                       style={chatInputStyle}
                       disabled={!canSpeak && !isAdmin}
                       onKeyDown={(e) => {
@@ -1732,8 +1733,8 @@ function normalizeDirectionLabel(label) {
   const value = String(label || "").toLowerCase();
   if (/상|위|up|north|북|↑/.test(value)) return "up";
   if (/하|아래|down|south|남|↓/.test(value)) return "down";
-  if (/좌|왼|left|west|서|←/.test(value)) return "left";
-  if (/우|오른|right|east|동|→/.test(value)) return "right";
+  if (/좌|왼쪽|left|west|서|←/.test(value)) return "left";
+  if (/우|오른쪽|right|east|동|→/.test(value)) return "right";
   return "";
 }
 
@@ -1918,7 +1919,7 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
         })}
         {leaderImage && currentPos ? <image href={leaderImage} x={currentPos.x - 28} y={currentPos.y - 84} width="56" height="56" preserveAspectRatio="xMidYMid contain" /> : null}
       </svg>
-      <div style={{ color: "#9fb0c7", fontSize: 13 }}>지나간 장소와 현재 위치만 표시돼.</div>
+      <div style={{ color: "#9fb0c7", fontSize: 13 }}>지나간 장소 및 현재 위치만 표시됩니다.</div>
     </div>
   );
 }
@@ -2283,7 +2284,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   );
 }
 
-function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now() }) {
+function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now(), shownBattleTurn = 1 }) {
   const battle = node?.battle;
   if (!battle) return null;
   const hp = Number(battle.hp || 0);
@@ -2303,7 +2304,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {investigation?.battleTurn || 1}</div>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {shownBattleTurn}</div>
       <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
       <div style={{ width: "min(520px, 100%)" }}>
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>

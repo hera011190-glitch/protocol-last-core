@@ -93,6 +93,24 @@ function writeUserCharacterCache(userId, rows) {
   try { localStorage.setItem(`plc-cache-user-characters-${userId}`, JSON.stringify(Array.isArray(rows) ? rows : [])); } catch {}
 }
 
+function preloadImage(src) {
+  const value = String(src || "").trim();
+  if (!value) return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = value;
+}
+
+function warmCharacterAssets(rows) {
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    preloadImage(row?.image);
+    preloadImage(row?.cardImage);
+    preloadImage(row?.spriteImage);
+    preloadImage(row?.investigationImage);
+    preloadImage(row?.mainImage);
+  });
+}
+
 function buildThemeVars(theme) {
   return {
     "--bg-main": theme.bgMain || "#eef9ff",
@@ -197,9 +215,9 @@ function NeedCharacterCard({ openMy, design, theme, pageKey = "my" }) {
           <div style={{ color: "#7dd3fc", fontSize: "12px", letterSpacing: "0.18em", marginBottom: "8px" }}>
             CHARACTER REQUIRED
           </div>
-          <h2 style={{ marginTop: 0, marginBottom: "10px" }}>캐릭터 선택이 필요해</h2>
+          <h2 style={{ marginTop: 0, marginBottom: "10px" }}>캐릭터 선택이 필요합니다</h2>
           <div style={{ color: "#94a3b8", lineHeight: 1.7, marginBottom: "16px" }}>
-            현재 선택된 캐릭터가 없어.
+            현재 선택된 캐릭터가 없습니다.
           </div>
           <button onClick={openMy} className="home-primary-button">MY로 이동</button>
         </div>
@@ -389,9 +407,9 @@ function App() {
                 setActivePage(PAGE.INVESTIGATION);
                 return;
               }
-              alert(data.message || "일일조사를 시작할 수 없어.");
+              alert(data.message || "일일조사를 시작할 수 없습니다.");
             } catch {
-              alert(data.message || "일일조사를 시작할 수 없어.");
+              alert(data.message || "일일조사를 시작할 수 없습니다.");
             }
           }, 450);
           return;
@@ -433,6 +451,34 @@ function App() {
         writeUserCharacterCache(user.id, cached.filter((row) => String(row?.ownerId || "") === String(user.id)));
       }
     }
+  }, [user?.id, user?.isAdmin]);
+
+  useEffect(() => {
+    const cached = readLocalArray(CHARACTER_CACHE_KEY);
+    if (cached.length > 0) {
+      warmCharacterAssets(cached);
+    }
+
+    let cancelled = false;
+    const warmCharacters = async () => {
+      try {
+        const res = await fetch(`http://localhost:3001/characters-lite?t=${Date.now()}`, { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data) || data.length === 0) return;
+        writeCharacterCaches(data);
+        warmCharacterAssets(data);
+        if (user?.id && !user?.isAdmin) {
+          writeUserCharacterCache(user.id, data.filter((row) => String(row?.ownerId || "") === String(user.id)));
+        }
+      } catch {
+        // ignore warm fetch errors
+      }
+    };
+
+    warmCharacters();
+    return () => {
+      cancelled = true
+    };
   }, [user?.id, user?.isAdmin]);
 
   useEffect(() => {

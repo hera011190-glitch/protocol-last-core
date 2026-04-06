@@ -350,8 +350,8 @@ export default function AdminPage({
   };
 
   const createCharacterForUser = async () => {
-    if (!selectedUserId) return setMessage("먼저 계정을 선택해줘.");
-    if (!form.charName.trim()) return setMessage("캐릭터 이름을 입력해줘.");
+    if (!selectedUserId) return setMessage("먼저 계정을 선택해주세요.");
+    if (!form.charName.trim()) return setMessage("캐릭터 이름을 입력해주세요.");
     const res = await fetch("http://localhost:3001/createCharacter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -380,7 +380,7 @@ export default function AdminPage({
   };
 
   const saveSelectedCharacter = async () => {
-    if (!selectedCharacter) return setMessage("캐릭터를 선택해줘.");
+    if (!selectedCharacter) return setMessage("캐릭터를 선택해주세요.");
     const res = await fetch("http://localhost:3001/updateCharacter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -416,8 +416,8 @@ export default function AdminPage({
   };
 
   const deleteSelectedCharacter = async () => {
-    if (!selectedCharacter) return setMessage("캐릭터를 선택해줘.");
-    const ok = window.confirm(`${selectedCharacter.name} 캐릭터를 삭제할까?`);
+    if (!selectedCharacter) return setMessage("캐릭터를 선택해주세요.");
+    const ok = window.confirm(`${selectedCharacter.name} 캐릭터를 삭제하겠습니까?`);
     if (!ok) return;
     const res = await fetch(`http://localhost:3001/admin/characters/${selectedCharacter.id}`, { method: "DELETE" });
     const data = await res.json();
@@ -442,7 +442,7 @@ export default function AdminPage({
 
       <div style={{ ...panelStyle, marginBottom: 18 }}>
         <div className="section-eyebrow">SITE BGM</div>
-        <AudioSourceInput label="홈페이지 / 공용 BGM" value={siteBgm || ""} onChange={setSiteBgm} volume={siteBgmVolume} onVolumeChange={setSiteBgmVolume} previewScope="admin-site-preview" previewPlacement="global" helperText="프로필과 조사에 별도 BGM이 없으면 이 음악이 재생돼." />
+        <AudioSourceInput label="홈페이지 / 공용 BGM" value={siteBgm || ""} onChange={setSiteBgm} volume={siteBgmVolume} onVolumeChange={setSiteBgmVolume} previewScope="admin-site-preview" previewPlacement="global" helperText="프로필과 조사에 별도 BGM이 없으면 해당 음악이 재생됩니다." />
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button type="button" className="home-primary-button" onClick={saveSiteBgm}>홈페이지 BGM 저장</button>
         </div>
@@ -471,7 +471,7 @@ export default function AdminPage({
           <ImageDropInput label="프로필 이미지" value={form.charImage} onChange={(value) => setForm((prev) => ({ ...prev, charImage: value }))} previewHeight={150} compact />
           <ImageDropInput label="전신 이미지" value={form.charMainImage} onChange={(value) => setForm((prev) => ({ ...prev, charMainImage: value }))} previewHeight={180} previewFit="contain" compact />
           <ImageDropInput label="SD 이미지" value={form.charInvestigationImage} onChange={(value) => setForm((prev) => ({ ...prev, charInvestigationImage: value }))} previewHeight={160} previewFit="contain" compact />
-          <AudioSourceInput label="프로필 BGM" value={form.charProfileBgm || ""} onChange={(value) => setForm((prev) => ({ ...prev, charProfileBgm: value }))} volume={form.charProfileBgmVolume ?? 1} onVolumeChange={(value) => setForm((prev) => ({ ...prev, charProfileBgmVolume: value }))} previewScope="admin-create-profile-preview" previewPlacement="profile" helperText="프로필 화면에서 자동으로 재생될 음악" />
+          <AudioSourceInput label="프로필 BGM" value={form.charProfileBgm || ""} onChange={(value) => setForm((prev) => ({ ...prev, charProfileBgm: value }))} volume={form.charProfileBgmVolume ?? 1} onVolumeChange={(value) => setForm((prev) => ({ ...prev, charProfileBgmVolume: value }))} previewScope="admin-create-profile-preview" previewPlacement="profile" helperText="캐릭터 프로필 화면 재생 음악" />
           <div style={{ gridColumn: "1 / -1", display: "grid", gap: 8 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ fontWeight: 800, color: "#16324a" }}>프로필</span>
@@ -547,7 +547,7 @@ export default function AdminPage({
                 <ImageDropInput label="SD 이미지" value={edit.investigationImage} onChange={(value) => setEdit((prev) => ({ ...prev, investigationImage: value }))} previewHeight={140} previewFit="contain" compact />
                 <div style={{ gridColumn: "1 / -1", display: "grid", gap: 12 }}>
                   <ImageDropInput label="전신 이미지" value={edit.mainImage} onChange={(value) => setEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={180} previewFit="contain" compact />
-                  <AudioSourceInput label="프로필 BGM" value={edit.profileBgm || ""} onChange={(value) => setEdit((prev) => ({ ...prev, profileBgm: value }))} volume={edit.profileBgmVolume ?? 1} onVolumeChange={(value) => setEdit((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="admin-edit-profile-preview" previewPlacement="profile" helperText="프로필 화면에 들어가면 이 음악이 자동 재생돼." />
+                  <AudioSourceInput label="프로필 BGM" value={edit.profileBgm || ""} onChange={(value) => setEdit((prev) => ({ ...prev, profileBgm: value }))} volume={edit.profileBgmVolume ?? 1} onVolumeChange={(value) => setEdit((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="admin-edit-profile-preview" previewPlacement="profile" helperText="캐릭터 프로필 화면 재생 음악" />
                 </div>
               </div>
             </div>

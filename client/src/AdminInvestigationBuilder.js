@@ -13,7 +13,7 @@ function toDataUrl(file) {
 }
 
 function emptyAction() {
-  return { label: "", log: "", points: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
+  return { label: "", log: "", points: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, corrosionIncrease: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
 }
 
 function createNode(id = `node-${Date.now()}`) {
@@ -180,6 +180,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             statPoints: Number(value?.statPoints || 0),
             damage: Number(value?.damage || 0),
             muteMinutes: Number(value?.muteMinutes || 0),
+            corrosionIncrease: Number(value?.corrosionIncrease || 0),
           }])
         ),
       }]))
@@ -215,7 +216,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       mapY: node.mapY ?? 30,
       choices: Array.isArray(node.choices) ? node.choices : [],
       investigations: Array.isArray(node.investigations) ? node.investigations : [],
-      actionResults: node.actionResults || {},
+      actionResults: Object.fromEntries(Object.entries(node.actionResults || {}).map(([key, value]) => [key, { ...emptyAction(), ...(value || {}), corrosionIncrease: Number(value?.corrosionIncrease || 0) } ])),
       battle: node.battle || null,
       npcScene: node.npcScene || null,
       clues: Array.isArray(node.clues) ? node.clues : [],
@@ -546,7 +547,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   <div style={fieldLabelStyle}>획득 단서 이미지</div>
                   <ImageDropInput label="단서 이미지" value={result.clueImage || ""} onChange={(value) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, clueImage: value } } }))} previewHeight={120} compact style={{ marginTop: 8 }} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={fieldLabelStyle}>행동 실행 시 피해량</div>
                     <input type="number" value={result.damage || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, damage: Number(e.target.value || 0) } } }))} placeholder="피해" style={inputStyle} />
@@ -554,6 +555,10 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={fieldLabelStyle}>행동 실행 시 기절 시간(분)</div>
                     <input type="number" value={result.muteMinutes || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, muteMinutes: Number(e.target.value || 0) } } }))} placeholder="기절(분)" style={inputStyle} />
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={fieldLabelStyle}>행동 실행 시 침식 진행도 증가</div>
+                    <input type="number" value={result.corrosionIncrease || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, corrosionIncrease: Number(e.target.value || 0) } } }))} placeholder="침식 진행도" style={inputStyle} />
                   </div>
                 </div>
               </div>
