@@ -8,7 +8,7 @@
     "build": "npm --prefix client install && npm --prefix client run build"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.x"
   },
   "dependencies": {
     "cors": "^2.8.5",
