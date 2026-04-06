@@ -82,6 +82,24 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: corsOptions });
 
+const pendingJsonWrites = new Map();
+
+function scheduleJsonWrite(filePath, value, { delay = 80 } = {}) {
+  const payload = JSON.stringify(value, null, 2);
+  const existing = pendingJsonWrites.get(filePath);
+  if (existing?.timer) clearTimeout(existing.timer);
+  const timer = setTimeout(async () => {
+    try {
+      await fs.promises.writeFile(filePath, payload, "utf-8");
+    } catch (error) {
+      console.error("scheduleJsonWrite failed", filePath, error);
+    } finally {
+      pendingJsonWrites.delete(filePath);
+    }
+  }, delay);
+  pendingJsonWrites.set(filePath, { timer, payload });
+}
+
 function readRuntimeArray(filename) {
   try {
     const filePath = resolveDataPath(filename);
@@ -98,7 +116,7 @@ function readRuntimeArray(filename) {
 function writeRuntimeArray(filename, value) {
   try {
     const filePath = resolveDataPath(filename);
-    fs.writeFileSync(filePath, JSON.stringify(Array.isArray(value) ? value : [], null, 2), "utf-8");
+    scheduleJsonWrite(filePath, Array.isArray(value) ? value : []);
   } catch (error) {
     console.error(`writeRuntimeArray failed: ${filename}`, error);
   }
@@ -2424,7 +2442,7 @@ function readJsonArraySafe(filePath) {
 
 function writeJsonArraySafe(filePath, value) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf-8");
+    scheduleJsonWrite(filePath, value);
   } catch (err) {
     console.error("writeJsonArraySafe error", filePath, err);
   }
@@ -2685,7 +2703,7 @@ function readJsonFileSafe(filePath, fallback) {
   }
 }
 function writeJsonFileSafe(filePath, value) {
-  try { fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf-8"); } catch (err) { console.error(err); }
+  try { scheduleJsonWrite(filePath, value); } catch (err) { console.error(err); }
 }
 
 let shopItemsDB = readJsonFileSafe(shopItemsPath, [

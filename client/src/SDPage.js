@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import { buildApiUrl } from "./api";
 
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -128,9 +129,10 @@ function writeCachedSdCharacters(rows) {
 
 
 async function fetchCharactersWithFallback() {
+  const now = Date.now();
   const urls = [
-    `http://localhost:3001/characters-lite?t=${Date.now()}`,
-    `http://localhost:3001/characters?t=${Date.now()}`,
+    buildApiUrl(`/characters-lite?t=${now}`),
+    buildApiUrl(`/characters?t=${now}`),
   ];
   for (const url of urls) {
     try {
@@ -185,7 +187,13 @@ function CharacterSprite({ character, quote, moving, onClick }) {
               }}
             />
           </>
-        ) : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#ffffff" }}>SD</div>}
+        ) : (character.image || character.mainImage) ? (
+          <img
+            src={character.image || character.mainImage}
+            alt={character.name}
+            style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -248,14 +256,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!characters.length) return;
+    if (Date.now() - saveTickRef.current < 1200) return;
+    saveTickRef.current = Date.now();
     const payload = Object.fromEntries(characters.map((character) => [character.id, { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
-    localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
-    const mine = characters.find((character) => String(character.id) === String(activeCharacter?.id));
-    if (mine && Date.now() - saveTickRef.current > 2200) {
-      saveTickRef.current = Date.now();
-      fetch("http://localhost:3001/updateCharacter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: mine.id, currentMap: mine.currentMap, x: mine.x, y: mine.y }) }).catch(() => {});
-    }
-  }, [characters, activeCharacter?.id]);
+    try {
+      localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
+    } catch {}
+  }, [characters]);
 
   useEffect(() => {
     if (!maps.length) return undefined;
@@ -409,7 +416,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     setActiveMapId(nextId);
     setCharacters((prev) => prev.map((character) => String(character.id) === String(activeCharacter?.id) ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx, dy: spawn.dy, waitMs: 900, moveCooldownMs: rand(2400, 4200) } : character));
     if (activeCharacter?.id) {
-      fetch("http://localhost:3001/updateCharacter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
+      fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));
     }
   };
