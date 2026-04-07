@@ -208,6 +208,10 @@ function getCharacterCurrentHp(character) {
   return maxHp;
 }
 
+function clampCorrosion(value) {
+  return Math.max(0, Math.min(100, Number(value || 0)));
+}
+
 function baseParticipantState(character) {
   const maxHp = getCharacterMaxHp(character?.stats?.hp);
   const hp = getCharacterCurrentHp(character);
@@ -345,11 +349,13 @@ function buildInvestigation(def) {
     type: def.type,
     bgmUrl,
     bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
+    entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
     data: {
       ...def.data,
       backgroundImage: def?.data?.backgroundImage || def?.backgroundImage || "",
       bgmUrl,
       bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
+      entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
       nodes: normalizedNodes,
       start: startNodeId,
     },
@@ -545,6 +551,7 @@ function getInvestigationSummary(item) {
     points: 0,
     rewardsCount: Array.isArray(item.rewards) ? item.rewards.length : 0,
     progressPercent,
+    entryCorrosion: Number(item.entryCorrosion ?? item.data?.entryCorrosion ?? 0),
     currentNodeName: item.data?.nodes?.[item.currentNodeId]?.name || "-",
     dailyOwnerKey: String(item.dailyOwnerKey || ""),
     dailyResumeOwnerKey: String(item.dailyResumeOwnerKey || ""),
@@ -599,6 +606,7 @@ function emitInvestigationState(investigationId) {
     started: !!item.started,
     routeHistory: item.routeHistory || [],
     mapBackgroundImage: item.data?.backgroundImage || "",
+    entryCorrosion: Number(item.entryCorrosion ?? item.data?.entryCorrosion ?? 0),
     foundItems: item.foundItems || [],
     foundNPCs: item.foundNPCs || [],
     rewards: item.rewards || [],
@@ -981,6 +989,25 @@ function applyNodeEntryEffects(item, node) {
   }
 }
 
+function applyInvestigationEntryCorrosion(item, participants = []) {
+  const gain = Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? 0);
+  if (!Number.isFinite(gain) || gain <= 0) return [];
+  const updated = [];
+  (Array.isArray(participants) ? participants : []).forEach((participant) => {
+    if (!participant || participant?.isAdmin || String(participant?.id || "") === "admin" || String(participant?.ownerId || "") === "admin" || participant?.name === "운영자") return;
+    const target = charactersDB.find((character) => String(character?.id || "") === String(participant?.id || ""))
+      || charactersDB.find((character) => character?.name === participant?.name && (!participant?.ownerId || String(character?.ownerId || "") === String(participant?.ownerId || "")));
+    if (!target) return;
+    target.corrosion = clampCorrosion(Number(target?.corrosion || 0) + gain);
+    participant.corrosion = target.corrosion;
+    updated.push(target);
+  });
+  if (updated.length > 0) {
+    addSharedLog(item, `[침식 진행도] 조사 최초 진입으로 ${gain} 상승`);
+  }
+  return updated;
+}
+
 function applyActionRewards(item, result, locationName) {
   if (!result) return { changed: false, text: `[${locationName}] 특별한 성과는 없었다.` };
   const textParts = [result.log || `[${locationName}] ${locationName}에서 단서를 조사했다.`];
@@ -1039,23 +1066,6 @@ function applyActionRewards(item, result, locationName) {
       state.mutedUntil = until;
     });
     textParts.push(`${result.muteMinutes}분간 채팅 금지`);
-    changed = true;
-  }
-
-  if (typeof result.corrosionIncrease === "number" && result.corrosionIncrease > 0) {
-    const amount = Number(result.corrosionIncrease || 0);
-    let corrosionChanged = false;
-    (item.participants || []).forEach((participant) => {
-      const target = charactersDB.find((character) => String(character.id) === String(participant?.id)) || charactersDB.find((character) => String(character.name || "") === String(participant?.name || ""));
-      if (!target) return;
-      const nextCorrosion = Math.max(0, Math.min(100, Number(target.corrosion || 0) + amount));
-      if (nextCorrosion !== Number(target.corrosion || 0)) {
-        target.corrosion = nextCorrosion;
-        corrosionChanged = true;
-      }
-    });
-    if (corrosionChanged) writeRuntimeArray("characters.json", charactersDB);
-    textParts.push(`침식 진행도 +${amount}`);
     changed = true;
   }
 
@@ -1854,6 +1864,7 @@ app.post("/startDailyInvestigation", (req, res) => {
     roomChats[id] = [];
     ensureRouteHistorySeed(item);
     item.endConfirmations = [];
+    applyInvestigationEntryCorrosion(item, [sourceCharacter]);
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[일일조사 시작] ${item.title}`);
 
@@ -1966,6 +1977,7 @@ app.post("/startInvestigation", (req, res) => {
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[조사 시작] ${item.title}`);
     item.participants.forEach((participant) => ensureParticipantState(item, participant));
+    applyInvestigationEntryCorrosion(item, item.participants);
     syncInvestigationRoster(item);
     try { io.emit("investigationStarted", { id }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
     try { emitParticipantsUpdated(); } catch (emitErr) { console.error("participantsUpdated emit failed", emitErr); }
@@ -2516,9 +2528,9 @@ function summarizeCharacter(character) {
     approved: character.approved,
     image: cardImage,
     cardImage,
-    mainImage: character.mainImage || "",
-    investigationImage: character.investigationImage || "",
     spriteImage,
+    investigationImage: character.investigationImage || spriteImage,
+    mainImage: character.mainImage || cardImage,
     currentMap: character.currentMap || "",
     oneLine: character.oneLine || "",
     rank: character.rank || "",

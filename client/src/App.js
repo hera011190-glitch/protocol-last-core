@@ -23,7 +23,6 @@ import { clearActiveCharacterStorage, readActiveCharacter, saveActiveCharacter }
 import socket from "./socket";
 import { applyDomOverrides } from "./designDomUtils";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
-import { buildApiUrl } from "./api";
 
 const DESIGN_CACHE_KEY = "plc-design-cache";
 const AUDIO_MUTE_KEY = "plc-audio-muted";
@@ -94,14 +93,42 @@ function writeUserCharacterCache(userId, rows) {
   try { localStorage.setItem(`plc-cache-user-characters-${userId}`, JSON.stringify(Array.isArray(rows) ? rows : [])); } catch {}
 }
 
-function preloadCharacterAsset(src) {
-  const value = String(src || "").trim();
-  if (!value) return;
-  try {
-    const image = new Image();
-    image.decoding = "async";
-    image.src = value;
-  } catch {}
+function preloadImage(url) {
+  const src = String(url || "").trim();
+  if (!src || typeof window === "undefined") return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = src;
+}
+
+function extractCharacterImageUrls(rows = []) {
+  const urls = [];
+  const seen = new Set();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    [row?.spriteImage, row?.investigationImage, row?.cardImage, row?.image, row?.mainImage].forEach((value) => {
+      const src = String(value || "").trim();
+      if (!src || seen.has(src)) return;
+      seen.add(src);
+      urls.push(src);
+    });
+  });
+  return urls;
+}
+
+async function fetchSharedCharacters() {
+  const urls = [
+    `http://localhost:3001/characters-lite`,
+    `http://localhost:3001/characters`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: "default" });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    } catch {}
+  }
+  return [];
 }
 
 function buildThemeVars(theme) {
@@ -313,6 +340,8 @@ function App() {
   const activeAudioSourceRef = useRef("");
   const characterRefreshStampRef = useRef(0);
   const presenceStampRef = useRef(0);
+  const sharedCharactersRefreshRef = useRef(0);
+  const [sharedCharacters, setSharedCharacters] = useState(() => readLocalArray(CHARACTER_CACHE_KEY));
 
   const isAdmin = !!user?.isAdmin;
 
@@ -334,7 +363,18 @@ function App() {
       return;
     }
     const saved = saveActiveCharacter(character);
-    setActiveCharacterState(saved || character);
+    const nextCharacter = saved || character;
+    setActiveCharacterState(nextCharacter);
+    setSharedCharacters((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      const idx = list.findIndex((row) => String(row?.id || "") === String(nextCharacter?.id || ""));
+      const merged = { ...(idx >= 0 ? list[idx] : {}), ...nextCharacter, cardImage: nextCharacter?.image || nextCharacter?.mainImage || nextCharacter?.cardImage || "", spriteImage: nextCharacter?.investigationImage || nextCharacter?.image || nextCharacter?.mainImage || nextCharacter?.spriteImage || "" };
+      if (idx >= 0) list[idx] = merged;
+      else list.push(merged);
+      writeCharacterCaches(list);
+      return list;
+    });
+    extractCharacterImageUrls([nextCharacter]).forEach(preloadImage);
   };
 
   const refreshActiveCharacter = async (character = activeCharacter, options = {}) => {
@@ -448,36 +488,65 @@ function App() {
 
 
   useEffect(() => {
+    const cached = readLocalArray(CHARACTER_CACHE_KEY);
+    if (cached.length > 0 && sharedCharacters.length === 0) {
+      setSharedCharacters(cached);
+      extractCharacterImageUrls(cached).slice(0, 24).forEach(preloadImage);
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-
-    const warmCharacters = async () => {
-      const urls = [
-        buildApiUrl(`/characters-lite?t=${Date.now()}`),
-        buildApiUrl(`/characters?t=${Date.now()}`),
-      ];
-      for (const url of urls) {
-        try {
-          const res = await fetch(url, { cache: "no-store" });
-          if (!res.ok) continue;
-          const rows = await res.json();
-          if (!Array.isArray(rows) || rows.length === 0) continue;
-          if (cancelled) return;
-          writeCharacterCaches(rows);
-          if (user?.id && !user?.isAdmin) {
-            writeUserCharacterCache(user.id, rows.filter((row) => String(row?.ownerId || "") === String(user.id)));
-          }
-          rows.forEach((row) => {
-            preloadCharacterAsset(row?.spriteImage || row?.investigationImage || "");
-            preloadCharacterAsset(row?.cardImage || row?.mainImage || row?.image || "");
-          });
-          return;
-        } catch {}
+    const warmCharacters = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - sharedCharactersRefreshRef.current < 20000) return;
+      sharedCharactersRefreshRef.current = now;
+      const incoming = await fetchSharedCharacters();
+      if (cancelled || !Array.isArray(incoming) || incoming.length === 0) return;
+      setSharedCharacters(incoming);
+      writeCharacterCaches(incoming);
+      if (user?.id && !user?.isAdmin) {
+        writeUserCharacterCache(user.id, incoming.filter((row) => String(row?.ownerId || "") === String(user.id)));
       }
+      extractCharacterImageUrls(incoming).slice(0, 24).forEach(preloadImage);
     };
-
-    warmCharacters();
-    return () => { cancelled = true; };
+    warmCharacters(sharedCharacters.length === 0);
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") warmCharacters(false);
+    };
+    const handleCharacterUpdated = (event) => {
+      const updated = event?.detail?.character;
+      if (updated?.id) {
+        setSharedCharacters((prev) => {
+          const list = Array.isArray(prev) ? [...prev] : [];
+          const idx = list.findIndex((row) => String(row?.id || "") === String(updated.id));
+          const merged = { ...(idx >= 0 ? list[idx] : {}), ...updated, cardImage: updated?.image || updated?.mainImage || updated?.cardImage || "", spriteImage: updated?.investigationImage || updated?.image || updated?.mainImage || updated?.spriteImage || "" };
+          if (idx >= 0) list[idx] = merged;
+          else list.push(merged);
+          writeCharacterCaches(list);
+          return list;
+        });
+        extractCharacterImageUrls([updated]).forEach(preloadImage);
+      }
+      warmCharacters(true);
+    };
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleVisible);
+    window.addEventListener("plc-character-updated", handleCharacterUpdated);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleVisible);
+      window.removeEventListener("plc-character-updated", handleCharacterUpdated);
+    };
   }, [user?.id, user?.isAdmin]);
+
+  useEffect(() => {
+    const bgUrls = Object.values(designConfig?.pages || {})
+      .map((page) => String(page?.background?.image || "").trim())
+      .filter(Boolean);
+    bgUrls.slice(0, 12).forEach(preloadImage);
+  }, [designConfig]);
 
   useEffect(() => {
     let cancelled = false;
@@ -778,10 +847,10 @@ function App() {
       content = <HomePage user={user} activeCharacter={runtimeCharacter} openMy={() => setActivePage(PAGE.MY)} goCharacters={() => setActivePage(PAGE.CHARACTERS)} goInvestigations={() => setActivePage(PAGE.INVESTIGATIONS)} goShop={() => setActivePage(PAGE.SHOP)} goSD={() => setActivePage(PAGE.SD)} theme={theme} design={designConfig} />;
       break;
     case PAGE.SD:
-      content = <SDPage user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} />;
+      content = <SDPage user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} characters={sharedCharacters} />;
       break;
     case PAGE.CHARACTERS:
-      content = <CharacterGallery user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} />;
+      content = <CharacterGallery user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} characters={sharedCharacters} />;
       break;
     case PAGE.INVESTIGATIONS:
       content = runtimeCharacter || isAdmin

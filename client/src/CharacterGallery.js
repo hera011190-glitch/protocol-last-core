@@ -32,6 +32,14 @@ function CharacterCard({ character, onClick, theme }) {
   return <ProfileCard character={{ ...character, image: character?.cardImage || character?.image || "" }} onClick={onClick} theme={theme} isOnline={!!character.isOnline} />;
 }
 
+function preloadCardImage(url) {
+  const src = String(url || "").trim();
+  if (!src || typeof window === "undefined") return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = src;
+}
+
 
 async function fetchCharactersWithFallback() {
   const urls = [
@@ -62,8 +70,8 @@ function rankOrderValue(rank) {
   return 2;
 }
 
-export default function CharacterGallery({ user, activeCharacter, design, theme }) {
-  const [characters, setCharacters] = useState(() => readCachedCharacters());
+export default function CharacterGallery({ user, activeCharacter, design, theme, characters: sharedCharacters = [] }) {
+  const [characters, setCharacters] = useState(() => (Array.isArray(sharedCharacters) && sharedCharacters.length > 0 ? sharedCharacters : readCachedCharacters()));
   const [search, setSearch] = useState("");
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [onlineKeys, setOnlineKeys] = useState([]);
@@ -72,13 +80,22 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
   const loadStampRef = useRef(0);
   const content = design?.siteContent?.characters || {};
 
-  const loadCharacters = () => {
+  const loadCharacters = (forceRemote = false) => {
+    if (!forceRemote && Array.isArray(sharedCharacters) && sharedCharacters.length > 0) {
+      setCharacters(sharedCharacters);
+      sharedCharacters.slice(0, 24).forEach((row) => preloadCardImage(row?.cardImage || row?.image || row?.mainImage || ""));
+      writeCachedCharacters(sharedCharacters);
+      return;
+    }
     fetchCharactersWithFallback()
       .then((incoming) => {
         setCharacters((prev) => {
           const fallbackRows = prev.length > 0 ? prev : readCachedCharacters();
           const next = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-          if (next.length > 0) writeCachedCharacters(next);
+          if (next.length > 0) {
+            writeCachedCharacters(next);
+            next.slice(0, 24).forEach((row) => preloadCardImage(row?.cardImage || row?.image || row?.mainImage || ""));
+          }
           return next.length > 0 || prev.length === 0 ? next : prev;
         });
       })
@@ -96,6 +113,14 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
       return { ...latest, ...prev };
     });
   }, [characters, selectedCharacter?.id]);
+
+
+  useEffect(() => {
+    if (!Array.isArray(sharedCharacters) || sharedCharacters.length === 0) return;
+    setCharacters(sharedCharacters);
+    sharedCharacters.slice(0, 24).forEach((row) => preloadCardImage(row?.cardImage || row?.image || row?.mainImage || ""));
+    writeCachedCharacters(sharedCharacters);
+  }, [sharedCharacters]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -140,7 +165,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
       const now = Date.now();
       if (!force && now - loadStampRef.current < 8000) return;
       loadStampRef.current = now;
-      loadCharacters();
+      loadCharacters(force);
     };
     const handleVisible = () => {
       if (document.visibilityState === "visible") {
@@ -148,7 +173,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
       }
     };
     const handleCharacterUpdated = () => requestLoad(true);
-    requestLoad(true);
+    requestLoad(Array.isArray(sharedCharacters) && sharedCharacters.length === 0);
     socket.on("users", handleUsers);
     socket.on("onlineAccounts", handleUsers);
     document.addEventListener("visibilitychange", handleVisible);
@@ -170,7 +195,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
       window.removeEventListener("plc-character-updated", handleCharacterUpdated);
       clearInterval(timer);
     };
-  }, []);
+  }, [sharedCharacters]);
 
   const filteredCharacters = useMemo(() => {
     const keyword = search.trim().toLowerCase();

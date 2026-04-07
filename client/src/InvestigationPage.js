@@ -833,7 +833,6 @@ useEffect(() => {
       })
     : [];
   const battleInputLocked = battlePlaybackLocked;
-  const displayedBattleTurn = battleActive ? Math.max(1, Number(investigation?.battleTurn || 1) - (battlePlaybackLocked ? 1 : 0)) : Number(investigation?.battleTurn || 1);
 
   useEffect(() => {
     if (!battleActive) return;
@@ -924,21 +923,14 @@ useEffect(() => {
           const nextNodes = { ...(prev.data?.nodes || {}) };
           if (nextNodeId && nextNodes[nextNodeId]?.battle) {
             const finalBattleHp = Number(finalSnapshot.battleHp ?? nextNodes[nextNodeId].battle?.hp ?? 0);
-            if (finalBattleHp <= 0) {
-              nextNodes[nextNodeId] = {
-                ...nextNodes[nextNodeId],
-                battle: null,
-              };
-            } else {
-              nextNodes[nextNodeId] = {
-                ...nextNodes[nextNodeId],
-                battle: {
-                  ...nextNodes[nextNodeId].battle,
-                  hp: finalBattleHp,
-                  maxHp: Number(finalSnapshot.battleMaxHp ?? nextNodes[nextNodeId].battle?.maxHp ?? nextNodes[nextNodeId].battle?.hp ?? 0),
-                },
-              };
-            }
+            nextNodes[nextNodeId] = {
+              ...nextNodes[nextNodeId],
+              battle: {
+                ...nextNodes[nextNodeId].battle,
+                hp: Math.max(0, finalBattleHp),
+                maxHp: Number(finalSnapshot.battleMaxHp ?? nextNodes[nextNodeId].battle?.maxHp ?? nextNodes[nextNodeId].battle?.hp ?? 0),
+              },
+            };
           }
           return {
             ...prev,
@@ -952,10 +944,8 @@ useEffect(() => {
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      if (postPlaybackRefreshRef.current) {
-        postPlaybackRefreshRef.current = false;
-        loadInvestigation();
-      }
+      postPlaybackRefreshRef.current = false;
+      loadInvestigation();
     }, unlockDelay);
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
@@ -975,10 +965,6 @@ useEffect(() => {
         setStagedBattleLogs([]);
         setPlaybackState(null);
         setBattlePlaybackLocked(false);
-        if (postPlaybackRefreshRef.current) {
-          postPlaybackRefreshRef.current = false;
-          loadInvestigation();
-        }
       }
     }, 300);
     return () => clearInterval(timer);
@@ -1516,7 +1502,7 @@ useEffect(() => {
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>현재 위치: {currentNode?.name || "-"}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {overallProgressPercent}%</div>
-                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {displayedBattleTurn}</div> : null}
+                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {investigation.battleTurn || 1}</div> : null}
                   </div>
                   {leaderDown ? (
                     <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
@@ -2309,7 +2295,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {displayedBattleTurn}</div>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {investigation?.battleTurn || 1}</div>
       <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
       <div style={{ width: "min(520px, 100%)" }}>
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>
