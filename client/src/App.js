@@ -30,6 +30,7 @@ const AUDIO_VOLUME_KEY = "plc-audio-volume";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
+const CARD_CHARACTER_CACHE_KEY = "plc-cache-card-characters";
 
 const PAGE = {
   HOME: "home",
@@ -84,6 +85,7 @@ function readLocalArray(key) {
 function writeCharacterCaches(rows) {
   const safeRows = Array.isArray(rows) ? rows : [];
   try { localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
+  try { localStorage.setItem(CARD_CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
   try { localStorage.setItem(SD_CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
   try { sessionStorage.setItem(WARM_CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
 }
@@ -91,44 +93,6 @@ function writeCharacterCaches(rows) {
 function writeUserCharacterCache(userId, rows) {
   if (!userId) return;
   try { localStorage.setItem(`plc-cache-user-characters-${userId}`, JSON.stringify(Array.isArray(rows) ? rows : [])); } catch {}
-}
-
-function preloadImage(url) {
-  const src = String(url || "").trim();
-  if (!src || typeof window === "undefined") return;
-  const img = new Image();
-  img.decoding = "async";
-  img.src = src;
-}
-
-function extractCharacterImageUrls(rows = []) {
-  const urls = [];
-  const seen = new Set();
-  (Array.isArray(rows) ? rows : []).forEach((row) => {
-    [row?.spriteImage, row?.investigationImage, row?.cardImage, row?.image, row?.mainImage].forEach((value) => {
-      const src = String(value || "").trim();
-      if (!src || seen.has(src)) return;
-      seen.add(src);
-      urls.push(src);
-    });
-  });
-  return urls;
-}
-
-async function fetchSharedCharacters() {
-  const urls = [
-    `http://localhost:3001/characters-lite`,
-    `http://localhost:3001/characters`,
-  ];
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { cache: "default" });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-    } catch {}
-  }
-  return [];
 }
 
 function buildThemeVars(theme) {
@@ -340,8 +304,6 @@ function App() {
   const activeAudioSourceRef = useRef("");
   const characterRefreshStampRef = useRef(0);
   const presenceStampRef = useRef(0);
-  const sharedCharactersRefreshRef = useRef(0);
-  const [sharedCharacters, setSharedCharacters] = useState(() => readLocalArray(CHARACTER_CACHE_KEY));
 
   const isAdmin = !!user?.isAdmin;
 
@@ -363,18 +325,7 @@ function App() {
       return;
     }
     const saved = saveActiveCharacter(character);
-    const nextCharacter = saved || character;
-    setActiveCharacterState(nextCharacter);
-    setSharedCharacters((prev) => {
-      const list = Array.isArray(prev) ? [...prev] : [];
-      const idx = list.findIndex((row) => String(row?.id || "") === String(nextCharacter?.id || ""));
-      const merged = { ...(idx >= 0 ? list[idx] : {}), ...nextCharacter, cardImage: nextCharacter?.image || nextCharacter?.mainImage || nextCharacter?.cardImage || "", spriteImage: nextCharacter?.investigationImage || nextCharacter?.image || nextCharacter?.mainImage || nextCharacter?.spriteImage || "" };
-      if (idx >= 0) list[idx] = merged;
-      else list.push(merged);
-      writeCharacterCaches(list);
-      return list;
-    });
-    extractCharacterImageUrls([nextCharacter]).forEach(preloadImage);
+    setActiveCharacterState(saved || character);
   };
 
   const refreshActiveCharacter = async (character = activeCharacter, options = {}) => {
@@ -384,7 +335,7 @@ function App() {
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
     try {
-      const res = await fetch(`http://localhost:3001/character/${character.id}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`http://localhost:3001/character/${character.id}`);
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);
@@ -486,67 +437,34 @@ function App() {
     }
   }, [user?.id, user?.isAdmin]);
 
-
-  useEffect(() => {
-    const cached = readLocalArray(CHARACTER_CACHE_KEY);
-    if (cached.length > 0 && sharedCharacters.length === 0) {
-      setSharedCharacters(cached);
-      extractCharacterImageUrls(cached).slice(0, 24).forEach(preloadImage);
-    }
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
-    const warmCharacters = async (force = false) => {
-      const now = Date.now();
-      if (!force && now - sharedCharactersRefreshRef.current < 20000) return;
-      sharedCharactersRefreshRef.current = now;
-      const incoming = await fetchSharedCharacters();
-      if (cancelled || !Array.isArray(incoming) || incoming.length === 0) return;
-      setSharedCharacters(incoming);
-      writeCharacterCaches(incoming);
-      if (user?.id && !user?.isAdmin) {
-        writeUserCharacterCache(user.id, incoming.filter((row) => String(row?.ownerId || "") === String(user.id)));
-      }
-      extractCharacterImageUrls(incoming).slice(0, 24).forEach(preloadImage);
+    const warm = async () => {
+      try {
+        const [cardRes, sdRes] = await Promise.all([
+          fetch("http://localhost:3001/characters-card-summary"),
+          fetch("http://localhost:3001/characters-sd-summary"),
+        ]);
+        const [cardRows, sdRows] = await Promise.all([cardRes.json(), sdRes.json()]);
+        if (cancelled) return;
+        if (Array.isArray(cardRows) && cardRows.length > 0) {
+          try { localStorage.setItem(CARD_CHARACTER_CACHE_KEY, JSON.stringify(cardRows)); } catch {}
+          try { localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify(cardRows)); } catch {}
+          try { sessionStorage.setItem(WARM_CHARACTER_CACHE_KEY, JSON.stringify(cardRows)); } catch {}
+          if (user?.id && !user?.isAdmin) {
+            writeUserCharacterCache(user.id, cardRows.filter((row) => String(row?.ownerId || "") === String(user.id)));
+          }
+        }
+        if (Array.isArray(sdRows) && sdRows.length > 0) {
+          try { localStorage.setItem(SD_CHARACTER_CACHE_KEY, JSON.stringify(sdRows)); } catch {}
+        }
+      } catch {}
     };
-    warmCharacters(sharedCharacters.length === 0);
-    const handleVisible = () => {
-      if (document.visibilityState === "visible") warmCharacters(false);
-    };
-    const handleCharacterUpdated = (event) => {
-      const updated = event?.detail?.character;
-      if (updated?.id) {
-        setSharedCharacters((prev) => {
-          const list = Array.isArray(prev) ? [...prev] : [];
-          const idx = list.findIndex((row) => String(row?.id || "") === String(updated.id));
-          const merged = { ...(idx >= 0 ? list[idx] : {}), ...updated, cardImage: updated?.image || updated?.mainImage || updated?.cardImage || "", spriteImage: updated?.investigationImage || updated?.image || updated?.mainImage || updated?.spriteImage || "" };
-          if (idx >= 0) list[idx] = merged;
-          else list.push(merged);
-          writeCharacterCaches(list);
-          return list;
-        });
-        extractCharacterImageUrls([updated]).forEach(preloadImage);
-      }
-      warmCharacters(true);
-    };
-    document.addEventListener("visibilitychange", handleVisible);
-    window.addEventListener("focus", handleVisible);
-    window.addEventListener("plc-character-updated", handleCharacterUpdated);
+    warm();
     return () => {
       cancelled = true;
-      document.removeEventListener("visibilitychange", handleVisible);
-      window.removeEventListener("focus", handleVisible);
-      window.removeEventListener("plc-character-updated", handleCharacterUpdated);
     };
   }, [user?.id, user?.isAdmin]);
-
-  useEffect(() => {
-    const bgUrls = Object.values(designConfig?.pages || {})
-      .map((page) => String(page?.background?.image || "").trim())
-      .filter(Boolean);
-    bgUrls.slice(0, 12).forEach(preloadImage);
-  }, [designConfig]);
 
   useEffect(() => {
     let cancelled = false;
@@ -565,7 +483,7 @@ function App() {
     };
 
     const fetchDesign = () => {
-      fetch(`http://localhost:3001/designConfig?t=${Date.now()}`, { cache: "no-store" })
+      fetch(`http://localhost:3001/designConfig`)
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
@@ -847,10 +765,10 @@ function App() {
       content = <HomePage user={user} activeCharacter={runtimeCharacter} openMy={() => setActivePage(PAGE.MY)} goCharacters={() => setActivePage(PAGE.CHARACTERS)} goInvestigations={() => setActivePage(PAGE.INVESTIGATIONS)} goShop={() => setActivePage(PAGE.SHOP)} goSD={() => setActivePage(PAGE.SD)} theme={theme} design={designConfig} />;
       break;
     case PAGE.SD:
-      content = <SDPage user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} characters={sharedCharacters} />;
+      content = <SDPage user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} />;
       break;
     case PAGE.CHARACTERS:
-      content = <CharacterGallery user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} characters={sharedCharacters} />;
+      content = <CharacterGallery user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} />;
       break;
     case PAGE.INVESTIGATIONS:
       content = runtimeCharacter || isAdmin

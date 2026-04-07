@@ -109,7 +109,7 @@ const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 
 function readCachedSdCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
+    const raw = localStorage.getItem(SD_CHARACTER_CACHE_KEY) || sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -128,26 +128,17 @@ function writeCachedSdCharacters(rows) {
 }
 
 function getSpriteImage(character) {
-  return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
-}
-
-function preloadSprite(src) {
-  const url = String(src || "").trim();
-  if (!url || typeof window === "undefined") return;
-  const img = new Image();
-  img.decoding = "async";
-  img.src = url;
+  return character?.investigationImage || character?.spriteImage || character?.image || character?.mainImage || "";
 }
 
 async function fetchCharactersWithFallback() {
-  const now = Date.now();
   const urls = [
-    buildApiUrl(`/characters-lite?t=${now}`),
-    buildApiUrl(`/characters?t=${now}`),
+    buildApiUrl(`/characters-sd-summary`),
+    buildApiUrl(`/characters-lite`),
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
@@ -175,24 +166,23 @@ function CharacterSprite({ character, quote, moving, onClick }) {
         </div>
       ) : null}
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
-      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
+      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: `drop-shadow(0 12px 18px rgba(0,0,0,0.22)) saturate(${1 + corrosion / 180}) hue-rotate(${-corrosion / 5}deg)` }}>
         {spriteImage ? (
           <>
-            <img src={spriteImage} alt="" loading="eager" decoding="sync" fetchPriority="high" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1, filter: `drop-shadow(0 12px 18px rgba(0,0,0,0.22)) saturate(${1 + corrosion / 170})` }} />
-            {tintOpacity > 0 ? (
-              <div
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  inset: "12% 18% 6% 18%",
-                  zIndex: 0,
-                  opacity: Math.min(0.42, tintOpacity * 0.72),
-                  pointerEvents: "none",
-                  borderRadius: "50%",
-                  background: "radial-gradient(circle at 50% 72%, rgba(255,84,84,0.72), rgba(190,0,0,0.18) 55%, rgba(190,0,0,0) 100%)",
-                }}
-              />
-            ) : null}
+            <img src={spriteImage} alt="" loading="eager" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1, opacity: Math.max(0.62, 1 - tintOpacity * 0.18) }} />
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: "12% 18% 6% 18%",
+                zIndex: 2,
+                opacity: Math.min(0.46, tintOpacity * 0.72),
+                pointerEvents: "none",
+                borderRadius: "45% 45% 22% 22%",
+                background: "radial-gradient(circle at 50% 18%, rgba(255,122,122,0.08), rgba(166,0,0,0.38))",
+                mixBlendMode: "multiply",
+              }}
+            />
           </>
         ) : null}
       </div>
@@ -200,8 +190,8 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   );
 }
 
-export default function SDPage({ activeCharacter, design, theme, characters: sharedCharacters = [] }) {
-  const [characters, setCharacters] = useState(() => (Array.isArray(sharedCharacters) && sharedCharacters.length > 0 ? sharedCharacters : readCachedSdCharacters()));
+export default function SDPage({ activeCharacter, design, theme }) {
+  const [characters, setCharacters] = useState(() => readCachedSdCharacters());
   const [activeMapId, setActiveMapId] = useState("");
   const [quotes, setQuotes] = useState({});
   const [selectedCharacter, setSelectedCharacter] = useState(null);
@@ -226,44 +216,34 @@ export default function SDPage({ activeCharacter, design, theme, characters: sha
 
   useEffect(() => {
     let cancelled = false;
-
-    const applyRows = (rows) => {
-      const next = mergeCharacterStates([], rows, maps);
-      setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
-      if (next.length > 0) {
-        writeCachedSdCharacters(next);
-        next.slice(0, 20).forEach((row) => preloadSprite(getSpriteImage(row)));
-      }
-      if (!activeMapId) {
-        const sourceRows = next.length > 0 ? next : mergeCharacterStates([], readCachedSdCharacters(), maps);
-        const mine = sourceRows.find((v) => String(v.id) === String(activeCharacter?.id));
-        setActiveMapId((prev) => prev || mine?.currentMap || maps[0]?.id || "");
-      }
-    };
-
-    if (Array.isArray(sharedCharacters) && sharedCharacters.length > 0) {
-      applyRows(sharedCharacters);
-      return () => { cancelled = true; };
-    }
-
     const loadCharacters = async () => {
       const incoming = await fetchCharactersWithFallback();
       if (cancelled) return;
       const fallbackRows = readCachedSdCharacters();
       const finalRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-      applyRows(finalRows);
+      const next = mergeCharacterStates([], finalRows, maps);
+      setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
+      if (next.length > 0) writeCachedSdCharacters(next);
+      if (!activeMapId) {
+        const sourceRows = next.length > 0 ? next : mergeCharacterStates([], fallbackRows, maps);
+        const mine = sourceRows.find((v) => String(v.id) === String(activeCharacter?.id));
+        setActiveMapId(mine?.currentMap || maps[0]?.id || "");
+      }
     };
     loadCharacters().catch(() => {
-      if (cancelled) return;
-      const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
-      setCharacters((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : cached));
+      setCharacters((prev) => {
+        if (Array.isArray(prev) && prev.length > 0) return prev;
+        const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
+        return cached;
+      });
       if (!activeMapId) {
+        const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
         const mine = cached.find((v) => String(v.id) === String(activeCharacter?.id));
         setActiveMapId((prev) => prev || mine?.currentMap || maps[0]?.id || "");
       }
     });
     return () => { cancelled = true; };
-  }, [activeCharacter?.id, maps, sharedCharacters]);
+  }, [activeCharacter?.id, maps]);
 
   useEffect(() => {
     if (!characters.length) return;

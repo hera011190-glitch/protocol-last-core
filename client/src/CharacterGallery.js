@@ -32,23 +32,15 @@ function CharacterCard({ character, onClick, theme }) {
   return <ProfileCard character={{ ...character, image: character?.cardImage || character?.image || "" }} onClick={onClick} theme={theme} isOnline={!!character.isOnline} />;
 }
 
-function preloadCardImage(url) {
-  const src = String(url || "").trim();
-  if (!src || typeof window === "undefined") return;
-  const img = new Image();
-  img.decoding = "async";
-  img.src = src;
-}
-
 
 async function fetchCharactersWithFallback() {
   const urls = [
-    buildApiUrl(`/characters-lite?t=${Date.now()}`),
-    buildApiUrl(`/characters?t=${Date.now()}`),
+    buildApiUrl(`/characters-card-summary`),
+    buildApiUrl(`/characters-lite`),
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
@@ -58,7 +50,7 @@ async function fetchCharactersWithFallback() {
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(buildApiUrl(`/character/${characterId}?t=${Date.now()}`), { cache: "no-store" });
+  const res = await fetch(buildApiUrl(`/character/${characterId}`));
   const data = await res.json();
   return data?.character || null;
 }
@@ -70,8 +62,8 @@ function rankOrderValue(rank) {
   return 2;
 }
 
-export default function CharacterGallery({ user, activeCharacter, design, theme, characters: sharedCharacters = [] }) {
-  const [characters, setCharacters] = useState(() => (Array.isArray(sharedCharacters) && sharedCharacters.length > 0 ? sharedCharacters : readCachedCharacters()));
+export default function CharacterGallery({ user, activeCharacter, design, theme }) {
+  const [characters, setCharacters] = useState(() => readCachedCharacters());
   const [search, setSearch] = useState("");
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [onlineKeys, setOnlineKeys] = useState([]);
@@ -80,22 +72,13 @@ export default function CharacterGallery({ user, activeCharacter, design, theme,
   const loadStampRef = useRef(0);
   const content = design?.siteContent?.characters || {};
 
-  const loadCharacters = (forceRemote = false) => {
-    if (!forceRemote && Array.isArray(sharedCharacters) && sharedCharacters.length > 0) {
-      setCharacters(sharedCharacters);
-      sharedCharacters.slice(0, 24).forEach((row) => preloadCardImage(row?.cardImage || row?.image || row?.mainImage || ""));
-      writeCachedCharacters(sharedCharacters);
-      return;
-    }
+  const loadCharacters = () => {
     fetchCharactersWithFallback()
       .then((incoming) => {
         setCharacters((prev) => {
           const fallbackRows = prev.length > 0 ? prev : readCachedCharacters();
           const next = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-          if (next.length > 0) {
-            writeCachedCharacters(next);
-            next.slice(0, 24).forEach((row) => preloadCardImage(row?.cardImage || row?.image || row?.mainImage || ""));
-          }
+          if (next.length > 0) writeCachedCharacters(next);
           return next.length > 0 || prev.length === 0 ? next : prev;
         });
       })
@@ -113,14 +96,6 @@ export default function CharacterGallery({ user, activeCharacter, design, theme,
       return { ...latest, ...prev };
     });
   }, [characters, selectedCharacter?.id]);
-
-
-  useEffect(() => {
-    if (!Array.isArray(sharedCharacters) || sharedCharacters.length === 0) return;
-    setCharacters(sharedCharacters);
-    sharedCharacters.slice(0, 24).forEach((row) => preloadCardImage(row?.cardImage || row?.image || row?.mainImage || ""));
-    writeCachedCharacters(sharedCharacters);
-  }, [sharedCharacters]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -165,7 +140,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme,
       const now = Date.now();
       if (!force && now - loadStampRef.current < 8000) return;
       loadStampRef.current = now;
-      loadCharacters(force);
+      loadCharacters();
     };
     const handleVisible = () => {
       if (document.visibilityState === "visible") {
@@ -173,7 +148,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme,
       }
     };
     const handleCharacterUpdated = () => requestLoad(true);
-    requestLoad(Array.isArray(sharedCharacters) && sharedCharacters.length === 0);
+    requestLoad(true);
     socket.on("users", handleUsers);
     socket.on("onlineAccounts", handleUsers);
     document.addEventListener("visibilitychange", handleVisible);
@@ -195,7 +170,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme,
       window.removeEventListener("plc-character-updated", handleCharacterUpdated);
       clearInterval(timer);
     };
-  }, [sharedCharacters]);
+  }, []);
 
   const filteredCharacters = useMemo(() => {
     const keyword = search.trim().toLowerCase();

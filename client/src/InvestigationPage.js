@@ -234,11 +234,13 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     if (previewMode) return;
     if (!character?.id && !character?.name) return;
     try {
-      const res = await apiFetch(`/characters?t=${Date.now()}`, { cache: "no-store" });
-      const list = await res.json();
-      const rows = Array.isArray(list) ? list : [];
-      const found = rows.find((item) => String(item.id) === String(character?.id)) || rows.find((item) => item.name === character?.name);
-      setInventoryItems(Array.isArray(found?.items) ? found.items : Array.isArray(character?.items) ? character.items : []);
+      if (character?.id) {
+        const res = await apiFetch(`/character/${character.id}`);
+        const data = await res.json();
+        setInventoryItems(Array.isArray(data?.character?.items) ? data.character.items : Array.isArray(character?.items) ? character.items : []);
+        return;
+      }
+      setInventoryItems(Array.isArray(character?.items) ? character.items : []);
     } catch (err) {
       console.error("loadCharacterInventory error", err);
       setInventoryItems(Array.isArray(character?.items) ? character.items : []);
@@ -923,14 +925,21 @@ useEffect(() => {
           const nextNodes = { ...(prev.data?.nodes || {}) };
           if (nextNodeId && nextNodes[nextNodeId]?.battle) {
             const finalBattleHp = Number(finalSnapshot.battleHp ?? nextNodes[nextNodeId].battle?.hp ?? 0);
-            nextNodes[nextNodeId] = {
-              ...nextNodes[nextNodeId],
-              battle: {
-                ...nextNodes[nextNodeId].battle,
-                hp: Math.max(0, finalBattleHp),
-                maxHp: Number(finalSnapshot.battleMaxHp ?? nextNodes[nextNodeId].battle?.maxHp ?? nextNodes[nextNodeId].battle?.hp ?? 0),
-              },
-            };
+            if (finalBattleHp <= 0) {
+              nextNodes[nextNodeId] = {
+                ...nextNodes[nextNodeId],
+                battle: null,
+              };
+            } else {
+              nextNodes[nextNodeId] = {
+                ...nextNodes[nextNodeId],
+                battle: {
+                  ...nextNodes[nextNodeId].battle,
+                  hp: finalBattleHp,
+                  maxHp: Number(finalSnapshot.battleMaxHp ?? nextNodes[nextNodeId].battle?.maxHp ?? nextNodes[nextNodeId].battle?.hp ?? 0),
+                },
+              };
+            }
           }
           return {
             ...prev,
@@ -944,8 +953,9 @@ useEffect(() => {
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      postPlaybackRefreshRef.current = false;
-      loadInvestigation();
+      if (postPlaybackRefreshRef.current) {
+        postPlaybackRefreshRef.current = false;
+      }
     }, unlockDelay);
     return () => {
       timers.forEach((timer) => clearTimeout(timer));

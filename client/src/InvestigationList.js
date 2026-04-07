@@ -86,7 +86,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      fetch(`http://localhost:3001/investigations?t=${Date.now()}`)
+      fetch(`http://localhost:3001/investigations`)
         .then((res) => res.json())
         .then((data) => {
           if (cancelled) return;
@@ -151,7 +151,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
 
   const openCompletedDetail = async (item) => {
     try {
-      const res = await fetch(`http://localhost:3001/investigations/${item.id}?t=${Date.now()}`);
+      const res = await fetch(`http://localhost:3001/investigations/${item.id}`);
       const data = await res.json();
       setCompletedDetail(data);
       setCompletedOpenId(item.id);

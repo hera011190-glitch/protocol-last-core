@@ -455,8 +455,6 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
     if (useType === "heal") {
       patch.currentHp = Math.min(maxHp, Number(currentUser.currentHp || maxHp) + useValue);
-    } else if (useType === "corrosionHeal") {
-      patch.corrosion = Math.max(0, Number(currentUser?.corrosion || 0) - useValue);
     } else if (useType === "statPoint") {
       patch.statPoints = Number(currentUser.statPoints || 0) + useValue;
     } else if (useType === "skill") {
@@ -465,6 +463,8 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
         skills.push(typeof nextSkill === "string" ? { key: nextSkill, name: meta.skillName || nextSkill } : nextSkill);
       }
       patch.skills = skills;
+    } else if (useType === "corrosionHeal") {
+      patch.corrosion = Math.max(0, Math.min(100, Number(currentUser.corrosion || 0) - useValue));
     } else if (useType === "statBoost") {
       if (statTarget === "hp") stats.hp = getHpStatValue(stats.hp) + useValue;
       if (statTarget === "def") stats.def = Number(stats.def || 0) + useValue;
