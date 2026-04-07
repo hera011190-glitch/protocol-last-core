@@ -105,11 +105,12 @@ function SDInfoModal({ character, onClose, theme }) {
 }
 
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
+const CHARACTER_CACHE_KEY = "plc-cache-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 
 function readCachedSdCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
+    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY) || localStorage.getItem(CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -128,17 +129,17 @@ function writeCachedSdCharacters(rows) {
 }
 
 function getSpriteImage(character) {
-  const sprite = character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || character?.cardImage || "";
-  if (sprite) return sprite;
-  return "";
+  return character?.investigationImage || character?.spriteImage || character?.mainImage || character?.image || "";
 }
 
-function preloadSpriteImage(character) {
-  const src = getSpriteImage(character);
-  if (!src) return;
-  const img = new Image();
-  img.decoding = "async";
-  img.src = src;
+function preloadSpriteImage(src) {
+  const value = String(src || "").trim();
+  if (!value) return;
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = value;
+  } catch {}
 }
 
 async function fetchCharactersWithFallback() {
@@ -240,7 +241,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const fallbackRows = readCachedSdCharacters();
       const finalRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
       const next = mergeCharacterStates([], finalRows, maps);
-      next.forEach(preloadSpriteImage);
+      next.forEach((row) => preloadSpriteImage(getSpriteImage(row)));
       setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
       if (next.length > 0) writeCachedSdCharacters(next);
       if (!activeMapId) {
@@ -253,6 +254,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       setCharacters((prev) => {
         if (Array.isArray(prev) && prev.length > 0) return prev;
         const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
+        cached.forEach((row) => preloadSpriteImage(getSpriteImage(row)));
         return cached;
       });
       if (!activeMapId) {
@@ -395,6 +397,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
           const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
           const next = mergeCharacterStates(prev, sourceRows, maps);
+          next.forEach((row) => preloadSpriteImage(getSpriteImage(row)));
           if (next.length > 0) writeCachedSdCharacters(next);
           return next.length > 0 || prev.length === 0 ? next : prev;
         });

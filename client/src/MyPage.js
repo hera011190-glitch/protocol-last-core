@@ -458,7 +458,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     } else if (useType === "statPoint") {
       patch.statPoints = Number(currentUser.statPoints || 0) + useValue;
     } else if (useType === "corrosionHeal") {
-      patch.corrosion = Math.max(0, Number(currentUser.corrosion || 0) - useValue);
+      patch.corrosion = Math.max(0, Math.min(100, Number(currentUser.corrosion || 0) - useValue));
     } else if (useType === "skill") {
       const nextSkill = meta.skillKey || meta.skillName || meta.useValue;
       if (nextSkill && !skills.some((skill) => getSkillLabel(skill) === String(nextSkill))) {

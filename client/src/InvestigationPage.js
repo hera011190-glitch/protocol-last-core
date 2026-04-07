@@ -833,7 +833,7 @@ useEffect(() => {
       })
     : [];
   const battleInputLocked = battlePlaybackLocked;
-  const shownBattleTurn = battleActive ? Math.max(1, Number(investigation?.battleTurn || 1) - (battlePlaybackLocked ? 1 : 0)) : Number(investigation?.battleTurn || 1);
+  const displayedBattleTurn = battleActive ? Math.max(1, Number(investigation?.battleTurn || 1) - (battlePlaybackLocked ? 1 : 0)) : Number(investigation?.battleTurn || 1);
 
   useEffect(() => {
     if (!battleActive) return;
@@ -954,6 +954,7 @@ useEffect(() => {
       setBattlePlaybackLocked(false);
       if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
+        loadInvestigation();
       }
     }, unlockDelay);
     return () => {
@@ -974,6 +975,10 @@ useEffect(() => {
         setStagedBattleLogs([]);
         setPlaybackState(null);
         setBattlePlaybackLocked(false);
+        if (postPlaybackRefreshRef.current) {
+          postPlaybackRefreshRef.current = false;
+          loadInvestigation();
+        }
       }
     }, 300);
     return () => clearInterval(timer);
@@ -1511,7 +1516,7 @@ useEffect(() => {
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>현재 위치: {currentNode?.name || "-"}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {overallProgressPercent}%</div>
-                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {shownBattleTurn}</div> : null}
+                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {displayedBattleTurn}</div> : null}
                   </div>
                   {leaderDown ? (
                     <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
@@ -1560,7 +1565,7 @@ useEffect(() => {
                 ) : (
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
-                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} shownBattleTurn={shownBattleTurn} />
+                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} />
                       <div style={{ marginTop: 12 }}>
                         <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                       </div>
@@ -2284,7 +2289,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   );
 }
 
-function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now(), shownBattleTurn = 1 }) {
+function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now() }) {
   const battle = node?.battle;
   if (!battle) return null;
   const hp = Number(battle.hp || 0);
@@ -2304,7 +2309,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {shownBattleTurn}</div>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {displayedBattleTurn}</div>
       <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
       <div style={{ width: "min(520px, 100%)" }}>
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>

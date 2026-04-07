@@ -23,6 +23,7 @@ import { clearActiveCharacterStorage, readActiveCharacter, saveActiveCharacter }
 import socket from "./socket";
 import { applyDomOverrides } from "./designDomUtils";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
+import { buildApiUrl } from "./api";
 
 const DESIGN_CACHE_KEY = "plc-design-cache";
 const AUDIO_MUTE_KEY = "plc-audio-muted";
@@ -93,22 +94,14 @@ function writeUserCharacterCache(userId, rows) {
   try { localStorage.setItem(`plc-cache-user-characters-${userId}`, JSON.stringify(Array.isArray(rows) ? rows : [])); } catch {}
 }
 
-function preloadImage(src) {
+function preloadCharacterAsset(src) {
   const value = String(src || "").trim();
   if (!value) return;
-  const img = new Image();
-  img.decoding = "async";
-  img.src = value;
-}
-
-function warmCharacterAssets(rows) {
-  (Array.isArray(rows) ? rows : []).forEach((row) => {
-    preloadImage(row?.image);
-    preloadImage(row?.cardImage);
-    preloadImage(row?.spriteImage);
-    preloadImage(row?.investigationImage);
-    preloadImage(row?.mainImage);
-  });
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = value;
+  } catch {}
 }
 
 function buildThemeVars(theme) {
@@ -453,32 +446,37 @@ function App() {
     }
   }, [user?.id, user?.isAdmin]);
 
-  useEffect(() => {
-    const cached = readLocalArray(CHARACTER_CACHE_KEY);
-    if (cached.length > 0) {
-      warmCharacterAssets(cached);
-    }
 
+  useEffect(() => {
     let cancelled = false;
+
     const warmCharacters = async () => {
-      try {
-        const res = await fetch(`http://localhost:3001/characters-lite?t=${Date.now()}`, { cache: "no-store" });
-        const data = await res.json();
-        if (cancelled || !Array.isArray(data) || data.length === 0) return;
-        writeCharacterCaches(data);
-        warmCharacterAssets(data);
-        if (user?.id && !user?.isAdmin) {
-          writeUserCharacterCache(user.id, data.filter((row) => String(row?.ownerId || "") === String(user.id)));
-        }
-      } catch {
-        // ignore warm fetch errors
+      const urls = [
+        buildApiUrl(`/characters-lite?t=${Date.now()}`),
+        buildApiUrl(`/characters?t=${Date.now()}`),
+      ];
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) continue;
+          const rows = await res.json();
+          if (!Array.isArray(rows) || rows.length === 0) continue;
+          if (cancelled) return;
+          writeCharacterCaches(rows);
+          if (user?.id && !user?.isAdmin) {
+            writeUserCharacterCache(user.id, rows.filter((row) => String(row?.ownerId || "") === String(user.id)));
+          }
+          rows.forEach((row) => {
+            preloadCharacterAsset(row?.spriteImage || row?.investigationImage || "");
+            preloadCharacterAsset(row?.cardImage || row?.mainImage || row?.image || "");
+          });
+          return;
+        } catch {}
       }
     };
 
     warmCharacters();
-    return () => {
-      cancelled = true
-    };
+    return () => { cancelled = true; };
   }, [user?.id, user?.isAdmin]);
 
   useEffect(() => {
