@@ -3085,7 +3085,7 @@ if (fs.existsSync(clientBuildPath)) {
     lastModified: true,
     maxAge: "7d",
     setHeaders(res, filePath) {
-      if (String(filePath || "").toLowerCase().endswith(".html")) {
+      if (String(filePath || "").toLowerCase().endsWith(".html")) {
         res.setHeader("Cache-Control", "no-cache");
       }
     },
