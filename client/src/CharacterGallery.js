@@ -29,7 +29,7 @@ function writeCachedCharacters(rows) {
 }
 
 function CharacterCard({ character, onClick, theme }) {
-  return <ProfileCard character={{ ...character, image: character?.cardImage || character?.profileImage || character?.image || character?.spriteImage || "" }} onClick={onClick} theme={theme} isOnline={!!character.isOnline} />;
+  return <ProfileCard character={{ ...character, image: character?.mainImage || character?.cardImage || character?.profileImage || character?.image || character?.spriteImage || "" }} onClick={onClick} theme={theme} isOnline={!!character.isOnline} />;
 }
 
 

@@ -2159,6 +2159,7 @@ app.post("/setBattleAction", (req, res) => {
       participantStates: item.participantStates,
       battleTurn: item.battleTurn,
       lastBattleRound: item.lastBattleRound,
+      investigation: buildPublicInvestigationState(item),
     });
   }
 
@@ -2180,6 +2181,7 @@ app.post("/submitBattleTurn", (req, res) => {
     participantStates: item.participantStates,
     battleTurn: item.battleTurn,
     lastBattleRound: item.lastBattleRound,
+    investigation: buildPublicInvestigationState(item),
   });
 });
 
@@ -2191,7 +2193,7 @@ app.post("/battleAction", (req, res) => {
   if (actionName === "도주" || actionName === "도주 선택" || actionName === "파티 도주") {
     const outcome = resolveFlee(item);
     if (!outcome.success) return res.json(outcome);
-    return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, participantStates: item.participantStates, battleTurn: item.battleTurn });
+    return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, participantStates: item.participantStates, battleTurn: item.battleTurn, investigation: buildPublicInvestigationState(item) });
   }
   return res.json({ success: false, message: "지원되지 않는 전투 처리입니다." });
 });

@@ -620,7 +620,8 @@ useEffect(() => {
     if (data.character) {
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     }
-    loadInvestigation();
+    if (data.investigation) applyInvestigation(data.investigation);
+    else loadInvestigation();
   };
 
   const saveMyBattleAction = async (actionOverride = "") => {
@@ -656,13 +657,17 @@ useEffect(() => {
       if (data.autoSubmitted && Array.isArray(data.lastBattleRound) && data.lastBattleRound.length > 0) {
         postPlaybackRefreshRef.current = true;
       }
-      setInvestigation((prev) => prev ? ({
-        ...prev,
-        pendingBattleActions: data.autoSubmitted ? {} : (data.pendingBattleActions || { ...(prev.pendingBattleActions || {}), [character.name]: nextAction }),
-        participantStates: data.autoSubmitted ? prev.participantStates : (data.participantStates || prev.participantStates),
-        battleTurn: data.battleTurn || prev.battleTurn,
-        lastBattleRound: Array.isArray(data.lastBattleRound) ? data.lastBattleRound : prev.lastBattleRound,
-      }) : prev);
+      if (data.investigation) {
+        applyInvestigation(data.investigation);
+      } else {
+        setInvestigation((prev) => prev ? ({
+          ...prev,
+          pendingBattleActions: data.autoSubmitted ? {} : (data.pendingBattleActions || { ...(prev.pendingBattleActions || {}), [character.name]: nextAction }),
+          participantStates: data.autoSubmitted ? (data.participantStates || prev.participantStates) : (data.participantStates || prev.participantStates),
+          battleTurn: data.battleTurn || prev.battleTurn,
+          lastBattleRound: Array.isArray(data.lastBattleRound) ? data.lastBattleRound : prev.lastBattleRound,
+        }) : prev);
+      }
       if (data.currentNodeId) setCurrentNodeId(data.currentNodeId);
       if (data.autoSubmitted) {
         setMyBattleAction("");
@@ -698,7 +703,8 @@ useEffect(() => {
       alert(data.message || "턴 처리에 실패했습니다.");
       return;
     }
-    loadInvestigation();
+    if (data.investigation) applyInvestigation(data.investigation);
+    else loadInvestigation();
   };
 
   const endInvestigationNow = async () => {
