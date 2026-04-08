@@ -275,8 +275,8 @@ export default function AdminShopManager({ goBack }) {
               <option value="heal">HP 회복</option>
               <option value="statBoost">스텟 추가</option>
               <option value="statPoint">스탯 포인트</option>
-              <option value="corrosionHeal">침식도 감소</option>
               <option value="skill">스킬</option>
+              <option value="corrosionHeal">침식도 감소</option>
             </select>
           </label>
 
@@ -344,8 +344,8 @@ function itemTypeLabel(item) {
   if (type === "heal") return `HP 회복 ${Number(item.useValue || 0)}`;
   if (type === "statBoost") return `${String(item.statTarget || "hp").toUpperCase()} +${Number(item.useValue || 0)}`;
   if (type === "statPoint") return `스탯 포인트 +${Number(item.useValue || 0)}`;
-  if (type === "corrosionHeal") return `침식도 -${Number(item.useValue || 0)}`;
   if (type === "skill") return `스킬 ${item.skillName || item.name || item.useValue || ""} · ${item.skillEffect || "damage"} · 쿨 ${Number(item.cooldownTurns || 0)}턴`;
+  if (type === "corrosionHeal") return `침식도 -${Number(item.useValue || 0)}`;
   return "사용 불가";
 }
 

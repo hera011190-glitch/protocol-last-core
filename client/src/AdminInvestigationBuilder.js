@@ -43,8 +43,8 @@ function emptyBuilder() {
     backgroundImage: "",
     bgmUrl: "",
     bgmVolume: 1,
-    entryCorrosion: 0,
     start: "start",
+    entryCorrosion: 0,
     nodes: [createNode("start")],
   };
 }
@@ -124,10 +124,10 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     entryCorrosion: Number(builder.entryCorrosion || 0),
     data: {
       start: builder.start,
+      entryCorrosion: Number(builder.entryCorrosion || 0),
       backgroundImage: builder.backgroundImage,
       bgmUrl: builder.bgmUrl,
       bgmVolume: builder.bgmVolume,
-      entryCorrosion: Number(builder.entryCorrosion || 0),
       nodes: Object.fromEntries(builder.nodes.map((node) => [node.id, {
         name: node.name || node.id,
         log: node.log || "",
@@ -229,8 +229,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const backgroundImage = json?.backgroundImage || json?.data?.backgroundImage || template?.backgroundImage || template?.data?.backgroundImage || "";
     const bgmUrl = json?.bgmUrl || json?.data?.bgmUrl || template?.bgmUrl || template?.data?.bgmUrl || "";
     const bgmVolume = Math.max(0, Math.min(1, Number(json?.bgmVolume ?? json?.data?.bgmVolume ?? template?.bgmVolume ?? template?.data?.bgmVolume ?? 1) || 1));
-    const entryCorrosion = Math.max(0, Number(json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0) || 0);
-    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, bgmUrl, bgmVolume, entryCorrosion, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
+    const entryCorrosion = Number(json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0);
+    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, bgmUrl, bgmVolume, start: startNodeId, entryCorrosion, nodes: nodes.length ? nodes : [createNode("start")] });
     setSelectedNodeId(startNodeId);
     setMessage(`${template.title} 불러오기 완료`);
   };
@@ -417,8 +417,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 제목</div><input value={builder.title} onChange={(e) => setBuilder((prev) => ({ ...prev, title: e.target.value }))} placeholder="조사 제목" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 종류</div><select value={builder.type} onChange={(e) => setBuilder((prev) => ({ ...prev, type: e.target.value }))} style={inputStyle}><option value="group">단체조사</option><option value="daily">일일조사</option></select></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>시작 노드</div><select value={builder.start} onChange={(e) => setBuilder((prev) => ({ ...prev, start: e.target.value }))} style={inputStyle}>{builder.nodes.map((node) => <option key={node.id} value={node.id}>{node.name || node.id}</option>)}</select></div>
-          <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 최초 진입 침식 진행도</div><input type="number" min="0" value={builder.entryCorrosion || 0} onChange={(e) => setBuilder((prev) => ({ ...prev, entryCorrosion: Number(e.target.value || 0) }))} placeholder="최초 진입 시 침식 증가" style={inputStyle} /></div>
-          <div style={{ color: "#6a87a3", fontSize: 12, lineHeight: 1.7, marginTop: -2 }}>조사를 처음 시작할 때만 1회 적용돼. 복귀/재입장에는 오르지 않아. 0이면 침식이 오르지 않아.</div>
+          <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>최초 진입 침식 진행도</div><input type="number" value={builder.entryCorrosion || 0} onChange={(e) => setBuilder((prev) => ({ ...prev, entryCorrosion: Number(e.target.value || 0) }))} placeholder="0" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 8 }}>
             <label>조사 배경 이미지 업로드</label>
             <ImageDropInput label="조사 배경 이미지" value={builder.backgroundImage || ""} onChange={(value) => setBuilder((prev) => ({ ...prev, backgroundImage: value }))} previewHeight={180} previewFit="cover" compact />

@@ -206,9 +206,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const loadInvestigation = async () => {
     if (previewMode) return;
     try {
-      const res = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      const res = await apiFetch(`/investigations-lite/${investigationId}`);
       const data = await res.json();
       applyInvestigation(data);
     } catch (err) {
@@ -219,9 +217,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const loadChats = async () => {
     if (previewMode) return;
     try {
-      const res = await apiFetch(`/investigationChats/${investigationId}?t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      const res = await apiFetch(`/investigationChats/${investigationId}`);
       const data = await res.json();
       setChat((Array.isArray(data) ? data : []).slice(-120));
     } catch (err) {
@@ -234,13 +230,9 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     if (previewMode) return;
     if (!character?.id && !character?.name) return;
     try {
-      if (character?.id) {
-        const res = await apiFetch(`/character/${character.id}`);
-        const data = await res.json();
-        setInventoryItems(Array.isArray(data?.character?.items) ? data.character.items : Array.isArray(character?.items) ? character.items : []);
-        return;
-      }
-      setInventoryItems(Array.isArray(character?.items) ? character.items : []);
+      const res = await apiFetch(`/character-inventory/${character.id}`);
+      const data = await res.json();
+      setInventoryItems(Array.isArray(data?.items) ? data.items : Array.isArray(character?.items) ? character.items : []);
     } catch (err) {
       console.error("loadCharacterInventory error", err);
       setInventoryItems(Array.isArray(character?.items) ? character.items : []);
@@ -589,8 +581,8 @@ useEffect(() => {
       alert(data.message || "이동에 실패했습니다.");
       return;
     }
-    loadInvestigation();
-    loadCharacterInventory();
+    window.setTimeout(() => loadInvestigation(), 90);
+    window.setTimeout(() => loadCharacterInventory(), 120);
   };
 
   const runInvestigationButton = async (label) => {
@@ -605,8 +597,8 @@ useEffect(() => {
       alert(data.message || "조사 실행에 실패했습니다.");
       return;
     }
-    loadInvestigation();
-    loadCharacterInventory();
+    window.setTimeout(() => loadInvestigation(), 90);
+    window.setTimeout(() => loadCharacterInventory(), 120);
   };
 
   const fleeFromBattle = async () => {
@@ -624,7 +616,7 @@ useEffect(() => {
     if (data.character) {
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     }
-    loadInvestigation();
+    window.setTimeout(() => loadInvestigation(), 90);
   };
 
   const saveMyBattleAction = async (actionOverride = "") => {
@@ -702,7 +694,7 @@ useEffect(() => {
       alert(data.message || "턴 처리에 실패했습니다.");
       return;
     }
-    loadInvestigation();
+    window.setTimeout(() => loadInvestigation(), 90);
   };
 
   const endInvestigationNow = async () => {
@@ -718,7 +710,7 @@ useEffect(() => {
       return;
     }
     setShowResult(true);
-    loadInvestigation();
+    window.setTimeout(() => loadInvestigation(), 90);
   };
 
   useEffect(() => {

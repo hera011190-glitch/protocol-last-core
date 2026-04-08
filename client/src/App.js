@@ -30,7 +30,6 @@ const AUDIO_VOLUME_KEY = "plc-audio-volume";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
-const CARD_CHARACTER_CACHE_KEY = "plc-cache-card-characters";
 
 const PAGE = {
   HOME: "home",
@@ -85,7 +84,6 @@ function readLocalArray(key) {
 function writeCharacterCaches(rows) {
   const safeRows = Array.isArray(rows) ? rows : [];
   try { localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
-  try { localStorage.setItem(CARD_CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
   try { localStorage.setItem(SD_CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
   try { sessionStorage.setItem(WARM_CHARACTER_CACHE_KEY, JSON.stringify(safeRows)); } catch {}
 }
@@ -310,7 +308,7 @@ function App() {
   const reloadUnread = async (character = activeCharacter) => {
     if (!character?.id) return setMyUnread(0);
     try {
-      const res = await fetch(`http://localhost:3001/mails/unreadCount/${character.id}?t=${Date.now()}`);
+      const res = await fetch(`http://localhost:3001/mails/unreadCount/${character.id}`);
       const data = await res.json();
       setMyUnread(Number(data.count || 0));
     } catch {
@@ -335,7 +333,7 @@ function App() {
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
     try {
-      const res = await fetch(`http://localhost:3001/character/${character.id}`);
+      const res = await fetch(`http://localhost:3001/character/${character.id}?t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);
@@ -439,35 +437,6 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const warm = async () => {
-      try {
-        const [cardRes, sdRes] = await Promise.all([
-          fetch("http://localhost:3001/characters-card-summary"),
-          fetch("http://localhost:3001/characters-sd-summary"),
-        ]);
-        const [cardRows, sdRows] = await Promise.all([cardRes.json(), sdRes.json()]);
-        if (cancelled) return;
-        if (Array.isArray(cardRows) && cardRows.length > 0) {
-          try { localStorage.setItem(CARD_CHARACTER_CACHE_KEY, JSON.stringify(cardRows)); } catch {}
-          try { localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify(cardRows)); } catch {}
-          try { sessionStorage.setItem(WARM_CHARACTER_CACHE_KEY, JSON.stringify(cardRows)); } catch {}
-          if (user?.id && !user?.isAdmin) {
-            writeUserCharacterCache(user.id, cardRows.filter((row) => String(row?.ownerId || "") === String(user.id)));
-          }
-        }
-        if (Array.isArray(sdRows) && sdRows.length > 0) {
-          try { localStorage.setItem(SD_CHARACTER_CACHE_KEY, JSON.stringify(sdRows)); } catch {}
-        }
-      } catch {}
-    };
-    warm();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, user?.isAdmin]);
-
-  useEffect(() => {
-    let cancelled = false;
     let warmupTimer = null;
 
     const applyDesign = (nextDesign, { persist = false } = {}) => {
@@ -483,7 +452,7 @@ function App() {
     };
 
     const fetchDesign = () => {
-      fetch(`http://localhost:3001/designConfig`)
+      fetch(`http://localhost:3001/designConfigLite`)
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {

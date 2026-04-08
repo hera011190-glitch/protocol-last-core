@@ -463,8 +463,6 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
         skills.push(typeof nextSkill === "string" ? { key: nextSkill, name: meta.skillName || nextSkill } : nextSkill);
       }
       patch.skills = skills;
-    } else if (useType === "corrosionHeal") {
-      patch.corrosion = Math.max(0, Math.min(100, Number(currentUser.corrosion || 0) - useValue));
     } else if (useType === "statBoost") {
       if (statTarget === "hp") stats.hp = getHpStatValue(stats.hp) + useValue;
       if (statTarget === "def") stats.def = Number(stats.def || 0) + useValue;
@@ -477,6 +475,8 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     } else if (useType === "atk" || useType === "def" || useType === "agi") {
       stats[useType] = Number(stats[useType] || 0) + useValue;
       patch.stats = stats;
+    } else if (useType === "corrosionHeal") {
+      patch.corrosion = Math.max(0, Number(currentUser.corrosion || 0) - useValue);
     } else if (useType === "none" || useType === "unusable") {
       alert("이 아이템은 사용할 수 없습니다.");
       return;

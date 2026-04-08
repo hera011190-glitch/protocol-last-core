@@ -109,7 +109,7 @@ const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 
 function readCachedSdCharacters() {
   try {
-    const raw = localStorage.getItem(SD_CHARACTER_CACHE_KEY) || sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY);
+    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -128,12 +128,13 @@ function writeCachedSdCharacters(rows) {
 }
 
 function getSpriteImage(character) {
-  return character?.investigationImage || character?.spriteImage || character?.image || character?.mainImage || "";
+  return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
 }
 
 async function fetchCharactersWithFallback() {
+  const now = Date.now();
   const urls = [
-    buildApiUrl(`/characters-sd-summary`),
+    buildApiUrl(`/characters-public`),
     buildApiUrl(`/characters-lite`),
   ];
   for (const url of urls) {
@@ -166,25 +167,26 @@ function CharacterSprite({ character, quote, moving, onClick }) {
         </div>
       ) : null}
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
-      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: `drop-shadow(0 12px 18px rgba(0,0,0,0.22)) saturate(${1 + corrosion / 180}) hue-rotate(${-corrosion / 5}deg)` }}>
+      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {spriteImage ? (
-          <>
-            <img src={spriteImage} alt="" loading="eager" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1, opacity: Math.max(0.62, 1 - tintOpacity * 0.18) }} />
-            <div
-              aria-hidden
-              style={{
-                position: "absolute",
-                inset: "12% 18% 6% 18%",
-                zIndex: 2,
-                opacity: Math.min(0.46, tintOpacity * 0.72),
-                pointerEvents: "none",
-                borderRadius: "45% 45% 22% 22%",
-                background: "radial-gradient(circle at 50% 18%, rgba(255,122,122,0.08), rgba(166,0,0,0.38))",
-                mixBlendMode: "multiply",
-              }}
-            />
-          </>
+          <img
+            src={spriteImage}
+            alt=""
+            loading="eager"
+            decoding="async"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              position: "absolute",
+              inset: 0,
+              zIndex: 1,
+              opacity: 1,
+              filter: `drop-shadow(0 12px 18px rgba(0,0,0,0.22)) saturate(${1 + corrosion / 180}) hue-rotate(${-corrosion / 5}deg)`,
+            }}
+          />
         ) : null}
+        {tintOpacity > 0 ? <div aria-hidden style={{ position: "absolute", inset: "14% 22% 10% 22%", zIndex: 2, pointerEvents: "none", borderRadius: 999, background: `radial-gradient(circle at 50% 80%, rgba(255,70,70,${Math.min(0.42, tintOpacity)}) 0%, rgba(190,0,0,${Math.min(0.28, tintOpacity)}) 58%, rgba(190,0,0,0) 100%)` }} /> : null}
       </div>
     </div>
   );

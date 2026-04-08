@@ -32,12 +32,12 @@ function writeCachedUserCharacters(userId, rows) {
 
 async function fetchUserCharactersWithFallback(userId) {
   const urls = [
-    `http://localhost:3001/characters-lite/${userId}?t=${Date.now()}`,
-    `http://localhost:3001/characters?t=${Date.now()}`,
+    `http://localhost:3001/characters-public/${userId}`,
+    `http://localhost:3001/characters-lite/${userId}`,
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -65,7 +65,7 @@ function CharacterCard({ character, onSelect, onProfile, current }) {  const saf
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(`http://localhost:3001/character/${characterId}?t=${Date.now()}`, { cache: "no-store" });
+  const res = await fetch(`http://localhost:3001/character/${characterId}`);
   const data = await res.json();
   return data?.character || null;
 }
