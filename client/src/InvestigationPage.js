@@ -1948,7 +1948,7 @@ const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://ww
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const safeName = String(name || "");
   const recent = Array.isArray(rounds)
-    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 2200)
+    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 1200)
     : [];
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
@@ -2013,43 +2013,43 @@ function getBattlePlaybackTimings(entry, index = 0) {
   if (isBattlePhaseHeader(entry)) {
     return {
       isPhaseHeader: true,
-      beforeLog: index === 0 ? 120 : 280,
+      beforeLog: index === 0 ? 60 : 160,
       beforeSnapshot: 0,
-      totalAfterLog: 520,
+      totalAfterLog: 280,
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 90, beforeSnapshot: 700, totalAfterLog: 1180 };
+    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 320, totalAfterLog: 620 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 620, totalAfterLog: 1080 };
+    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 260, totalAfterLog: 560 };
   }
   if (effect === "skill") {
-    return { isPhaseHeader: false, beforeLog: 90, beforeSnapshot: 760, totalAfterLog: 1240 };
+    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 300, totalAfterLog: 620 };
   }
   if (["guard", "shield"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 540, totalAfterLog: 900 };
+    return { isPhaseHeader: false, beforeLog: 40, beforeSnapshot: 220, totalAfterLog: 430 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 560, totalAfterLog: 920 };
+    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 240, totalAfterLog: 440 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: /회복/.test(text) ? 560 : 620, totalAfterLog: /회복/.test(text) ? 940 : 1020 };
+    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: /회복/.test(text) ? 230 : 270, totalAfterLog: /회복/.test(text) ? 440 : 500 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 420, totalAfterLog: 820 };
+    return { isPhaseHeader: false, beforeLog: 35, beforeSnapshot: 160, totalAfterLog: 360 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 600, totalAfterLog: 1080 };
+    return { isPhaseHeader: false, beforeLog: 40, beforeSnapshot: 220, totalAfterLog: 520 };
   }
-  return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 540, totalAfterLog: 920 };
+  return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 220, totalAfterLog: 420 };
 }
 
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
   const recent = getRecentBattleEntry(name, rounds, state, nowTick);
   const effect = recent?.effect || "";
   const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : 0;
-  const duration = ({ damage: 1480, attack: 1320, skill: 1560, heal: 1360, item: 1360, guard: 1320, evade: 1160 })[effect] || 1280;
+  const duration = ({ damage: 920, attack: 760, skill: 900, heal: 820, item: 820, guard: 760, evade: 700 })[effect] || 780;
   const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : 1;
   const pulse = recent?.entry ? Math.sin(progress * Math.PI) : 0;
   const persistentGuard = effect === "guard" && !recent?.entry && !!state?.defending;
@@ -2257,7 +2257,7 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
     },
     imageStyle: {
       filter: glow,
-      transition: "transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), filter 0.22s ease",
+      transition: "filter 0.12s ease",
     },
     overlayStyle,
     fxOuterStyle,
