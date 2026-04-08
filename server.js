@@ -399,13 +399,17 @@ function buildInvestigation(def) {
     id: def.id,
     title: def.title,
     type: def.type,
+    listImage: String(def?.listImage || def?.data?.listImage || ""),
     entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
+    endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
     bgmUrl,
     bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
     data: {
       ...def.data,
       backgroundImage: def?.data?.backgroundImage || def?.backgroundImage || "",
+      listImage: String(def?.listImage || def?.data?.listImage || ""),
       entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
+      endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
       bgmUrl,
       bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
       nodes: normalizedNodes,
@@ -433,6 +437,7 @@ function buildInvestigation(def) {
     pendingBattleActions: {},
     lastBattleRound: [],
     pendingRewardQueue: [],
+    endCorrosionApplied: false,
     originalTemplate: clone(def),
   };
 }
@@ -587,6 +592,7 @@ function getInvestigationSummary(item) {
     id: item.id,
     title: item.title,
     type: item.type || "group",
+    listImage: String(item.listImage || item.data?.listImage || ""),
     opened: item.opened,
     hidden: !!item.hidden,
     effectiveOpened,
@@ -607,6 +613,7 @@ function getInvestigationSummary(item) {
     dailyOwnerKey: String(item.dailyOwnerKey || ""),
     dailyResumeOwnerKey: String(item.dailyResumeOwnerKey || ""),
     entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
+    endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
     leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
     participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
   };
@@ -876,6 +883,20 @@ function resetInvestigationProgress(item) {
   item.eventBannerType = "normal";
   item.eventBannerUntil = 0;
   item.completedNpcScenes = {};
+  item.endCorrosionApplied = false;
+}
+
+function applyInvestigationEndCorrosion(item) {
+  if (!item || item.endCorrosionApplied) return;
+  const delta = Number(item.endCorrosion || item.data?.endCorrosion || 0);
+  item.endCorrosionApplied = true;
+  if (!(delta > 0)) return;
+  (Array.isArray(item.participants) ? item.participants : []).forEach((participant) => {
+    const char = charactersDB.find((character) => String(character?.id || "") === String(participant?.id || ""))
+      || charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+    if (char) applyCharacterCorrosion(char, delta);
+  });
+  writeRuntimeArray("characters.json", charactersDB);
 }
 
 function finishInvestigation(item, reason, summary) {
@@ -887,6 +908,7 @@ function finishInvestigation(item, reason, summary) {
   item.sharedLog = summary;
   item.pendingBattleActions = {};
   item.sharedLogs.push(createLogEntry(summary));
+  applyInvestigationEndCorrosion(item);
 }
 
 function getNodeActionResult(item, actionName) {
@@ -2040,6 +2062,7 @@ app.post("/startInvestigation", (req, res) => {
     item.participants = preservedParticipants;
     item.leaders = preservedLeaders.filter((leaderName) => preservedParticipants.some((participant) => participant?.name === leaderName));
     item.participantStates = {};
+    item.endCorrosionApplied = false;
     item.started = true;
     item.ended = false;
     item.endedReason = "";
@@ -2710,7 +2733,9 @@ function buildPublicInvestigationState(item) {
     investigationId: item.id,
     title: item.title,
     type: item.type,
+    listImage: String(item.listImage || item.data?.listImage || ""),
     entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
+    endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
     currentNodeId: item.currentNodeId,
     sharedLog: item.sharedLog,
     sharedLogs: item.sharedLogs || [],
@@ -3158,6 +3183,9 @@ app.post("/endInvestigationOnly", (req, res) => {
   item.endedAt = new Date().toISOString();
   item.endedReason = safeEndedBy === "운영자" ? "운영자 종료" : "조사 종료";
   item.resultSummary = safeEndedBy === "운영자" ? "운영자가 조사를 종료했어." : `${safeEndedBy}이(가) 조사를 종료했어.`;
+  item.sharedLog = item.resultSummary;
+  item.sharedLogs.push(createLogEntry(item.resultSummary));
+  applyInvestigationEndCorrosion(item);
   emitParticipantsUpdated();
   emitInvestigationState(id);
   res.json({ success: true, item });

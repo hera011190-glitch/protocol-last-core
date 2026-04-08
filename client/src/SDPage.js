@@ -28,10 +28,10 @@ function arrowStyle(position, theme) {
   };
 }
 function spawnFromEdge(edge) {
-  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(6.6, 10.8), dy: rand(-3.2, 3.2) };
-  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-10.8, -6.6), dy: rand(-3.2, 3.2) };
-  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-3.2, 3.2), dy: rand(6.2, 9.6) };
-  return { x: rand(10, 88), y: 78, dx: rand(-3.2, 3.2), dy: rand(-9.6, -6.2) };
+  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(4.8, 7.6), dy: rand(-2.1, 2.1) };
+  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-7.6, -4.8), dy: rand(-2.1, 2.1) };
+  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-2.2, 2.2), dy: rand(4.6, 7.1) };
+  return { x: rand(10, 88), y: 78, dx: rand(-2.2, 2.2), dy: rand(-7.1, -4.6) };
 }
 
 function readSavedPositions() {
@@ -220,7 +220,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
         </div>
       ) : null}
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
-      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
+      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.2 : -1.2}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.22s ease-out", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {spriteImage ? (
           <>
             <img
@@ -333,7 +333,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const step = (timestamp) => {
       if (!lastFrameRef.current) lastFrameRef.current = timestamp;
       const rawDt = timestamp - lastFrameRef.current;
-      const dt = Math.min(80, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
+      const dt = Math.min(72, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
+      if (dt < 24) {
+        rafId = window.requestAnimationFrame(step);
+        return;
+      }
       lastFrameRef.current = timestamp;
 
       if (document.visibilityState === "visible") {
@@ -353,17 +357,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
           moveCooldownMs -= dt;
           if (moveCooldownMs <= 0) {
-            if (Math.random() < 0.34) {
-              waitMs = rand(1400, 2800);
-              dx *= 0.4;
-              dy *= 0.4;
-              moveCooldownMs = rand(3200, 5600);
+            if (Math.random() < 0.46) {
+              waitMs = rand(2200, 4200);
+              dx *= 0.34;
+              dy *= 0.34;
+              moveCooldownMs = rand(4200, 7200);
             } else {
-              dx = rand(-3.1, 3.1);
-              dy = rand(-2.2, 2.2);
-              if (Math.abs(dx) < 0.9) dx = dx >= 0 ? 0.9 : -0.9;
-              if (Math.abs(dy) < 0.35) dy = dy >= 0 ? 0.35 : -0.35;
-              moveCooldownMs = rand(3600, 6200);
+              dx = rand(-2.25, 2.25);
+              dy = rand(-1.55, 1.55);
+              if (Math.abs(dx) < 0.55) dx = dx >= 0 ? 0.55 : -0.55;
+              if (Math.abs(dy) < 0.22) dy = dy >= 0 ? 0.22 : -0.22;
+              moveCooldownMs = rand(5200, 8600);
             }
           }
 
@@ -377,9 +381,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 91.2;
               ny = clamp(ny, 10, 76);
-              dx = -Math.max(0.9, Math.abs(dx || rand(1.2, 2.8)));
-              dy = clamp(dy || rand(-1.1, 1.1), -2.2, 2.2);
-              moveCooldownMs = rand(3200, 5600);
+              dx = -Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
+              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
+              moveCooldownMs = rand(4200, 7200);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -390,9 +394,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 8.8;
               ny = clamp(ny, 10, 76);
-              dx = Math.max(0.9, Math.abs(dx || rand(1.2, 2.8)));
-              dy = clamp(dy || rand(-1.1, 1.1), -2.2, 2.2);
-              moveCooldownMs = rand(3200, 5600);
+              dx = Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
+              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
+              moveCooldownMs = rand(4200, 7200);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -404,9 +408,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 77.2;
-              dx = clamp(dx || rand(-1.4, 1.4), -3.1, 3.1);
-              dy = -Math.max(0.8, Math.abs(dy || rand(1.1, 2.4)));
-              moveCooldownMs = rand(3200, 5600);
+              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
+              dy = -Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
+              moveCooldownMs = rand(4200, 7200);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -417,9 +421,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 10.8;
-              dx = clamp(dx || rand(-1.4, 1.4), -3.1, 3.1);
-              dy = Math.max(0.8, Math.abs(dy || rand(1.1, 2.4)));
-              moveCooldownMs = rand(3200, 5600);
+              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
+              dy = Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
+              moveCooldownMs = rand(4200, 7200);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);

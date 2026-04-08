@@ -77,6 +77,22 @@ function timeText(item) {
   return `${open.toLocaleString("ko-KR", { hour12: false })} 오픈`;
 }
 
+
+function getRepresentativeImage(items = []) {
+  const rows = Array.isArray(items) ? items : [];
+  return rows.find((item) => String(item?.listImage || "").trim())?.listImage || "";
+}
+
+function formatCorrosionRange(items = []) {
+  const values = (Array.isArray(items) ? items : [])
+    .map((item) => Number(item?.endCorrosion || 0))
+    .filter((value) => value > 0);
+  if (values.length === 0) return "종료 시 침식 +0";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return min === max ? `종료 시 침식 +${min}` : `종료 시 침식 +${min}~+${max}`;
+}
+
 export default function InvestigationList({ onEnter, onSpectate, activeCharacter, design, theme }) {
   const [investigations, setInvestigations] = useState(() => readCachedInvestigations());
   const [view, setView] = useState("entry");
@@ -148,6 +164,8 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
     return [...rows].sort((a, b) => Number(new Date(b.endedAt || b.closeAt || 0)) - Number(new Date(a.endedAt || a.closeAt || 0)));
   }, [investigations]);
 
+  const dailyEntryImage = resumableDaily?.listImage || getRepresentativeImage(dailyPool);
+  const groupEntryImage = getRepresentativeImage(groups) || getRepresentativeImage(completedGroups);
   const investContent = design?.siteContent?.investigations || {};
 
   const openCompletedDetail = async (item) => {
@@ -190,35 +208,52 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                 if (resumableDaily) return;
                 if (event.key === "Enter" || event.key === " ") startDaily();
               }}
-              style={{ ...card(theme, false, !resumableDaily), textAlign: "left" }}
+              style={{
+                ...card(theme, false, !resumableDaily),
+                textAlign: "left",
+                minHeight: 260,
+                position: "relative",
+                overflow: "hidden",
+                padding: 0,
+                background: dailyEntryImage ? `url(${dailyEntryImage}) center/cover no-repeat` : (theme?.panelStrong || "#fff"),
+              }}
             >
-              <div className="section-eyebrow">DAILY</div>
-              <h3 style={{ marginTop: 10, marginBottom: 12 }}>일일조사</h3>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <div style={chip("rgba(20,83,45,0.12)", "#166534")}>남은 횟수 {dailyLeft}</div>
-                <div style={chip("rgba(30,64,175,0.12)", "#1d4ed8")}>활성 {dailyPool.length}개</div>
-                {resumableDaily ? <div style={chip("rgba(125,211,252,0.18)", "#0f4c81")}>진행 중인 일일조사 있음</div> : null}
-                {!activeCharacter ? <div style={chip("rgba(100,116,139,0.12)", "#475569")}>캐릭터 필요</div> : null}
-              </div>
-              {resumableDaily ? (
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                  <button type="button" className="ghost-button" onClick={(event) => { event.stopPropagation(); onEnter(resumableDaily, { mode: "daily" }); }}>
-                    조사로 돌아가기
-                  </button>
-                  <div style={{ ...chip("rgba(148,163,184,0.12)", theme?.textSoft || "#4f7390"), alignSelf: "center" }}>
-                    {resumableDaily.title || "진행 중인 일일조사"}
-                  </div>
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
+                <div className="section-eyebrow" style={{ color: "#243b53" }}>DAILY</div>
+                <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 {dailyLeft}</div>
+                  <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {dailyPool.length}개</div>
+                  <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{formatCorrosionRange(dailyPool)}</div>
+                  {resumableDaily ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>진행 중인 일일조사 있음</div> : null}
+                  {!activeCharacter ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>캐릭터 필요</div> : null}
                 </div>
-              ) : null}
+                <div style={{ color: "#22384b", fontWeight: 700 }}>{resumableDaily?.title || "선택된 일일조사 1개가 즉시 시작됩니다."}</div>
+                {resumableDaily ? (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto" }}>
+                    <button type="button" className="ghost-button" onClick={(event) => { event.stopPropagation(); onEnter(resumableDaily, { mode: "daily" }); }}>
+                      조사로 돌아가기
+                    </button>
+                    <div style={{ ...chip("rgba(255,255,255,0.88)", theme?.textSoft || "#4f7390"), alignSelf: "center" }}>
+                      {resumableDaily.title || "진행 중인 일일조사"}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
-            <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left" }}>
-              <div className="section-eyebrow">GROUP</div>
-              <h3 style={{ marginTop: 10, marginBottom: 12 }}>단체조사</h3>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <div style={chip("rgba(20,83,45,0.12)", "#166534")}>활성 {groups.filter((item) => item.effectiveOpened ?? item.opened).length}개</div>
-                <div style={chip("rgba(100,116,139,0.12)", "#475569")}>비활성 {groups.filter((item) => !(item.effectiveOpened ?? item.opened)).length}개</div>
-                <div style={chip("rgba(59,130,246,0.12)", "#1d4ed8")}>완료 {completedGroups.length}개</div>
+            <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: groupEntryImage ? `url(${groupEntryImage}) center/cover no-repeat` : (theme?.panelStrong || "#fff") }}>
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
+                <div className="section-eyebrow" style={{ color: "#243b53" }}>GROUP</div>
+                <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {groups.filter((item) => item.effectiveOpened ?? item.opened).length}개</div>
+                  <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>비활성 {groups.filter((item) => !(item.effectiveOpened ?? item.opened)).length}개</div>
+                  <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>완료 {completedGroups.length}개</div>
+                </div>
+                <div style={{ color: "#22384b", fontWeight: 700 }}>카드를 눌러 단체조사 목록을 열어보세요.</div>
               </div>
             </button>
           </div>
@@ -236,22 +271,24 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                 const disabled = !(item.effectiveOpened ?? item.opened);
                 const started = !!item.started && !item.ended;
                 return (
-                  <div key={item.id} style={card(theme, disabled)}>
-                    <div className="section-eyebrow">{disabled ? "INACTIVE" : "GROUP"}</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
-                      <div>
+                  <div key={item.id} style={{ ...card(theme, disabled), position: "relative", overflow: "hidden", minHeight: 188, padding: 0, background: item.listImage ? `url(${item.listImage}) center/cover no-repeat` : (disabled ? "rgba(226,232,240,0.72)" : (theme?.panelStrong || "#fff")) }}>
+                    {item.listImage ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
+                    <div style={{ position: "relative", zIndex: 1, padding: 20, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", minHeight: 188 }}>
+                      <div style={{ maxWidth: "70%" }}>
+                        <div className="section-eyebrow">{disabled ? "INACTIVE" : "GROUP"}</div>
                         <h3 style={{ marginTop: 10, marginBottom: 8 }}>{item.title}</h3>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                           <div style={chip(started ? "rgba(30,64,175,0.14)" : disabled ? "rgba(100,116,139,0.14)" : "rgba(20,83,45,0.12)", started ? "#1d4ed8" : disabled ? "#475569" : "#166534")}>{started ? "진행 중" : disabled ? "비활성화" : "대기 중"}</div>
-                          <div style={chip("rgba(148,163,184,0.12)", theme?.textSoft || "#4f7390")}>참여 {item.participantsCount || 0}명</div>
-                          <div style={chip("rgba(148,163,184,0.12)", theme?.textSoft || "#4f7390")}>{timeText(item)}</div>
+                          <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>참여 {item.participantsCount || 0}명</div>
+                          <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>{timeText(item)}</div>
+                          <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number(item.endCorrosion || 0)}</div>
                         </div>
                       </div>
-                      {disabled ? <div style={chip("rgba(100,116,139,0.16)", "#475569")}>비활성화</div> : started ? <div style={chip("rgba(30,64,175,0.16)", "#1d4ed8")}>진행중</div> : null}
-                    </div>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-                      <button type="button" className="home-primary-button" onClick={() => onEnter(item, { mode: "group" })} disabled={item.ended || disabled}>{started ? "들어가기" : "참여"}</button>
-                      {(started || item.ended) ? <button type="button" className="ghost-button" onClick={() => (onSpectate ? onSpectate(item) : onEnter(item, { mode: "spectate" }))}>관전</button> : null}
+                      <div style={{ display: "grid", gap: 8, alignContent: "start", justifyItems: "end" }}>
+                        {disabled ? <div style={chip("rgba(100,116,139,0.16)", "#475569")}>비활성화</div> : started ? <div style={chip("rgba(30,64,175,0.16)", "#1d4ed8")}>진행중</div> : null}
+                        <button type="button" className="home-primary-button" onClick={() => onEnter(item, { mode: "group" })} disabled={item.ended || disabled}>{started ? "들어가기" : "참여"}</button>
+                        {(started || item.ended) ? <button type="button" className="ghost-button" onClick={() => (onSpectate ? onSpectate(item) : onEnter(item, { mode: "spectate" }))}>관전</button> : null}
+                      </div>
                     </div>
                   </div>
                 );
