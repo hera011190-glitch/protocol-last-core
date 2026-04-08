@@ -1178,10 +1178,19 @@ function rollCritical(agi) {
 }
 
 function tickBuffs(state) {
+  const changes = [];
   if (Array.isArray(state.buffs)) {
-    state.buffs = state.buffs
-      .map((buff) => ({ ...buff, duration: Number(buff.duration || 0) - 1 }))
-      .filter((buff) => buff.duration > 0);
+    const nextBuffs = [];
+    state.buffs.forEach((buff) => {
+      const nextDuration = Number(buff?.duration || 0) - 1;
+      const nextBuff = { ...buff, duration: nextDuration };
+      if (nextDuration > 0) {
+        nextBuffs.push(nextBuff);
+      } else if (buff?.type) {
+        changes.push({ type: buff.type, expired: true, value: Number(buff.value || 0) });
+      }
+    });
+    state.buffs = nextBuffs;
   }
   if (state.skillCooldowns && typeof state.skillCooldowns === "object") {
     Object.keys(state.skillCooldowns).forEach((key) => {
@@ -1190,6 +1199,7 @@ function tickBuffs(state) {
       else delete state.skillCooldowns[key];
     });
   }
+  return changes;
 }
 
 function resolveFlee(item) {
@@ -1478,8 +1488,20 @@ function applyBattleTurn(item, actions) {
     }
   });
 
-  Object.values(item.participantStates).forEach((state) => tickBuffs(state));
+  const endTurnChanges = [];
+  Object.values(item.participantStates).forEach((state) => {
+    if (!state) return;
+    const changes = tickBuffs(state);
+    changes.forEach((change) => endTurnChanges.push({ owner: state.name, ...change }));
+  });
   tickBuffs(battle);
+  if (endTurnChanges.length > 0) {
+    roundLogs.push(createBattleLogEntry("[상태 변화]", "allies", { isPhaseHeader: true }));
+    endTurnChanges.forEach((change) => {
+      const label = change.type === "atkUp" ? "공격 강화" : change.type === "guardUp" ? "방어 강화" : change.type === "atkDown" ? "약화" : change.type;
+      roundLogs.push(createBattleLogEntry(`${change.owner}의 ${label} 효과가 정리되었다.`, "allies", { actor: change.owner, effect: change.type === "guardUp" ? "shield" : change.type === "atkUp" ? "buff" : "debuff", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+    });
+  }
 
   battle.turnsElapsed = Number(battle.turnsElapsed || 0) + 1;
   item.lastBattleRound = roundLogs;

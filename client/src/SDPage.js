@@ -312,7 +312,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       lastFrameRef.current = timestamp;
 
       if (document.visibilityState === "visible") {
-        setCharacters((prev) => prev.map((character, _, arr) => {
+        setCharacters((prev) => dedupeCharacters(prev).map((character, _, arr) => {
           let currentMap = character.currentMap || maps[0]?.id || "";
           let x = Number(character.x || 0);
           let y = Number(character.y || 0);
@@ -454,7 +454,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const handleCharacterUpdated = async (event) => {
       const updated = event?.detail?.character;
       if (updated?.id) {
-        setCharacters((prev) => prev.map((character, index) => String(character.id) === String(updated.id) ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character));
+        setCharacters((prev) => dedupeCharacters(prev).map((character, index) => String(character.id) === String(updated.id) ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character));
         return;
       }
       try {
@@ -478,7 +478,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const stored = readLastViewedMapId();
       setActiveMapId(maps.some((map) => String(map.id) === String(stored)) ? stored : maps[0].id);
     }
-    setCharacters((prev) => prev.map((character, index) => {
+    setCharacters((prev) => dedupeCharacters(prev).map((character, index) => {
       const currentMap = maps.some((map) => String(map.id) === String(character.currentMap)) ? character.currentMap : maps[index % maps.length]?.id || maps[0]?.id || "";
       return currentMap === character.currentMap ? character : { ...character, currentMap };
     }));
@@ -507,7 +507,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!nextId || nextId === activeMapId) return;
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
-    setCharacters((prev) => prev.map((character) => String(character.id) === String(activeCharacter?.id) ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.82, dy: spawn.dy * 0.82, waitMs: 1400, moveCooldownMs: rand(3600, 6200) } : character));
+    setCharacters((prev) => dedupeCharacters(prev).map((character) => String(character.id) === String(activeCharacter?.id) ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.82, dy: spawn.dy * 0.82, waitMs: 1400, moveCooldownMs: rand(3600, 6200) } : character));
     if (activeCharacter?.id) {
       fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));

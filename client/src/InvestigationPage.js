@@ -157,6 +157,8 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const applyInvestigation = (data) => {
     if (!data) return;
     if (data.type === "daily") setChat([]);
+    const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
+    const nodeId = data.currentNodeId || data.data?.start;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || data?.ended) {
       setStagedBattleLogs([]);
       setPlaybackState(null);
@@ -167,14 +169,35 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       setActionPicker("");
       setBattleActionSubmitting(false);
     }
-    setInvestigation(data);
-    const nodeId = data.currentNodeId || data.data?.start;
+    setInvestigation((prev) => {
+      if (!prev) return data;
+      if (!hasRoundPlayback) return data;
+      const prevNodeId = prev.currentNodeId || prev.data?.start;
+      const nextNodes = { ...(data.data?.nodes || {}) };
+      if (nodeId && prevNodeId && String(nodeId) === String(prevNodeId)) {
+        const prevBattle = prev.data?.nodes?.[prevNodeId]?.battle || null;
+        if (prevBattle && nextNodes[nodeId]) {
+          nextNodes[nodeId] = {
+            ...nextNodes[nodeId],
+            battle: JSON.parse(JSON.stringify(prevBattle)),
+          };
+        }
+      }
+      return {
+        ...data,
+        participantStates: prev.participantStates || data.participantStates || {},
+        sharedLogs: prev.sharedLogs || data.sharedLogs || [],
+        data: data.data ? { ...data.data, nodes: nextNodes } : data.data,
+      };
+    });
     setCurrentNodeId(nodeId);
-    setLogs(
-      (Array.isArray(data.sharedLogs) && data.sharedLogs.length > 0
-        ? data.sharedLogs
-        : [{ id: "fallback", text: data.sharedLog || data.data?.nodes?.[nodeId]?.log || "", time: "" }]).slice(-160)
-    );
+    if (!hasRoundPlayback) {
+      setLogs(
+        (Array.isArray(data.sharedLogs) && data.sharedLogs.length > 0
+          ? data.sharedLogs
+          : [{ id: "fallback", text: data.sharedLog || data.data?.nodes?.[nodeId]?.log || "", time: "" }]).slice(-160)
+      );
+    }
     if (data.type === "daily") {
       markDailyAttempt(data);
       const joined = Array.isArray(data?.participants) && !!character?.name && data.participants.some((participant) => participant?.name === character.name);
@@ -908,7 +931,7 @@ useEffect(() => {
     });
     const finalSnapshotEntry = [...visibleEntries].reverse().find((entry) => entry?.snapshot && !isBattlePhaseHeader(entry));
     const finalSnapshot = finalSnapshotEntry?.snapshot || null;
-    const unlockDelay = Math.max(delay + 360, 1700);
+    const unlockDelay = Math.max(delay + 520, 2400);
     const unlockTimer = setTimeout(() => {
       if (visibleEntries.length > 0) {
         setLogs((prevLogs) => {
@@ -972,7 +995,7 @@ useEffect(() => {
     setMyBattleAction("");
     setActionPicker("");
     const timer = setInterval(() => {
-      if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > 6500) {
+      if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > 12000) {
         battlePlaybackLockStartedRef.current = 0;
         setStagedBattleLogs([]);
         setPlaybackState(null);
@@ -991,7 +1014,7 @@ useEffect(() => {
       if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
       }
-    }, 650);
+    }, 900);
     return () => clearTimeout(timer);
   }, [battlePlaybackLocked, stagedBattleLogs.length, previewMode]);
 
@@ -1563,7 +1586,7 @@ useEffect(() => {
                 ) : (
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
-                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} />
+                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
                       <div style={{ marginTop: 12 }}>
                         <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                       </div>
@@ -1996,7 +2019,11 @@ function getBattleEffectLabelColor(effect = "") {
     damage: "#fecaca",
     attack: "#fde68a",
     guard: "#93c5fd",
+    shield: "#93c5fd",
     skill: "#fde047",
+    buff: "#86efac",
+    debuff: "#fca5a5",
+    drain: "#f9a8d4",
     heal: "#86efac",
     item: "#67e8f9",
     evade: "#c4b5fd",
@@ -2019,30 +2046,30 @@ function getBattlePlaybackTimings(entry, index = 0) {
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 320, totalAfterLog: 620 };
+    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 360, totalAfterLog: 760 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 260, totalAfterLog: 560 };
+    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 320, totalAfterLog: 720 };
   }
-  if (effect === "skill") {
-    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 300, totalAfterLog: 620 };
+  if (["skill", "debuff", "drain"].includes(effect)) {
+    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 360, totalAfterLog: 820 };
   }
-  if (["guard", "shield"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 40, beforeSnapshot: 220, totalAfterLog: 430 };
+  if (["guard", "shield", "buff"].includes(effect)) {
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 260, totalAfterLog: 620 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 240, totalAfterLog: 440 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 280, totalAfterLog: 620 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: /회복/.test(text) ? 230 : 270, totalAfterLog: /회복/.test(text) ? 440 : 500 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: /회복/.test(text) ? 280 : 320, totalAfterLog: /회복/.test(text) ? 620 : 680 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 35, beforeSnapshot: 160, totalAfterLog: 360 };
+    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 220, totalAfterLog: 540 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 40, beforeSnapshot: 220, totalAfterLog: 520 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 300, totalAfterLog: 760 };
   }
-  return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 220, totalAfterLog: 420 };
+  return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 260, totalAfterLog: 620 };
 }
 
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
@@ -2287,7 +2314,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   );
 }
 
-function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now() }) {
+function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now(), battlePlaybackLocked = false }) {
   const battle = node?.battle;
   if (!battle) return null;
   const hp = Number(battle.hp || 0);
@@ -2307,7 +2334,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {investigation?.battleTurn || 1}</div>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {battlePlaybackLocked ? Math.max(1, Number(investigation?.battleTurn || 1) - 1) : (investigation?.battleTurn || 1)}</div>
       <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
       <div style={{ width: "min(520px, 100%)" }}>
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>
