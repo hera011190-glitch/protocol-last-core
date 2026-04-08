@@ -150,6 +150,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const battlePlaybackLockStartedRef = useRef(0);
   const prevBattleTurnRef = useRef(0);
   const postPlaybackRefreshRef = useRef(false);
+  const playbackSourceRef = useRef(null);
   const liveDisplayLogs = useMemo(() => (battlePlaybackLocked && stagedBattleLogs.length > 0
     ? [...logs, ...stagedBattleLogs.map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }))]
     : logs), [battlePlaybackLocked, stagedBattleLogs, logs]);
@@ -160,6 +161,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
     const nodeId = data.currentNodeId || data.data?.start;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || data?.ended) {
+      playbackSourceRef.current = null;
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
@@ -169,27 +171,18 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       setActionPicker("");
       setBattleActionSubmitting(false);
     }
-    setInvestigation((prev) => {
-      if (!prev) return data;
-      if (!hasRoundPlayback) return data;
-      const prevNodeId = prev.currentNodeId || prev.data?.start;
-      const nextNodes = { ...(data.data?.nodes || {}) };
-      if (nodeId && prevNodeId && String(nodeId) === String(prevNodeId)) {
-        const prevBattle = prev.data?.nodes?.[prevNodeId]?.battle || null;
-        if (prevBattle && nextNodes[nodeId]) {
-          nextNodes[nodeId] = {
-            ...nextNodes[nodeId],
-            battle: JSON.parse(JSON.stringify(prevBattle)),
-          };
-        }
-      }
-      return {
-        ...data,
-        participantStates: prev.participantStates || data.participantStates || {},
-        sharedLogs: prev.sharedLogs || data.sharedLogs || [],
-        data: data.data ? { ...data.data, nodes: nextNodes } : data.data,
+    if (hasRoundPlayback) {
+      const prevNodeId = investigation?.currentNodeId || currentNodeId || investigation?.data?.start || nodeId;
+      const prevNode = investigation?.data?.nodes?.[prevNodeId] || null;
+      const nextNode = data?.data?.nodes?.[nodeId] || null;
+      playbackSourceRef.current = {
+        participantStates: JSON.parse(JSON.stringify(investigation?.participantStates || data?.participantStates || {})),
+        battle: JSON.parse(JSON.stringify(prevNode?.battle || nextNode?.battle || null)),
       };
-    });
+    } else {
+      playbackSourceRef.current = null;
+    }
+    setInvestigation(data);
     setCurrentNodeId(nodeId);
     if (!hasRoundPlayback) {
       setLogs(
@@ -204,6 +197,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       if (joined || data?.ended) clearDailyResume(data.id || investigationId, character);
     }
   };
+
 
   useEffect(() => {
     if (!previewMode) return;
@@ -793,7 +787,8 @@ useEffect(() => {
     return direct;
   })();
   const directionalChoices = buildDirectionalChoices(effectiveChoices);
-  const battleActive = !!currentNode?.battle;
+  const playbackBattleActive = !!playbackState?.battle;
+  const battleActive = !!currentNode?.battle || playbackBattleActive;
   const endedReadonly = !!isSpectator && !!investigation?.ended;
   const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
   const endConfirmations = Array.isArray(investigation?.endConfirmations) ? investigation.endConfirmations : [];
@@ -844,7 +839,9 @@ useEffect(() => {
   const participantStates = investigation?.participantStates || {};
   const displayLogs = liveDisplayLogs;
   const displayParticipantStates = playbackState?.participantStates || participantStates;
-  const displayCurrentNode = playbackState?.battle && currentNode?.battle ? { ...currentNode, battle: { ...currentNode.battle, ...playbackState.battle } } : currentNode;
+  const displayCurrentNode = playbackState?.battle
+    ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...playbackState.battle } }
+    : currentNode;
   const showBanner = !!investigation?.eventBanner && Number(investigation?.eventBannerUntil || 0) > nowTick;
   const pendingActions = pendingActionsEarly || {};
   const aliveParticipants = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) > 0);
@@ -874,11 +871,13 @@ useEffect(() => {
 
   useEffect(() => {
     const rounds = Array.isArray(investigation?.lastBattleRound) ? investigation.lastBattleRound : [];
-    if (!battleActive || rounds.length === 0) {
+    const replaySource = playbackSourceRef.current;
+    const canReplay = !!currentNode?.battle || !!replaySource?.battle;
+    if (!canReplay || rounds.length === 0) {
+      playbackSourceRef.current = null;
       setStagedBattleLogs([]);
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
-      setPlaybackState(null);
       setBattlePlaybackLocked(false);
       if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
@@ -893,9 +892,15 @@ useEffect(() => {
     setActionPicker("");
     setEditingSavedAction(true);
     setStagedBattleLogs([]);
+    const initialBattle = replaySource?.battle
+      ? JSON.parse(JSON.stringify(replaySource.battle))
+      : (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
+    const initialParticipantStates = replaySource?.participantStates
+      ? JSON.parse(JSON.stringify(replaySource.participantStates))
+      : JSON.parse(JSON.stringify(investigation?.participantStates || {}));
     setPlaybackState({
-      participantStates: JSON.parse(JSON.stringify(investigation?.participantStates || {})),
-      battle: currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null,
+      participantStates: initialParticipantStates,
+      battle: initialBattle,
     });
     battlePlaybackLockStartedRef.current = Date.now();
     setBattlePlaybackLocked(true);
@@ -921,59 +926,24 @@ useEffect(() => {
       }, delay));
       if (entry?.snapshot && !timing.isPhaseHeader) {
         timers.push(setTimeout(() => {
-          setPlaybackState({
-            participantStates: entry.snapshot.participantStates || {},
-            battle: currentNode?.battle ? { ...JSON.parse(JSON.stringify(currentNode.battle)), hp: Number(entry.snapshot.battleHp || currentNode.battle.hp || 0), maxHp: Number(entry.snapshot.battleMaxHp || currentNode.battle.maxHp || currentNode.battle.hp || 0) } : null,
-          });
+          setPlaybackState((prevPlayback) => ({
+            participantStates: entry.snapshot.participantStates || prevPlayback?.participantStates || {},
+            battle: (prevPlayback?.battle || initialBattle)
+              ? {
+                  ...JSON.parse(JSON.stringify(prevPlayback?.battle || initialBattle || {})),
+                  hp: Number(entry.snapshot.battleHp ?? prevPlayback?.battle?.hp ?? initialBattle?.hp ?? 0),
+                  maxHp: Number(entry.snapshot.battleMaxHp ?? prevPlayback?.battle?.maxHp ?? initialBattle?.maxHp ?? initialBattle?.hp ?? 0),
+                }
+              : null,
+          }));
         }, delay + timing.beforeSnapshot));
       }
       delay += timing.totalAfterLog;
     });
-    const finalSnapshotEntry = [...visibleEntries].reverse().find((entry) => entry?.snapshot && !isBattlePhaseHeader(entry));
-    const finalSnapshot = finalSnapshotEntry?.snapshot || null;
     const unlockDelay = Math.max(delay + 900, 3600);
     const unlockTimer = setTimeout(() => {
-      if (visibleEntries.length > 0) {
-        setLogs((prevLogs) => {
-          const existingKeys = new Set((Array.isArray(prevLogs) ? prevLogs : []).map((entry) => `${entry?.text || ""}|${entry?.time || ""}`));
-          const appended = visibleEntries
-            .filter((entry) => entry?.text)
-            .map((entry, index) => ({ id: `round-${investigation?.battleTurn || 0}-${index}`, text: entry.text, time: "" }))
-            .filter((entry) => !existingKeys.has(`${entry.text}|${entry.time}`));
-          return [...(Array.isArray(prevLogs) ? prevLogs : []), ...appended].slice(-160);
-        });
-      }
-      if (finalSnapshot) {
-        setInvestigation((prev) => {
-          if (!prev) return prev;
-          const nextNodeId = prev.currentNodeId || currentNodeId;
-          const nextNodes = { ...(prev.data?.nodes || {}) };
-          if (nextNodeId && nextNodes[nextNodeId]?.battle) {
-            const finalBattleHp = Number(finalSnapshot.battleHp ?? nextNodes[nextNodeId].battle?.hp ?? 0);
-            if (finalBattleHp <= 0) {
-              nextNodes[nextNodeId] = {
-                ...nextNodes[nextNodeId],
-                battle: null,
-              };
-            } else {
-              nextNodes[nextNodeId] = {
-                ...nextNodes[nextNodeId],
-                battle: {
-                  ...nextNodes[nextNodeId].battle,
-                  hp: finalBattleHp,
-                  maxHp: Number(finalSnapshot.battleMaxHp ?? nextNodes[nextNodeId].battle?.maxHp ?? nextNodes[nextNodeId].battle?.hp ?? 0),
-                },
-              };
-            }
-          }
-          return {
-            ...prev,
-            participantStates: finalSnapshot.participantStates || prev.participantStates || {},
-            lastBattleRound: visibleEntries,
-            data: prev.data ? { ...prev.data, nodes: nextNodes } : prev.data,
-          };
-        });
-      }
+      setLogs((Array.isArray(investigation?.sharedLogs) ? investigation.sharedLogs : []).slice(-160));
+      playbackSourceRef.current = null;
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
@@ -986,7 +956,7 @@ useEffect(() => {
       timers.forEach((timer) => clearTimeout(timer));
       clearTimeout(unlockTimer);
     };
-  }, [battleActive, investigation?.battleTurn, investigation?.lastBattleRound, currentNode?.battle, investigation?.participantStates]);
+  }, [battleActive, investigation?.battleTurn, investigation?.lastBattleRound, investigation?.sharedLogs, investigation?.participantStates, currentNode?.battle]);
 
 
   useEffect(() => {
