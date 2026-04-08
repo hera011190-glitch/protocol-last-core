@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import { buildApiUrl } from "./api";
 
 function Login({ setUser, design, theme }) {
   const [id, setId] = useState("");
@@ -29,7 +30,7 @@ function Login({ setUser, design, theme }) {
       return;
     }
 
-    const url = mode === "login" ? "http://localhost:3001/login" : "http://localhost:3001/register";
+    const url = mode === "login" ? buildApiUrl("/login") : buildApiUrl("/register");
 
     try {
       setPending(true);

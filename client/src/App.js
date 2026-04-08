@@ -23,6 +23,7 @@ import { clearActiveCharacterStorage, readActiveCharacter, saveActiveCharacter }
 import socket from "./socket";
 import { applyDomOverrides } from "./designDomUtils";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
+import { buildApiUrl } from "./api";
 
 const DESIGN_CACHE_KEY = "plc-design-cache";
 const AUDIO_MUTE_KEY = "plc-audio-muted";
@@ -308,7 +309,7 @@ function App() {
   const reloadUnread = async (character = activeCharacter) => {
     if (!character?.id) return setMyUnread(0);
     try {
-      const res = await fetch(`http://localhost:3001/mails/unreadCount/${character.id}?t=${Date.now()}`);
+      const res = await fetch(buildApiUrl(`/mails/unreadCount/${character.id}?t=${Date.now()}`));
       const data = await res.json();
       setMyUnread(Number(data.count || 0));
     } catch {
@@ -333,7 +334,7 @@ function App() {
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
     try {
-      const res = await fetch(`http://localhost:3001/character-public/${character.id}`, {});
+      const res = await fetch(buildApiUrl(`/character-public/${character.id}`), {});
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);
@@ -353,7 +354,7 @@ function App() {
 
     if (options.mode === "daily") {
       try {
-        const res = await fetch("http://localhost:3001/startDailyInvestigation", {
+        const res = await fetch(buildApiUrl("/startDailyInvestigation"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id, character: runtimeCharacter }),
@@ -366,7 +367,7 @@ function App() {
         }
         if (!data.success) {
           try {
-            const latestRes = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+            const latestRes = await fetch(buildApiUrl(`/investigationView/${item.id}`));
             const latest = await latestRes.json();
             const names = Array.isArray(latest?.participants) ? latest.participants.map((participant) => participant?.name) : [];
             if (latest?.started && (!runtimeCharacter?.name || names.includes(runtimeCharacter.name))) {
@@ -380,7 +381,7 @@ function App() {
           }
           setTimeout(async () => {
             try {
-              const retryRes = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+              const retryRes = await fetch(buildApiUrl(`/investigationView/${item.id}`));
               const retryLatest = await retryRes.json();
               const retryNames = Array.isArray(retryLatest?.participants) ? retryLatest.participants.map((participant) => participant?.name) : [];
               if (retryLatest?.started && (!runtimeCharacter?.name || retryNames.includes(runtimeCharacter.name))) {
@@ -404,7 +405,7 @@ function App() {
       } catch (err) {
         console.error("startDailyInvestigation error", err);
         try {
-          const latestRes = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+          const latestRes = await fetch(buildApiUrl(`/investigationView/${item.id}`));
           const latest = await latestRes.json();
           const names = Array.isArray(latest?.participants) ? latest.participants.map((participant) => participant?.name) : [];
           if (latest?.started && (!runtimeCharacter?.name || names.includes(runtimeCharacter.name))) {
@@ -451,7 +452,7 @@ function App() {
     };
 
     const fetchDesign = () => {
-      fetch("http://localhost:3001/designConfigPublic")
+      fetch(buildApiUrl("/designConfigPublic"))
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {

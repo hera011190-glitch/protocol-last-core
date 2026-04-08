@@ -2618,13 +2618,34 @@ function pickCharacterAssetPath(character, candidates = []) {
   return "";
 }
 
+function getCharacterImageLength(character, key) {
+  const value = typeof character?.[key] === "string" ? character[key] : "";
+  return value ? value.length : Number.MAX_SAFE_INTEGER;
+}
+
+function pickLightCharacterAssetPath(character, candidates = [], maxLength = Number.MAX_SAFE_INTEGER) {
+  const list = (Array.isArray(candidates) ? candidates : [candidates]).filter(Boolean);
+  let bestKey = "";
+  let bestLength = Number.MAX_SAFE_INTEGER;
+  for (const key of list) {
+    const value = typeof character?.[key] === "string" ? character[key] : "";
+    if (!value.trim()) continue;
+    const length = value.length;
+    if (length <= maxLength && length < bestLength) {
+      bestKey = key;
+      bestLength = length;
+    }
+  }
+  return bestKey || pickCharacterAssetPath(character, list);
+}
+
 function buildPublicCharacterSummary(character) {
   if (!character) return character;
   const summary = summarizeCharacter(character);
   const characterId = summary.id || summary.name || "unknown";
-  const profilePath = pickCharacterAssetPath(character, ["image"]);
-  const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
-  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+  const profilePath = pickLightCharacterAssetPath(character, ["image", "investigationImage", "mainImage"], 1200000);
+  const mainPath = pickLightCharacterAssetPath(character, ["mainImage", "image", "investigationImage"], 2400000);
+  const spritePath = pickLightCharacterAssetPath(character, ["investigationImage", "image", "mainImage"], 600000);
 
   const toUrl = (pathKey, fallbackValue) => {
     const rawValue = getValueByPath(character, pathKey);

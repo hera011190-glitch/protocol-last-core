@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import CharacterProfile from "./CharacterProfile";
 import DesignPageFrame from "./DesignPageFrame";
+import { buildApiUrl } from "./api";
 
 
 const GLOBAL_WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
@@ -32,7 +33,7 @@ function writeCachedUserCharacters(userId, rows) {
 
 async function fetchUserCharactersWithFallback(userId) {
   const urls = [
-    `http://localhost:3001/characters-public/${userId}`,
+    buildApiUrl(`/characters-public/${userId}`),
   ];
   for (const url of urls) {
     try {
@@ -64,7 +65,7 @@ function CharacterCard({ character, onSelect, onProfile, current }) {  const saf
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(`http://localhost:3001/character-public/${characterId}`);
+  const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
   const data = await res.json();
   return data?.character || null;
 }

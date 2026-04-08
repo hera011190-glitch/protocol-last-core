@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import { buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
 
@@ -86,7 +87,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      fetch(`http://localhost:3001/investigations`)
+      fetch(buildApiUrl(`/investigations`))
         .then((res) => res.json())
         .then((data) => {
           if (cancelled) return;
@@ -151,7 +152,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
 
   const openCompletedDetail = async (item) => {
     try {
-      const res = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+      const res = await fetch(buildApiUrl(`/investigationView/${item.id}`));
       const data = await res.json();
       setCompletedDetail(data);
       setCompletedOpenId(item.id);
