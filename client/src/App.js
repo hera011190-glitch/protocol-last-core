@@ -93,6 +93,24 @@ function writeUserCharacterCache(userId, rows) {
   try { localStorage.setItem(`plc-cache-user-characters-${userId}`, JSON.stringify(Array.isArray(rows) ? rows : [])); } catch {}
 }
 
+function preloadImage(src) {
+  const value = String(src || "").trim();
+  if (!value) return;
+  const img = new Image();
+  img.decoding = "async";
+  img.src = value;
+}
+
+function warmCharacterAssets(rows) {
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    preloadImage(row?.image);
+    preloadImage(row?.cardImage);
+    preloadImage(row?.spriteImage);
+    preloadImage(row?.investigationImage);
+    preloadImage(row?.mainImage);
+  });
+}
+
 function buildThemeVars(theme) {
   return {
     "--bg-main": theme.bgMain || "#eef9ff",
@@ -333,7 +351,7 @@ function App() {
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
     try {
-      const res = await fetch(`http://localhost:3001/character-public/${character.id}`, {});
+      const res = await fetch(`http://localhost:3001/character/${character.id}?t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);
@@ -366,7 +384,7 @@ function App() {
         }
         if (!data.success) {
           try {
-            const latestRes = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+            const latestRes = await fetch(`http://localhost:3001/investigations/${item.id}?t=${Date.now()}`, { cache: "no-store" });
             const latest = await latestRes.json();
             const names = Array.isArray(latest?.participants) ? latest.participants.map((participant) => participant?.name) : [];
             if (latest?.started && (!runtimeCharacter?.name || names.includes(runtimeCharacter.name))) {
@@ -380,7 +398,7 @@ function App() {
           }
           setTimeout(async () => {
             try {
-              const retryRes = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+              const retryRes = await fetch(`http://localhost:3001/investigations/${item.id}?t=${Date.now()}`, { cache: "no-store" });
               const retryLatest = await retryRes.json();
               const retryNames = Array.isArray(retryLatest?.participants) ? retryLatest.participants.map((participant) => participant?.name) : [];
               if (retryLatest?.started && (!runtimeCharacter?.name || retryNames.includes(runtimeCharacter.name))) {
@@ -404,7 +422,7 @@ function App() {
       } catch (err) {
         console.error("startDailyInvestigation error", err);
         try {
-          const latestRes = await fetch(`http://localhost:3001/investigationView/${item.id}`);
+          const latestRes = await fetch(`http://localhost:3001/investigations/${item.id}?t=${Date.now()}`, { cache: "no-store" });
           const latest = await latestRes.json();
           const names = Array.isArray(latest?.participants) ? latest.participants.map((participant) => participant?.name) : [];
           if (latest?.started && (!runtimeCharacter?.name || names.includes(runtimeCharacter.name))) {
@@ -436,8 +454,37 @@ function App() {
   }, [user?.id, user?.isAdmin]);
 
   useEffect(() => {
+    const cached = readLocalArray(CHARACTER_CACHE_KEY);
+    if (cached.length > 0) {
+      warmCharacterAssets(cached);
+    }
+
     let cancelled = false;
-    
+    const warmCharacters = async () => {
+      try {
+        const res = await fetch(`http://localhost:3001/characters-lite?t=${Date.now()}`, { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data) || data.length === 0) return;
+        writeCharacterCaches(data);
+        warmCharacterAssets(data);
+        if (user?.id && !user?.isAdmin) {
+          writeUserCharacterCache(user.id, data.filter((row) => String(row?.ownerId || "") === String(user.id)));
+        }
+      } catch {
+        // ignore warm fetch errors
+      }
+    };
+
+    warmCharacters();
+    return () => {
+      cancelled = true
+    };
+  }, [user?.id, user?.isAdmin]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let warmupTimer = null;
+
     const applyDesign = (nextDesign, { persist = false } = {}) => {
       const next = nextDesign || defaultDesign;
       if (cancelled) return;
@@ -451,7 +498,7 @@ function App() {
     };
 
     const fetchDesign = () => {
-      fetch("http://localhost:3001/designConfigPublic")
+      fetch(`http://localhost:3001/designConfig?t=${Date.now()}`, { cache: "no-store" })
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
@@ -466,7 +513,8 @@ function App() {
         applyDesign(immediate, { persist: true });
         return;
       }
-      fetchDesign();
+      const cached = safeReadJSON(DESIGN_CACHE_KEY, defaultDesign) || defaultDesign;
+      applyDesign(cached, { persist: false });
     };
 
     const handleStorage = (event) => {
@@ -485,13 +533,14 @@ function App() {
     if (cached) {
       applyDesign(cached, { persist: false });
     } else {
-      fetchDesign();
+      warmupTimer = window.setTimeout(fetchDesign, 1200);
     }
 
     window.addEventListener("plc-design-updated", handleDesignUpdated);
     window.addEventListener("storage", handleStorage);
     return () => {
       cancelled = true;
+      if (warmupTimer) window.clearTimeout(warmupTimer);
       window.removeEventListener("plc-design-updated", handleDesignUpdated);
       window.removeEventListener("storage", handleStorage);
     };
