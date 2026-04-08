@@ -28,10 +28,10 @@ function arrowStyle(position, theme) {
   };
 }
 function spawnFromEdge(edge) {
-  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(3.8, 7.4), dy: rand(-2.2, 2.2) };
-  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-7.4, -3.8), dy: rand(-2.2, 2.2) };
-  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-2.2, 2.2), dy: rand(3.8, 6.8) };
-  return { x: rand(10, 88), y: 78, dx: rand(-2.2, 2.2), dy: rand(-6.8, -3.8) };
+  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(6.6, 10.8), dy: rand(-3.2, 3.2) };
+  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-10.8, -6.6), dy: rand(-3.2, 3.2) };
+  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-3.2, 3.2), dy: rand(6.2, 9.6) };
+  return { x: rand(10, 88), y: 78, dx: rand(-3.2, 3.2), dy: rand(-9.6, -6.2) };
 }
 
 function readSavedPositions() {
@@ -295,17 +295,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
         moveCooldownMs -= dt;
         if (moveCooldownMs <= 0) {
-          if (Math.random() < 0.68) {
-            waitMs = rand(2400, 5200);
-            dx *= 0.25;
-            dy *= 0.25;
-            moveCooldownMs = rand(4200, 7600);
+          if (Math.random() < 0.42) {
+            waitMs = rand(900, 2200);
+            dx *= 0.35;
+            dy *= 0.35;
+            moveCooldownMs = rand(2200, 4200);
           } else {
-            dx = rand(-3.1, 3.1);
-            dy = rand(-2.1, 2.1);
-            if (Math.abs(dx) < 0.9) dx = dx >= 0 ? 0.9 : -0.9;
-            if (Math.abs(dy) < 0.3) dy = dy >= 0 ? 0.3 : -0.3;
-            moveCooldownMs = rand(4600, 8400);
+            dx = rand(-4.9, 4.9);
+            dy = rand(-3.4, 3.4);
+            if (Math.abs(dx) < 1.6) dx = dx >= 0 ? 1.6 : -1.6;
+            if (Math.abs(dy) < 0.6) dy = dy >= 0 ? 0.6 : -0.6;
+            moveCooldownMs = rand(2400, 4600);
           }
         }
 
@@ -346,7 +346,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       }));
 
     };
-    const timer = window.setInterval(step, 90);
+    const timer = window.setInterval(step, 70);
     return () => window.clearInterval(timer);
   }, [maps]);
 
@@ -410,7 +410,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
   }, [maps, activeMapId]);
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
-  const mapCharacters = useMemo(() => characters.filter((v) => (v.currentMap || maps[0]?.id) === (currentMap?.id || "")), [characters, currentMap, maps]);
+  const mapCharacters = useMemo(() => {
+    const targetMapId = String(currentMap?.id || "");
+    const seen = new Set();
+    return characters.filter((character) => {
+      if (String(character?.currentMap || "") !== targetMapId) return false;
+      const key = String(character?.id || character?.ownerId || character?.name || "");
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [characters, currentMap]);
   const availableDirs = currentMap?.neighbors || {};
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);

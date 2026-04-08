@@ -1510,7 +1510,11 @@ app.get("/asset/design", (req, res) => {
 app.get("/asset/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).end();
-  const value = getValueByPath(character, req.query.path || "");
+  let pathKey = String(req.query.path || "");
+  if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["image"]);
+  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "image"]);
+  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+  const value = getValueByPath(character, pathKey || "");
   if (!isDataImage(value)) return res.status(404).end();
   return sendDataImage(res, value);
 });
@@ -2571,15 +2575,21 @@ function attachRelationsToCharacter(character) {
 
 function summarizeCharacter(character) {
   if (!character) return character;
-  const cardImage = character.image || character.mainImage || "";
-  const spriteImage = character.investigationImage || cardImage || "";
+  const profileImage = character.image || "";
+  const mainImage = character.mainImage || profileImage || "";
+  const investigationImage = character.investigationImage || mainImage || profileImage || "";
+  const cardImage = mainImage || profileImage || "";
+  const spriteImage = investigationImage || cardImage || "";
   return {
     id: character.id,
     ownerId: character.ownerId,
     name: character.name,
     approved: character.approved,
-    image: cardImage,
+    image: profileImage,
+    profileImage,
+    mainImage,
     cardImage,
+    investigationImage,
     spriteImage,
     currentMap: character.currentMap || "",
     oneLine: character.oneLine || "",
@@ -2599,11 +2609,38 @@ function summarizeCharacter(character) {
   };
 }
 
+function pickCharacterAssetPath(character, candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [candidates];
+  for (const key of list) {
+    const value = character?.[key];
+    if (typeof value === "string" && value.trim()) return key;
+  }
+  return "";
+}
 
 function buildPublicCharacterSummary(character) {
   if (!character) return character;
   const summary = summarizeCharacter(character);
-  return mapDataImages(summary, (pathKey) => toCharacterAssetUrl(summary.id || summary.name || "unknown", pathKey));
+  const characterId = summary.id || summary.name || "unknown";
+  const profilePath = pickCharacterAssetPath(character, ["image"]);
+  const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
+  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+
+  const toUrl = (pathKey, fallbackValue) => {
+    const rawValue = getValueByPath(character, pathKey);
+    if (isDataImage(rawValue)) return toCharacterAssetUrl(characterId, pathKey);
+    return typeof rawValue === "string" && rawValue.trim() ? rawValue : (fallbackValue || "");
+  };
+
+  return {
+    ...summary,
+    image: profilePath ? toUrl(profilePath, summary.image) : summary.image,
+    profileImage: profilePath ? toUrl(profilePath, summary.profileImage) : summary.profileImage,
+    mainImage: mainPath ? toUrl(mainPath, summary.mainImage) : summary.mainImage,
+    cardImage: mainPath ? toUrl(mainPath, summary.cardImage) : summary.cardImage,
+    investigationImage: spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage,
+    spriteImage: spritePath ? toUrl(spritePath, summary.spriteImage) : summary.spriteImage,
+  };
 }
 
 function buildPublicCharacter(character) {
