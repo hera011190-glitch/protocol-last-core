@@ -73,10 +73,12 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
 }
 
 function mergeCharacterStates(prevList, freshList, maps) {
-  const prevById = Object.fromEntries((prevList || []).map((character) => [String(character.id), character]));
-  return (freshList || []).map((character, index) => {
-    const prev = prevById[String(character.id)];
-    return buildCharacterState(character, prev || readSavedPositions()[character.id], maps, index);
+  const prevById = Object.fromEntries(dedupeCharacters(prevList || []).map((character) => [String(character.id), character]));
+  const saved = readSavedPositions();
+  return dedupeCharacters(freshList || []).map((character, index) => {
+    const key = String(character.id);
+    const prev = prevById[key];
+    return buildCharacterState(character, prev || saved[key], maps, index);
   });
 }
 
@@ -106,6 +108,7 @@ function SDInfoModal({ character, onClose, theme }) {
 
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
+const SD_ACTIVE_MAP_KEY = "plc-sd-active-map";
 
 function readCachedSdCharacters() {
   try {
@@ -125,6 +128,32 @@ function writeCachedSdCharacters(rows) {
   try {
     sessionStorage.setItem(WARM_CHARACTER_CACHE_KEY, JSON.stringify(safeRows));
   } catch {}
+}
+
+function readLastViewedMapId() {
+  try {
+    return String(sessionStorage.getItem(SD_ACTIVE_MAP_KEY) || localStorage.getItem(SD_ACTIVE_MAP_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeLastViewedMapId(mapId) {
+  const value = String(mapId || "").trim();
+  if (!value) return;
+  try { sessionStorage.setItem(SD_ACTIVE_MAP_KEY, value); } catch {}
+  try { localStorage.setItem(SD_ACTIVE_MAP_KEY, value); } catch {}
+}
+
+function dedupeCharacters(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const seen = new Set();
+  return list.filter((character) => {
+    const key = String(character?.id || character?.ownerId || character?.name || "").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function getSpriteImage(character) {
@@ -205,7 +234,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
 
 export default function SDPage({ activeCharacter, design, theme }) {
   const [characters, setCharacters] = useState(() => readCachedSdCharacters());
-  const [activeMapId, setActiveMapId] = useState("");
+  const [activeMapId, setActiveMapId] = useState(() => readLastViewedMapId());
   const [quotes, setQuotes] = useState({});
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const lastFrameRef = useRef(0);
@@ -237,11 +266,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const next = mergeCharacterStates([], finalRows, maps);
       setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
       if (next.length > 0) writeCachedSdCharacters(next);
-      if (!activeMapId) {
+      setActiveMapId((prev) => {
+        const stored = prev || readLastViewedMapId();
+        if (stored && maps.some((map) => String(map.id) === String(stored))) return stored;
         const sourceRows = next.length > 0 ? next : mergeCharacterStates([], fallbackRows, maps);
         const mine = sourceRows.find((v) => String(v.id) === String(activeCharacter?.id));
-        setActiveMapId(mine?.currentMap || maps[0]?.id || "");
-      }
+        return mine?.currentMap || maps[0]?.id || "";
+      });
     };
     loadCharacters().catch(() => {
       setCharacters((prev) => {
@@ -249,11 +280,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
         const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
         return cached;
       });
-      if (!activeMapId) {
+      setActiveMapId((prev) => {
+        const stored = prev || readLastViewedMapId();
+        if (stored && maps.some((map) => String(map.id) === String(stored))) return stored;
         const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
         const mine = cached.find((v) => String(v.id) === String(activeCharacter?.id));
-        setActiveMapId((prev) => prev || mine?.currentMap || maps[0]?.id || "");
-      }
+        return mine?.currentMap || maps[0]?.id || "";
+      });
     });
     return () => { cancelled = true; };
   }, [activeCharacter?.id, maps]);
@@ -270,84 +303,125 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!maps.length) return undefined;
-    const step = () => {
-      if (document.visibilityState !== "visible") {
-        lastFrameRef.current = Date.now();
-        return;
+
+    let rafId = 0;
+    const step = (timestamp) => {
+      if (!lastFrameRef.current) lastFrameRef.current = timestamp;
+      const rawDt = timestamp - lastFrameRef.current;
+      const dt = Math.min(80, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
+      lastFrameRef.current = timestamp;
+
+      if (document.visibilityState === "visible") {
+        setCharacters((prev) => prev.map((character, _, arr) => {
+          let currentMap = character.currentMap || maps[0]?.id || "";
+          let x = Number(character.x || 0);
+          let y = Number(character.y || 0);
+          let dx = Number(character.dx || 0);
+          let dy = Number(character.dy || 0);
+          let waitMs = Number(character.waitMs || 0);
+          let moveCooldownMs = Number(character.moveCooldownMs || 0);
+
+          if (waitMs > 0) {
+            waitMs = Math.max(0, waitMs - dt);
+            return { ...character, waitMs, dx: dx * 0.92, dy: dy * 0.92 };
+          }
+
+          moveCooldownMs -= dt;
+          if (moveCooldownMs <= 0) {
+            if (Math.random() < 0.34) {
+              waitMs = rand(1400, 2800);
+              dx *= 0.4;
+              dy *= 0.4;
+              moveCooldownMs = rand(3200, 5600);
+            } else {
+              dx = rand(-3.1, 3.1);
+              dy = rand(-2.2, 2.2);
+              if (Math.abs(dx) < 0.9) dx = dx >= 0 ? 0.9 : -0.9;
+              if (Math.abs(dy) < 0.35) dy = dy >= 0 ? 0.35 : -0.35;
+              moveCooldownMs = rand(3600, 6200);
+            }
+          }
+
+          const speedFactor = dt / 1000;
+          let nx = x + dx * speedFactor;
+          let ny = y + dy * speedFactor;
+
+          if (nx <= 4) {
+            const nextMap = getNextMap(currentMap, "left");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = 91.2;
+              ny = clamp(ny, 10, 76);
+              dx = -Math.max(0.9, Math.abs(dx || rand(1.2, 2.8)));
+              dy = clamp(dy || rand(-1.1, 1.1), -2.2, 2.2);
+              moveCooldownMs = rand(3200, 5600);
+            } else {
+              dx *= -1;
+              nx = clamp(x + dx * speedFactor, 4, 92);
+            }
+          } else if (nx >= 92) {
+            const nextMap = getNextMap(currentMap, "right");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = 8.8;
+              ny = clamp(ny, 10, 76);
+              dx = Math.max(0.9, Math.abs(dx || rand(1.2, 2.8)));
+              dy = clamp(dy || rand(-1.1, 1.1), -2.2, 2.2);
+              moveCooldownMs = rand(3200, 5600);
+            } else {
+              dx *= -1;
+              nx = clamp(x + dx * speedFactor, 4, 92);
+            }
+          }
+          if (ny <= 8) {
+            const nextMap = getNextMap(currentMap, "up");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = clamp(nx, 8, 92);
+              ny = 77.2;
+              dx = clamp(dx || rand(-1.4, 1.4), -3.1, 3.1);
+              dy = -Math.max(0.8, Math.abs(dy || rand(1.1, 2.4)));
+              moveCooldownMs = rand(3200, 5600);
+            } else {
+              dy *= -1;
+              ny = clamp(y + dy * speedFactor, 8, 78);
+            }
+          } else if (ny >= 78) {
+            const nextMap = getNextMap(currentMap, "down");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = clamp(nx, 8, 92);
+              ny = 10.8;
+              dx = clamp(dx || rand(-1.4, 1.4), -3.1, 3.1);
+              dy = Math.max(0.8, Math.abs(dy || rand(1.1, 2.4)));
+              moveCooldownMs = rand(3200, 5600);
+            } else {
+              dy *= -1;
+              ny = clamp(y + dy * speedFactor, 8, 78);
+            }
+          }
+
+          const nearby = arr.filter((other) => String(other.id) !== String(character.id) && String(other.currentMap || maps[0]?.id || "") === String(currentMap));
+          nearby.forEach((other) => {
+            const ox = Number(other.x || 0);
+            const oy = Number(other.y || 0);
+            const distance = Math.hypot(nx - ox, ny - oy);
+            if (distance < 8.6) {
+              const push = (8.6 - distance) * 0.12;
+              nx += nx >= ox ? push : -push;
+              ny += ny >= oy ? push * 0.68 : -push * 0.68;
+            }
+          });
+
+          return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs, currentMap };
+        }));
       }
-      const now = Date.now();
-      if (!lastFrameRef.current) lastFrameRef.current = now;
-      const dt = Math.min(95, Math.max(55, now - lastFrameRef.current || 90));
-      lastFrameRef.current = now;
-      setCharacters((prev) => prev.map((character, _, arr) => {
-        let currentMap = character.currentMap || maps[0]?.id || "";
-        let x = Number(character.x || 0);
-        let y = Number(character.y || 0);
-        let dx = Number(character.dx || 0);
-        let dy = Number(character.dy || 0);
-        let waitMs = Number(character.waitMs || 0);
-        let moveCooldownMs = Number(character.moveCooldownMs || 0);
 
-        if (waitMs > 0) {
-          waitMs = Math.max(0, waitMs - dt);
-          return { ...character, waitMs, dx: dx * 0.9, dy: dy * 0.9 };
-        }
-
-        moveCooldownMs -= dt;
-        if (moveCooldownMs <= 0) {
-          if (Math.random() < 0.42) {
-            waitMs = rand(900, 2200);
-            dx *= 0.35;
-            dy *= 0.35;
-            moveCooldownMs = rand(2200, 4200);
-          } else {
-            dx = rand(-4.9, 4.9);
-            dy = rand(-3.4, 3.4);
-            if (Math.abs(dx) < 1.6) dx = dx >= 0 ? 1.6 : -1.6;
-            if (Math.abs(dy) < 0.6) dy = dy >= 0 ? 0.6 : -0.6;
-            moveCooldownMs = rand(2400, 4600);
-          }
-        }
-
-        const speedFactor = dt / 1000;
-        let nx = x + dx * speedFactor;
-        let ny = y + dy * speedFactor;
-        let crossed = null;
-        if (nx <= 4) crossed = "left";
-        else if (nx >= 92) crossed = "right";
-        else if (ny <= 8) crossed = "up";
-        else if (ny >= 78) crossed = "down";
-
-        if (crossed) {
-          const nextMapId = getNextMap(currentMap, crossed);
-          if (nextMapId !== currentMap) {
-            const spawn = spawnFromEdge(crossed === "left" ? "right" : crossed === "right" ? "left" : crossed === "up" ? "down" : "up");
-            return { ...character, currentMap: nextMapId, x: spawn.x, y: spawn.y, dx: spawn.dx, dy: spawn.dy, waitMs: rand(1600, 3200), moveCooldownMs: rand(4200, 7600) };
-          }
-          dx *= -1;
-          dy *= -1;
-          nx = x + dx * speedFactor;
-          ny = y + dy * speedFactor;
-        }
-
-        const nearby = arr.filter((other) => other.id !== character.id && (other.currentMap || maps[0]?.id) === currentMap);
-        nearby.forEach((other) => {
-          const ox = Number(other.x || 0);
-          const oy = Number(other.y || 0);
-          const distance = Math.hypot(nx - ox, ny - oy);
-          if (distance < 8.8) {
-            const push = (8.8 - distance) * 0.16;
-            nx += nx >= ox ? push : -push;
-            ny += ny >= oy ? push * 0.7 : -push * 0.7;
-          }
-        });
-
-        return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs };
-      }));
-
+      rafId = window.requestAnimationFrame(step);
     };
-    const timer = window.setInterval(step, 70);
-    return () => window.clearInterval(timer);
+
+    rafId = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(rafId);
   }, [maps]);
 
   useEffect(() => {
@@ -367,7 +441,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
           const pool = Array.isArray(picked.sdQuotes) ? picked.sdQuotes.filter(Boolean) : [];
           const text = pool[Math.floor(Math.random() * pool.length)];
-          const hold = Math.max(3400, Math.min(9800, 2600 + String(text || "").length * 120));
+          const hold = Math.max(5000, Math.min(9000, 4200 + String(text || "").length * 85));
           next[picked.id] = { text, expiresAt: now + hold };
         }
         return next;
@@ -401,13 +475,19 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     if (!maps.length) return;
     if (!maps.some((map) => String(map.id) === String(activeMapId))) {
-      setActiveMapId(maps[0].id);
+      const stored = readLastViewedMapId();
+      setActiveMapId(maps.some((map) => String(map.id) === String(stored)) ? stored : maps[0].id);
     }
     setCharacters((prev) => prev.map((character, index) => {
       const currentMap = maps.some((map) => String(map.id) === String(character.currentMap)) ? character.currentMap : maps[index % maps.length]?.id || maps[0]?.id || "";
       return currentMap === character.currentMap ? character : { ...character, currentMap };
     }));
   }, [maps, activeMapId]);
+
+  useEffect(() => {
+    if (!activeMapId) return;
+    writeLastViewedMapId(activeMapId);
+  }, [activeMapId]);
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
   const mapCharacters = useMemo(() => {
@@ -427,7 +507,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!nextId || nextId === activeMapId) return;
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
-    setCharacters((prev) => prev.map((character) => String(character.id) === String(activeCharacter?.id) ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx, dy: spawn.dy, waitMs: 900, moveCooldownMs: rand(2400, 4200) } : character));
+    setCharacters((prev) => prev.map((character) => String(character.id) === String(activeCharacter?.id) ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.82, dy: spawn.dy * 0.82, waitMs: 1400, moveCooldownMs: rand(3600, 6200) } : character));
     if (activeCharacter?.id) {
       fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));
