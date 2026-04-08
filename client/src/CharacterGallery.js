@@ -36,7 +36,6 @@ function CharacterCard({ character, onClick, theme }) {
 async function fetchCharactersWithFallback() {
   const urls = [
     buildApiUrl(`/characters-public`),
-    buildApiUrl(`/characters-lite`),
   ];
   for (const url of urls) {
     try {
@@ -50,7 +49,7 @@ async function fetchCharactersWithFallback() {
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(buildApiUrl(`/character/${characterId}`));
+  const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
   const data = await res.json();
   return data?.character || null;
 }

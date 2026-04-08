@@ -135,7 +135,6 @@ async function fetchCharactersWithFallback() {
   const now = Date.now();
   const urls = [
     buildApiUrl(`/characters-public`),
-    buildApiUrl(`/characters-lite`),
   ];
   for (const url of urls) {
     try {
@@ -169,24 +168,36 @@ function CharacterSprite({ character, quote, moving, onClick }) {
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
       <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {spriteImage ? (
-          <img
-            src={spriteImage}
-            alt=""
-            loading="eager"
-            decoding="async"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              position: "absolute",
-              inset: 0,
-              zIndex: 1,
-              opacity: 1,
-              filter: `drop-shadow(0 12px 18px rgba(0,0,0,0.22)) saturate(${1 + corrosion / 180}) hue-rotate(${-corrosion / 5}deg)`,
-            }}
-          />
+          <>
+            <img
+              src={spriteImage}
+              alt=""
+              loading="eager"
+              decoding="async"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                position: "absolute",
+                inset: 0,
+                zIndex: 1,
+                filter: `saturate(${1 + tintOpacity * 0.45}) hue-rotate(${-corrosion * 0.35}deg)`,
+              }}
+            />
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 2,
+                opacity: Math.max(0, tintOpacity * 0.35),
+                pointerEvents: "none",
+                borderRadius: "50%",
+                background: "radial-gradient(circle at 50% 72%, rgba(255,78,78,0.38), rgba(120,0,0,0.18) 55%, rgba(120,0,0,0) 72%)",
+              }}
+            />
+          </>
         ) : null}
-        {tintOpacity > 0 ? <div aria-hidden style={{ position: "absolute", inset: "14% 22% 10% 22%", zIndex: 2, pointerEvents: "none", borderRadius: 999, background: `radial-gradient(circle at 50% 80%, rgba(255,70,70,${Math.min(0.42, tintOpacity)}) 0%, rgba(190,0,0,${Math.min(0.28, tintOpacity)}) 58%, rgba(190,0,0,0) 100%)` }} /> : null}
       </div>
     </div>
   );

@@ -58,7 +58,7 @@ export default function AdminShopManager({ goBack }) {
   const load = async () => {
     try {
       const [itemRes, configRes] = await Promise.all([
-        fetch(`http://localhost:3001/shopItems?t=${Date.now()}`),
+        fetch(`http://localhost:3001/shopItems`),
         fetch(`http://localhost:3001/shopConfig?t=${Date.now()}`),
       ]);
       const data = await safeJsonResponse(itemRes);
@@ -273,15 +273,19 @@ export default function AdminShopManager({ goBack }) {
             <select value={form.useType} onChange={(e) => setForm({ ...form, useType: e.target.value })} style={inputStyle}>
               <option value="none">사용 불가</option>
               <option value="heal">HP 회복</option>
+              <option value="corrosionHeal">침식도 감소</option>
               <option value="statBoost">스텟 추가</option>
               <option value="statPoint">스탯 포인트</option>
               <option value="skill">스킬</option>
-              <option value="corrosionHeal">침식도 감소</option>
             </select>
           </label>
 
           {form.useType === "heal" ? (
             <label>회복 수치<input type="number" value={form.useValue} onChange={(e) => setForm({ ...form, useValue: e.target.value })} style={inputStyle} /></label>
+          ) : null}
+
+          {form.useType === "corrosionHeal" ? (
+            <label>감소 수치<input type="number" value={form.useValue} onChange={(e) => setForm({ ...form, useValue: e.target.value })} style={inputStyle} /></label>
           ) : null}
 
           {form.useType === "statBoost" ? (
@@ -301,10 +305,6 @@ export default function AdminShopManager({ goBack }) {
 
           {form.useType === "statPoint" ? (
             <label>지급 포인트<input type="number" value={form.useValue} onChange={(e) => setForm({ ...form, useValue: e.target.value })} style={inputStyle} /></label>
-          ) : null}
-
-          {form.useType === "corrosionHeal" ? (
-            <label>감소 수치<input type="number" value={form.useValue} onChange={(e) => setForm({ ...form, useValue: e.target.value })} style={inputStyle} /></label>
           ) : null}
 
           {form.useType === "skill" ? (
@@ -342,10 +342,10 @@ export default function AdminShopManager({ goBack }) {
 function itemTypeLabel(item) {
   const type = item?.useType || "none";
   if (type === "heal") return `HP 회복 ${Number(item.useValue || 0)}`;
+  if (type === "corrosionHeal") return `침식도 -${Number(item.useValue || 0)}`;
   if (type === "statBoost") return `${String(item.statTarget || "hp").toUpperCase()} +${Number(item.useValue || 0)}`;
   if (type === "statPoint") return `스탯 포인트 +${Number(item.useValue || 0)}`;
   if (type === "skill") return `스킬 ${item.skillName || item.name || item.useValue || ""} · ${item.skillEffect || "damage"} · 쿨 ${Number(item.cooldownTurns || 0)}턴`;
-  if (type === "corrosionHeal") return `침식도 -${Number(item.useValue || 0)}`;
   return "사용 불가";
 }
 

@@ -5,7 +5,6 @@ const cors = require("cors");
 const compression = require("compression");
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
@@ -52,64 +51,6 @@ function ensureRuntimeFile(filename, fallbackValue) {
   return runtimePath;
 }
 
-
-const assetBlobCache = new Map();
-
-function parseDataImageUrl(value) {
-  const raw = String(value || "");
-  const match = raw.match(/^data:(image\/[^;]+);base64,(.+)$/);
-  if (!match) return null;
-  try {
-    return {
-      mime: match[1],
-      buffer: Buffer.from(match[2], "base64"),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function registerAssetBlob(value) {
-  const parsed = parseDataImageUrl(value);
-  if (!parsed) return String(value || "");
-  const hash = crypto.createHash("sha1").update(String(value)).digest("hex");
-  if (!assetBlobCache.has(hash)) {
-    assetBlobCache.set(hash, parsed);
-  }
-  return `/asset-cache/${hash}`;
-}
-
-function replaceEmbeddedDataImages(value) {
-  const raw = String(value || "");
-  if (!raw.includes("data:image/")) return raw;
-  if (raw.startsWith("data:image/")) return registerAssetBlob(raw);
-  return raw.replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, (match) => registerAssetBlob(match));
-}
-
-function rewriteClientImagePayload(value, seen = new WeakMap()) {
-  if (typeof value === "string") return replaceEmbeddedDataImages(value);
-  if (!value || typeof value !== "object") return value;
-  if (seen.has(value)) return seen.get(value);
-  if (Array.isArray(value)) {
-    const arr = [];
-    seen.set(value, arr);
-    value.forEach((entry, index) => {
-      arr[index] = rewriteClientImagePayload(entry, seen);
-    });
-    return arr;
-  }
-  const next = {};
-  seen.set(value, next);
-  Object.entries(value).forEach(([key, entry]) => {
-    next[key] = rewriteClientImagePayload(entry, seen);
-  });
-  return next;
-}
-
-function serializeClientPayload(value) {
-  return rewriteClientImagePayload(value);
-}
-
 ["users.json", "characters.json", "relationRequests.json", "relations.json", "mails.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
 
@@ -133,18 +74,9 @@ app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
 
-app.get("/asset-cache/:hash", (req, res) => {
-  const asset = assetBlobCache.get(String(req.params.hash || ""));
-  if (!asset) return res.status(404).end();
-  res.set("Content-Type", asset.mime || "application/octet-stream");
-  res.set("Cache-Control", "public, max-age=31536000, immutable");
-  res.send(asset.buffer);
-});
-
-
 app.use((req, res, next) => {
   const lowerPath = String(req.path || "").toLowerCase();
-  const isStaticAsset = lowerPath.startsWith("/static/") || /\.(js|css|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json)$/.test(lowerPath);
+  const isStaticAsset = lowerPath.startsWith("/static/") || lowerPath.startsWith("/asset/") || /\.(js|css|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json)$/.test(lowerPath);
   if (!isStaticAsset) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
@@ -204,6 +136,61 @@ let dailyInvestigationAttempts = {};
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+
+function isDataImage(value) {
+  return typeof value === "string" && /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value);
+}
+
+function pathSegments(pathKey = "") {
+  return String(pathKey || "").match(/[^.[\]]+/g) || [];
+}
+
+function getValueByPath(source, pathKey = "") {
+  return pathSegments(pathKey).reduce((acc, key) => (acc == null ? undefined : acc[key]), source);
+}
+
+function mapDataImages(source, makeUrl, currentPath = "") {
+  if (Array.isArray(source)) return source.map((value, index) => mapDataImages(value, makeUrl, `${currentPath}[${index}]`));
+  if (source && typeof source === "object") {
+    return Object.fromEntries(
+      Object.entries(source).map(([key, value]) => {
+        const nextPath = currentPath ? `${currentPath}.${key}` : key;
+        return [key, mapDataImages(value, makeUrl, nextPath)];
+      })
+    );
+  }
+  if (isDataImage(source)) return makeUrl(currentPath, source);
+  return source;
+}
+
+function sendDataImage(res, value) {
+  const match = String(value || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  const [, mime, payload] = match;
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.type(mime);
+  return res.send(Buffer.from(payload, "base64"));
+}
+
+function toCharacterAssetUrl(characterId, pathKey) {
+  return `/asset/character/${encodeURIComponent(String(characterId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function toInvestigationAssetUrl(investigationId, pathKey) {
+  return `/asset/investigation/${encodeURIComponent(String(investigationId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function toDesignAssetUrl(pathKey) {
+  return `/asset/design?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function applyCharacterCorrosion(character, amount = 0) {
+  const delta = Math.max(0, Number(amount || 0));
+  if (!character || delta <= 0) return character;
+  character.corrosion = Math.max(0, Math.min(100, Number(character.corrosion || 0) + delta));
+  return character;
 }
 
 function createLogEntry(text) {
@@ -358,6 +345,7 @@ function normalizeActionResult(result) {
     statPoints: Number(result?.statPoints || 0),
     damage: Number(result?.damage || 0),
     muteMinutes: Number(result?.muteMinutes || 0),
+    corrosionIncrease: Number(result?.corrosionIncrease || 0),
   };
 }
 
@@ -411,11 +399,13 @@ function buildInvestigation(def) {
     id: def.id,
     title: def.title,
     type: def.type,
+    entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
     bgmUrl,
     bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
     data: {
       ...def.data,
       backgroundImage: def?.data?.backgroundImage || def?.backgroundImage || "",
+      entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
       bgmUrl,
       bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
       nodes: normalizedNodes,
@@ -616,65 +606,11 @@ function getInvestigationSummary(item) {
     currentNodeName: item.data?.nodes?.[item.currentNodeId]?.name || "-",
     dailyOwnerKey: String(item.dailyOwnerKey || ""),
     dailyResumeOwnerKey: String(item.dailyResumeOwnerKey || ""),
+    entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
+    leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
+    participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
   };
 }
-
-function getInvestigationPresenceSnapshot(item) {
-  syncInvestigationRoster(item);
-  return serializeClientPayload({
-    id: item.id,
-    leaders: item.leaders || [],
-    participants: item.participants || [],
-    started: !!item.started,
-    ended: !!item.ended,
-    endedReason: item.endedReason || "",
-    resultSummary: item.resultSummary || "",
-    routeHistory: item.routeHistory || [],
-    foundItems: item.foundItems || [],
-    foundNPCs: item.foundNPCs || [],
-    rewards: item.rewards || [],
-    points: 0,
-    participantStates: item.participantStates || {},
-  });
-}
-
-function getInvestigationStateSnapshot(item) {
-  syncInvestigationRoster(item);
-  return serializeClientPayload({
-    investigationId: item.id,
-    currentNodeId: item.currentNodeId,
-    sharedLog: item.sharedLog,
-    sharedLogs: item.sharedLogs || [],
-    leaders: item.leaders,
-    participants: item.participants,
-    started: !!item.started,
-    routeHistory: item.routeHistory || [],
-    mapBackgroundImage: item.data?.backgroundImage || "",
-    foundItems: item.foundItems || [],
-    foundNPCs: item.foundNPCs || [],
-    rewards: item.rewards || [],
-    points: 0,
-    participantStates: item.participantStates || {},
-    ended: item.ended || false,
-    endedAt: item.endedAt || "",
-    endedReason: item.endedReason || "",
-    resultSummary: item.resultSummary || "",
-    battleTurn: item.battleTurn || 1,
-    pendingBattleActions: item.pendingBattleActions || {},
-    lastBattleRound: item.lastBattleRound || [],
-    clues: item.clues || [],
-    pendingReward: item.pendingReward || null,
-    activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null,
-    npcLineIndex: typeof item.npcLineIndex === "number" ? item.npcLineIndex : 0,
-    readyToEnd: !!item.readyToEnd,
-    endNoticeDismissed: !!item.endNoticeDismissed,
-    eventBanner: item.eventBanner || "",
-    eventBannerType: item.eventBannerType || "normal",
-    eventBannerUntil: Number(item.eventBannerUntil || 0),
-    endConfirmations: item.endConfirmations || [],
-  });
-}
-
 
 
 function emitOnlineAccounts() {
@@ -706,13 +642,15 @@ function emitUsers() {
   emitOnlineAccounts();
 }
 function emitParticipantsUpdated() {
-  io.emit("participantsUpdated", investigationsDB.map(getInvestigationPresenceSnapshot));
+  investigationsDB.forEach((item) => syncInvestigationRoster(item));
+  io.emit("participantsUpdated", investigationsDB.map(getInvestigationSummary));
 }
 
 function emitInvestigationState(investigationId) {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return;
-  io.to(investigationId).emit("investigationStateUpdated", getInvestigationStateSnapshot(item));
+  syncInvestigationRoster(item);
+  io.to(investigationId).emit("investigationStateUpdated", buildPublicInvestigationState(item));
 }
 
 function ensureParticipantState(item, character) {
@@ -754,27 +692,6 @@ function ensureRouteHistorySeed(item) {
 function getDailyOwnerKey(character) {
   if (!character) return "";
   return String(character.id || `${character.ownerId || "owner"}:${character.name || ""}`);
-}
-
-function clampCorrosion(value) {
-  const num = Number(value || 0);
-  if (!Number.isFinite(num)) return 0;
-  return Math.max(0, Math.min(100, num));
-}
-
-function applyInvestigationEntryCorrosion(item, participants) {
-  const amount = Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? 0);
-  if (!Number.isFinite(amount) || amount === 0) return [];
-  const changed = [];
-  (Array.isArray(participants) ? participants : []).forEach((participant) => {
-    const found = charactersDB.find((c) => String(c.id) === String(participant?.id || ""))
-      || charactersDB.find((c) => String(c.name || "") === String(participant?.name || ""));
-    if (!found) return;
-    found.corrosion = clampCorrosion(Number(found.corrosion || 0) + amount);
-    changed.push(found);
-  });
-  if (changed.length > 0) writeRuntimeArray("characters.json", charactersDB);
-  return changed;
 }
 
 function canResumeDailyInvestigation(item, character) {
@@ -1151,6 +1068,18 @@ function applyActionRewards(item, result, locationName) {
       state.mutedUntil = until;
     });
     textParts.push(`${result.muteMinutes}분간 채팅 금지`);
+    changed = true;
+  }
+
+  if (typeof result.corrosionIncrease === "number" && result.corrosionIncrease > 0) {
+    (item.participants || []).forEach((participant) => {
+      const foundCharacter =
+        charactersDB.find((character) => String(character?.id || "") === String(participant?.id || "")) ||
+        charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+      if (foundCharacter) applyCharacterCorrosion(foundCharacter, result.corrosionIncrease);
+    });
+    writeRuntimeArray("characters.json", charactersDB);
+    textParts.push(`침식 진행도 +${result.corrosionIncrease}`);
     changed = true;
   }
 
@@ -1569,7 +1498,30 @@ function applyBattleTurn(item, actions) {
 
 
 app.get("/designConfig", (req, res) => res.json(designConfig));
-app.get("/designConfigLite", (req, res) => res.json(serializeClientPayload(designConfig)));
+
+app.get("/designConfigPublic", (req, res) => res.json(buildPublicDesignConfig(designConfig)));
+
+app.get("/asset/design", (req, res) => {
+  const value = getValueByPath(designConfig, req.query.path || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
+});
+
+app.get("/asset/character/:id", (req, res) => {
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  if (!character) return res.status(404).end();
+  const value = getValueByPath(character, req.query.path || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
+});
+
+app.get("/asset/investigation/:id", (req, res) => {
+  const item = investigationsDB.find((entry) => String(entry.id) === String(req.params.id));
+  if (!item) return res.status(404).end();
+  const value = getValueByPath(item, req.query.path || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
+});
 app.post("/designConfig", (req, res) => {
   const payload = req.body && typeof req.body === "object" ? req.body : {};
   designConfig = {
@@ -1856,24 +1808,18 @@ app.get("/investigations", (req, res) => {
     .map(getInvestigationSummary);
   res.json(rows);
 });
-app.get("/investigations-lite", (req, res) => {
-  const includeHidden = String(req.query.includeHidden || "") === "1";
-  const rows = investigationsDB
-    .filter((item) => includeHidden || !item.hidden)
-    .map(getInvestigationSummary);
-  res.json(serializeClientPayload(rows));
-});
-app.get("/investigations-lite/:id", (req, res) => {
-  const item = investigationsDB.find((v) => v.id === req.params.id);
-  if (!item) return res.status(404).json({ success: false });
-  syncInvestigationRoster(item);
-  res.json(serializeClientPayload({ ...item, activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null }));
-});
 app.get("/investigations/:id", (req, res) => {
   const item = investigationsDB.find((v) => v.id === req.params.id);
   if (!item) return res.status(404).json({ success: false });
   syncInvestigationRoster(item);
   res.json({ ...item, activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null });
+});
+
+app.get("/investigationView/:id", (req, res) => {
+  const item = investigationsDB.find((v) => v.id === req.params.id);
+  if (!item) return res.status(404).json({ success: false });
+  syncInvestigationRoster(item);
+  res.json(buildPublicInvestigationState(item));
 });
 
 app.get("/investigationChats/:id", (req, res) => res.json(roomChats[req.params.id] || []));
@@ -1949,8 +1895,7 @@ app.post("/startDailyInvestigation", (req, res) => {
     if (remain <= 0) return res.json({ success: false, message: "남은 일일조사 횟수가 없어." });
 
     sourceCharacter.dailyAttemptsLeft = remain - 1;
-
-    applyInvestigationEntryCorrosion(item, [sourceCharacter]);
+    applyCharacterCorrosion(sourceCharacter, item.entryCorrosion || item.data?.entryCorrosion || 0);
 
     resetInvestigationProgress(item);
     ensureRuntimeState(item);
@@ -1968,11 +1913,12 @@ app.post("/startDailyInvestigation", (req, res) => {
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[일일조사 시작] ${item.title}`);
 
+    writeRuntimeArray("characters.json", charactersDB);
     try { io.emit("investigationStarted", { id }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
     try { emitParticipantsUpdated(); } catch (emitErr) { console.error("participantsUpdated emit failed", emitErr); }
     try { emitInvestigationState(id); } catch (emitErr) { console.error("investigationState emit failed", emitErr); }
 
-    return res.json({ success: true, started: true, investigationId: item.id, character: sourceCharacter });
+    return res.json({ success: true, started: true, investigationId: item.id, character: buildPublicCharacter(sourceCharacter) });
   } catch (err) {
     console.error("startDailyInvestigation failed", err);
     return res.status(500).json({ success: false, message: "일일조사 시작 처리 중 오류가 발생했습니다." });
@@ -2076,8 +2022,14 @@ app.post("/startInvestigation", (req, res) => {
     item.endConfirmations = [];
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[조사 시작] ${item.title}`);
-    item.participants.forEach((participant) => ensureParticipantState(item, participant));
-    applyInvestigationEntryCorrosion(item, item.participants);
+    item.participants.forEach((participant) => {
+      const foundCharacter =
+        charactersDB.find((character) => String(character?.id || "") === String(participant?.id || "")) ||
+        charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+      if (foundCharacter) applyCharacterCorrosion(foundCharacter, item.entryCorrosion || item.data?.entryCorrosion || 0);
+      ensureParticipantState(item, foundCharacter || participant);
+    });
+    writeRuntimeArray("characters.json", charactersDB);
     syncInvestigationRoster(item);
     try { io.emit("investigationStarted", { id }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
     try { emitParticipantsUpdated(); } catch (emitErr) { console.error("participantsUpdated emit failed", emitErr); }
@@ -2647,10 +2599,83 @@ function summarizeCharacter(character) {
   };
 }
 
+
+function buildPublicCharacterSummary(character) {
+  if (!character) return character;
+  const summary = summarizeCharacter(character);
+  return mapDataImages(summary, (pathKey) => toCharacterAssetUrl(summary.id || summary.name || "unknown", pathKey));
+}
+
+function buildPublicCharacter(character) {
+  if (!character) return character;
+  const detailed = attachRelationsToCharacter(character);
+  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey));
+}
+
+function buildPublicDesignConfig(config) {
+  return mapDataImages(config || {}, (pathKey) => toDesignAssetUrl(pathKey));
+}
+
+function buildPublicInvestigationState(item) {
+  if (!item) return null;
+  syncInvestigationRoster(item);
+  const payload = {
+    id: item.id,
+    investigationId: item.id,
+    title: item.title,
+    type: item.type,
+    entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
+    currentNodeId: item.currentNodeId,
+    sharedLog: item.sharedLog,
+    sharedLogs: item.sharedLogs || [],
+    leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
+    participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
+    started: !!item.started,
+    routeHistory: item.routeHistory || [],
+    mapBackgroundImage: item.data?.backgroundImage || "",
+    foundItems: item.foundItems || [],
+    foundNPCs: item.foundNPCs || [],
+    rewards: item.rewards || [],
+    points: 0,
+    participantStates: item.participantStates || {},
+    ended: item.ended || false,
+    endedAt: item.endedAt || "",
+    endedReason: item.endedReason || "",
+    resultSummary: item.resultSummary || "",
+    battleTurn: item.battleTurn || 1,
+    pendingBattleActions: item.pendingBattleActions || {},
+    lastBattleRound: item.lastBattleRound || [],
+    clues: item.clues || [],
+    pendingReward: item.pendingReward || null,
+    activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null,
+    npcLineIndex: typeof item.npcLineIndex === "number" ? item.npcLineIndex : 0,
+    readyToEnd: !!item.readyToEnd,
+    endNoticeDismissed: !!item.endNoticeDismissed,
+    eventBanner: item.eventBanner || "",
+    eventBannerType: item.eventBannerType || "normal",
+    eventBannerUntil: Number(item.eventBannerUntil || 0),
+    endConfirmations: item.endConfirmations || [],
+    data: item.data,
+  };
+  return mapDataImages(payload, (pathKey) => toInvestigationAssetUrl(item.id, pathKey));
+}
+
 app.get("/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했어." });
   res.json({ success: true, character: attachRelationsToCharacter(character) });
+});
+
+app.get("/character-public/:id", (req, res) => {
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했어." });
+  res.json({ success: true, character: buildPublicCharacter(character) });
+});
+
+app.get("/character-items/:id", (req, res) => {
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  if (!character) return res.status(404).json({ success: false, items: [] });
+  res.json({ success: true, items: Array.isArray(character.items) ? character.items : [] });
 });
 
 app.get("/characters-lite/:ownerId", (req, res) => {
@@ -2662,18 +2687,11 @@ app.get("/characters-lite", (req, res) => {
 });
 
 app.get("/characters-public/:ownerId", (req, res) => {
-  const rows = charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(summarizeCharacter);
-  res.json(serializeClientPayload(rows));
+  res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(buildPublicCharacterSummary));
 });
 
 app.get("/characters-public", (req, res) => {
-  res.json(serializeClientPayload(charactersDB.map(summarizeCharacter)));
-});
-
-app.get("/character-inventory/:id", (req, res) => {
-  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
-  if (!character) return res.status(404).json({ success: false, items: [] });
-  res.json({ success: true, items: Array.isArray(character.items) ? character.items : [] });
+  res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 
 app.get("/health", (req, res) => {
@@ -2834,7 +2852,7 @@ function normalizeShopItem(item = {}) {
     description: item.description || "",
     image: String(item.image || item.icon || ""),
     useType,
-    useValue: useType === "skill" ? String(item.useValue || item.skillKey || "") : Number(item.useValue || item.amount || 0),
+    useValue: useType === "skill" ? String(item.useValue || item.skillKey || "") : Number(item.useValue || 0),
     statTarget: item.statTarget || item.targetStat || "hp",
     skillName: item.skillName || "",
     skillKey: item.skillKey || (useType === "skill" ? String(item.useValue || "") : ""),
@@ -2950,10 +2968,6 @@ function syncShopItemsWithKnownItems() {
 app.get("/shopItems", (req, res) => {
   syncShopItemsWithKnownItems();
   res.json(shopItemsDB.map(normalizeShopItem));
-});
-app.get("/shopItemsLite", (req, res) => {
-  syncShopItemsWithKnownItems();
-  res.json(serializeClientPayload(shopItemsDB.map(normalizeShopItem)));
 });
 app.post("/shopItems", (req, res) => {
   syncShopItemsWithKnownItems();

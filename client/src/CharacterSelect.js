@@ -33,7 +33,6 @@ function writeCachedUserCharacters(userId, rows) {
 async function fetchUserCharactersWithFallback(userId) {
   const urls = [
     `http://localhost:3001/characters-public/${userId}`,
-    `http://localhost:3001/characters-lite/${userId}`,
   ];
   for (const url of urls) {
     try {
@@ -41,7 +40,7 @@ async function fetchUserCharactersWithFallback(userId) {
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) {
-        return url.includes('/characters-lite/') ? data : data.filter((row) => String(row?.ownerId || "") === String(userId || ""));
+        return data;
       }
     } catch {}
   }
@@ -65,7 +64,7 @@ function CharacterCard({ character, onSelect, onProfile, current }) {  const saf
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(`http://localhost:3001/character/${characterId}`);
+  const res = await fetch(`http://localhost:3001/character-public/${characterId}`);
   const data = await res.json();
   return data?.character || null;
 }
