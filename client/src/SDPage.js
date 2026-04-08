@@ -128,28 +128,17 @@ function writeCachedSdCharacters(rows) {
 }
 
 function getSpriteImage(character) {
-  const sprite = character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || character?.cardImage || "";
-  if (sprite) return sprite;
-  return "";
-}
-
-function preloadSpriteImage(character) {
-  const src = getSpriteImage(character);
-  if (!src) return;
-  const img = new Image();
-  img.decoding = "async";
-  img.src = src;
+  return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
 }
 
 async function fetchCharactersWithFallback() {
   const now = Date.now();
   const urls = [
-    buildApiUrl(`/characters-lite?t=${now}`),
-    buildApiUrl(`/characters?t=${now}`),
+    buildApiUrl(`/characters-public`),
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
@@ -180,25 +169,31 @@ function CharacterSprite({ character, quote, moving, onClick }) {
       <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.6 : -1.6}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.16s linear", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {spriteImage ? (
           <>
-            <img src={spriteImage} alt="" loading="eager" decoding="async" fetchPriority="high" style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }} />
+            <img
+              src={spriteImage}
+              alt=""
+              loading="eager"
+              decoding="async"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                position: "absolute",
+                inset: 0,
+                zIndex: 1,
+                filter: `saturate(${1 + tintOpacity * 0.45}) hue-rotate(${-corrosion * 0.35}deg)`,
+              }}
+            />
             <div
               aria-hidden
               style={{
                 position: "absolute",
                 inset: 0,
                 zIndex: 2,
-                opacity: tintOpacity,
+                opacity: Math.max(0, tintOpacity * 0.35),
                 pointerEvents: "none",
-                mixBlendMode: "multiply",
-                background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) ${Math.max(0, 94 - corrosion * 0.55)}%, rgba(255,92,92,0.18) ${Math.max(12, 70 - corrosion * 0.2)}%, rgba(170,0,0,0.96) 100%)`,
-                maskImage: `url(${spriteImage})`,
-                WebkitMaskImage: `url(${spriteImage})`,
-                maskRepeat: "no-repeat",
-                WebkitMaskRepeat: "no-repeat",
-                maskPosition: "center",
-                WebkitMaskPosition: "center",
-                maskSize: "contain",
-                WebkitMaskSize: "contain",
+                borderRadius: "50%",
+                background: "radial-gradient(circle at 50% 72%, rgba(255,78,78,0.38), rgba(120,0,0,0.18) 55%, rgba(120,0,0,0) 72%)",
               }}
             />
           </>
@@ -240,7 +235,6 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const fallbackRows = readCachedSdCharacters();
       const finalRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
       const next = mergeCharacterStates([], finalRows, maps);
-      next.forEach(preloadSpriteImage);
       setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
       if (next.length > 0) writeCachedSdCharacters(next);
       if (!activeMapId) {

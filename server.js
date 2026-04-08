@@ -76,7 +76,7 @@ app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
 
 app.use((req, res, next) => {
   const lowerPath = String(req.path || "").toLowerCase();
-  const isStaticAsset = lowerPath.startsWith("/static/") || /\.(js|css|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json)$/.test(lowerPath);
+  const isStaticAsset = lowerPath.startsWith("/static/") || lowerPath.startsWith("/asset/") || /\.(js|css|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json)$/.test(lowerPath);
   if (!isStaticAsset) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
@@ -136,6 +136,61 @@ let dailyInvestigationAttempts = {};
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+
+function isDataImage(value) {
+  return typeof value === "string" && /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value);
+}
+
+function pathSegments(pathKey = "") {
+  return String(pathKey || "").match(/[^.[\]]+/g) || [];
+}
+
+function getValueByPath(source, pathKey = "") {
+  return pathSegments(pathKey).reduce((acc, key) => (acc == null ? undefined : acc[key]), source);
+}
+
+function mapDataImages(source, makeUrl, currentPath = "") {
+  if (Array.isArray(source)) return source.map((value, index) => mapDataImages(value, makeUrl, `${currentPath}[${index}]`));
+  if (source && typeof source === "object") {
+    return Object.fromEntries(
+      Object.entries(source).map(([key, value]) => {
+        const nextPath = currentPath ? `${currentPath}.${key}` : key;
+        return [key, mapDataImages(value, makeUrl, nextPath)];
+      })
+    );
+  }
+  if (isDataImage(source)) return makeUrl(currentPath, source);
+  return source;
+}
+
+function sendDataImage(res, value) {
+  const match = String(value || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  const [, mime, payload] = match;
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.type(mime);
+  return res.send(Buffer.from(payload, "base64"));
+}
+
+function toCharacterAssetUrl(characterId, pathKey) {
+  return `/asset/character/${encodeURIComponent(String(characterId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function toInvestigationAssetUrl(investigationId, pathKey) {
+  return `/asset/investigation/${encodeURIComponent(String(investigationId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function toDesignAssetUrl(pathKey) {
+  return `/asset/design?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function applyCharacterCorrosion(character, amount = 0) {
+  const delta = Math.max(0, Number(amount || 0));
+  if (!character || delta <= 0) return character;
+  character.corrosion = Math.max(0, Math.min(100, Number(character.corrosion || 0) + delta));
+  return character;
 }
 
 function createLogEntry(text) {
@@ -290,6 +345,7 @@ function normalizeActionResult(result) {
     statPoints: Number(result?.statPoints || 0),
     damage: Number(result?.damage || 0),
     muteMinutes: Number(result?.muteMinutes || 0),
+    corrosionIncrease: Number(result?.corrosionIncrease || 0),
   };
 }
 
@@ -343,11 +399,13 @@ function buildInvestigation(def) {
     id: def.id,
     title: def.title,
     type: def.type,
+    entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
     bgmUrl,
     bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
     data: {
       ...def.data,
       backgroundImage: def?.data?.backgroundImage || def?.backgroundImage || "",
+      entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
       bgmUrl,
       bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
       nodes: normalizedNodes,
@@ -548,6 +606,9 @@ function getInvestigationSummary(item) {
     currentNodeName: item.data?.nodes?.[item.currentNodeId]?.name || "-",
     dailyOwnerKey: String(item.dailyOwnerKey || ""),
     dailyResumeOwnerKey: String(item.dailyResumeOwnerKey || ""),
+    entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
+    leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
+    participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
   };
 }
 
@@ -582,46 +643,14 @@ function emitUsers() {
 }
 function emitParticipantsUpdated() {
   investigationsDB.forEach((item) => syncInvestigationRoster(item));
-  io.emit("participantsUpdated", investigationsDB);
+  io.emit("participantsUpdated", investigationsDB.map(getInvestigationSummary));
 }
 
 function emitInvestigationState(investigationId) {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return;
   syncInvestigationRoster(item);
-  io.to(investigationId).emit("investigationStateUpdated", {
-    investigationId,
-    currentNodeId: item.currentNodeId,
-    sharedLog: item.sharedLog,
-    sharedLogs: item.sharedLogs || [],
-    leaders: item.leaders,
-    participants: item.participants,
-    started: !!item.started,
-    routeHistory: item.routeHistory || [],
-    mapBackgroundImage: item.data?.backgroundImage || "",
-    foundItems: item.foundItems || [],
-    foundNPCs: item.foundNPCs || [],
-    rewards: item.rewards || [],
-    points: 0,
-    participantStates: item.participantStates || {},
-    ended: item.ended || false,
-    endedAt: item.endedAt || "",
-    endedReason: item.endedReason || "",
-    resultSummary: item.resultSummary || "",
-    battleTurn: item.battleTurn || 1,
-    pendingBattleActions: item.pendingBattleActions || {},
-    lastBattleRound: item.lastBattleRound || [],
-    clues: item.clues || [],
-    pendingReward: item.pendingReward || null,
-    activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null,
-    npcLineIndex: typeof item.npcLineIndex === "number" ? item.npcLineIndex : 0,
-    readyToEnd: !!item.readyToEnd,
-    endNoticeDismissed: !!item.endNoticeDismissed,
-    eventBanner: item.eventBanner || "",
-    eventBannerType: item.eventBannerType || "normal",
-    eventBannerUntil: Number(item.eventBannerUntil || 0),
-    endConfirmations: item.endConfirmations || [],
-  });
+  io.to(investigationId).emit("investigationStateUpdated", buildPublicInvestigationState(item));
 }
 
 function ensureParticipantState(item, character) {
@@ -981,24 +1010,6 @@ function applyNodeEntryEffects(item, node) {
   }
 }
 
-function increaseParticipantCorrosion(item, amount) {
-  const delta = Number(amount || 0);
-  if (delta <= 0) return [];
-  const affected = [];
-  (Array.isArray(item?.participants) ? item.participants : []).forEach((participant) => {
-    const matched = charactersDB.find((character) => String(character.id || "") === String(participant?.id || ""))
-      || charactersDB.find((character) => String(character.name || "") === String(participant?.name || "") && String(character.ownerId || "") === String(participant?.ownerId || ""))
-      || charactersDB.find((character) => String(character.name || "") === String(participant?.name || ""));
-    if (!matched) return;
-    matched.corrosion = Math.max(0, Math.min(100, Number(matched.corrosion || 0) + delta));
-    affected.push(`${matched.name} ${matched.corrosion}%`);
-  });
-  if (affected.length > 0) {
-    writeJsonArraySafe(charactersPath, charactersDB);
-  }
-  return affected;
-}
-
 function applyActionRewards(item, result, locationName) {
   if (!result) return { changed: false, text: `[${locationName}] 특별한 성과는 없었다.` };
   const textParts = [result.log || `[${locationName}] ${locationName}에서 단서를 조사했다.`];
@@ -1061,8 +1072,14 @@ function applyActionRewards(item, result, locationName) {
   }
 
   if (typeof result.corrosionIncrease === "number" && result.corrosionIncrease > 0) {
-    const affected = increaseParticipantCorrosion(item, result.corrosionIncrease);
-    textParts.push(affected.length > 0 ? `침식 진행도 +${result.corrosionIncrease} (${affected.join(", ")})` : `침식 진행도 +${result.corrosionIncrease}`);
+    (item.participants || []).forEach((participant) => {
+      const foundCharacter =
+        charactersDB.find((character) => String(character?.id || "") === String(participant?.id || "")) ||
+        charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+      if (foundCharacter) applyCharacterCorrosion(foundCharacter, result.corrosionIncrease);
+    });
+    writeRuntimeArray("characters.json", charactersDB);
+    textParts.push(`침식 진행도 +${result.corrosionIncrease}`);
     changed = true;
   }
 
@@ -1481,6 +1498,30 @@ function applyBattleTurn(item, actions) {
 
 
 app.get("/designConfig", (req, res) => res.json(designConfig));
+
+app.get("/designConfigPublic", (req, res) => res.json(buildPublicDesignConfig(designConfig)));
+
+app.get("/asset/design", (req, res) => {
+  const value = getValueByPath(designConfig, req.query.path || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
+});
+
+app.get("/asset/character/:id", (req, res) => {
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  if (!character) return res.status(404).end();
+  const value = getValueByPath(character, req.query.path || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
+});
+
+app.get("/asset/investigation/:id", (req, res) => {
+  const item = investigationsDB.find((entry) => String(entry.id) === String(req.params.id));
+  if (!item) return res.status(404).end();
+  const value = getValueByPath(item, req.query.path || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
+});
 app.post("/designConfig", (req, res) => {
   const payload = req.body && typeof req.body === "object" ? req.body : {};
   designConfig = {
@@ -1774,6 +1815,13 @@ app.get("/investigations/:id", (req, res) => {
   res.json({ ...item, activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null });
 });
 
+app.get("/investigationView/:id", (req, res) => {
+  const item = investigationsDB.find((v) => v.id === req.params.id);
+  if (!item) return res.status(404).json({ success: false });
+  syncInvestigationRoster(item);
+  res.json(buildPublicInvestigationState(item));
+});
+
 app.get("/investigationChats/:id", (req, res) => res.json(roomChats[req.params.id] || []));
 app.post("/investigationChat", (req, res) => {
   const { investigationId, message } = req.body;
@@ -1847,6 +1895,7 @@ app.post("/startDailyInvestigation", (req, res) => {
     if (remain <= 0) return res.json({ success: false, message: "남은 일일조사 횟수가 없어." });
 
     sourceCharacter.dailyAttemptsLeft = remain - 1;
+    applyCharacterCorrosion(sourceCharacter, item.entryCorrosion || item.data?.entryCorrosion || 0);
 
     resetInvestigationProgress(item);
     ensureRuntimeState(item);
@@ -1864,11 +1913,12 @@ app.post("/startDailyInvestigation", (req, res) => {
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[일일조사 시작] ${item.title}`);
 
+    writeRuntimeArray("characters.json", charactersDB);
     try { io.emit("investigationStarted", { id }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
     try { emitParticipantsUpdated(); } catch (emitErr) { console.error("participantsUpdated emit failed", emitErr); }
     try { emitInvestigationState(id); } catch (emitErr) { console.error("investigationState emit failed", emitErr); }
 
-    return res.json({ success: true, started: true, investigationId: item.id, character: sourceCharacter });
+    return res.json({ success: true, started: true, investigationId: item.id, character: buildPublicCharacter(sourceCharacter) });
   } catch (err) {
     console.error("startDailyInvestigation failed", err);
     return res.status(500).json({ success: false, message: "일일조사 시작 처리 중 오류가 발생했습니다." });
@@ -1972,7 +2022,14 @@ app.post("/startInvestigation", (req, res) => {
     item.endConfirmations = [];
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[조사 시작] ${item.title}`);
-    item.participants.forEach((participant) => ensureParticipantState(item, participant));
+    item.participants.forEach((participant) => {
+      const foundCharacter =
+        charactersDB.find((character) => String(character?.id || "") === String(participant?.id || "")) ||
+        charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+      if (foundCharacter) applyCharacterCorrosion(foundCharacter, item.entryCorrosion || item.data?.entryCorrosion || 0);
+      ensureParticipantState(item, foundCharacter || participant);
+    });
+    writeRuntimeArray("characters.json", charactersDB);
     syncInvestigationRoster(item);
     try { io.emit("investigationStarted", { id }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
     try { emitParticipantsUpdated(); } catch (emitErr) { console.error("participantsUpdated emit failed", emitErr); }
@@ -2542,10 +2599,83 @@ function summarizeCharacter(character) {
   };
 }
 
+
+function buildPublicCharacterSummary(character) {
+  if (!character) return character;
+  const summary = summarizeCharacter(character);
+  return mapDataImages(summary, (pathKey) => toCharacterAssetUrl(summary.id || summary.name || "unknown", pathKey));
+}
+
+function buildPublicCharacter(character) {
+  if (!character) return character;
+  const detailed = attachRelationsToCharacter(character);
+  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey));
+}
+
+function buildPublicDesignConfig(config) {
+  return mapDataImages(config || {}, (pathKey) => toDesignAssetUrl(pathKey));
+}
+
+function buildPublicInvestigationState(item) {
+  if (!item) return null;
+  syncInvestigationRoster(item);
+  const payload = {
+    id: item.id,
+    investigationId: item.id,
+    title: item.title,
+    type: item.type,
+    entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
+    currentNodeId: item.currentNodeId,
+    sharedLog: item.sharedLog,
+    sharedLogs: item.sharedLogs || [],
+    leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
+    participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
+    started: !!item.started,
+    routeHistory: item.routeHistory || [],
+    mapBackgroundImage: item.data?.backgroundImage || "",
+    foundItems: item.foundItems || [],
+    foundNPCs: item.foundNPCs || [],
+    rewards: item.rewards || [],
+    points: 0,
+    participantStates: item.participantStates || {},
+    ended: item.ended || false,
+    endedAt: item.endedAt || "",
+    endedReason: item.endedReason || "",
+    resultSummary: item.resultSummary || "",
+    battleTurn: item.battleTurn || 1,
+    pendingBattleActions: item.pendingBattleActions || {},
+    lastBattleRound: item.lastBattleRound || [],
+    clues: item.clues || [],
+    pendingReward: item.pendingReward || null,
+    activeNpcScene: normalizeNpcScene(item.activeNpcScene) || null,
+    npcLineIndex: typeof item.npcLineIndex === "number" ? item.npcLineIndex : 0,
+    readyToEnd: !!item.readyToEnd,
+    endNoticeDismissed: !!item.endNoticeDismissed,
+    eventBanner: item.eventBanner || "",
+    eventBannerType: item.eventBannerType || "normal",
+    eventBannerUntil: Number(item.eventBannerUntil || 0),
+    endConfirmations: item.endConfirmations || [],
+    data: item.data,
+  };
+  return mapDataImages(payload, (pathKey) => toInvestigationAssetUrl(item.id, pathKey));
+}
+
 app.get("/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했어." });
   res.json({ success: true, character: attachRelationsToCharacter(character) });
+});
+
+app.get("/character-public/:id", (req, res) => {
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했어." });
+  res.json({ success: true, character: buildPublicCharacter(character) });
+});
+
+app.get("/character-items/:id", (req, res) => {
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  if (!character) return res.status(404).json({ success: false, items: [] });
+  res.json({ success: true, items: Array.isArray(character.items) ? character.items : [] });
 });
 
 app.get("/characters-lite/:ownerId", (req, res) => {
@@ -2554,6 +2684,14 @@ app.get("/characters-lite/:ownerId", (req, res) => {
 
 app.get("/characters-lite", (req, res) => {
   res.json(charactersDB.map(summarizeCharacter));
+});
+
+app.get("/characters-public/:ownerId", (req, res) => {
+  res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(buildPublicCharacterSummary));
+});
+
+app.get("/characters-public", (req, res) => {
+  res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 
 app.get("/health", (req, res) => {
@@ -2947,7 +3085,7 @@ if (fs.existsSync(clientBuildPath)) {
     lastModified: true,
     maxAge: "7d",
     setHeaders(res, filePath) {
-      if (String(filePath || "").toLowerCase().endswith(".html")) {
+      if (String(filePath || "").toLowerCase().endsWith(".html")) {
         res.setHeader("Cache-Control", "no-cache");
       }
     },

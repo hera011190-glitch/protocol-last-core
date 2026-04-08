@@ -206,9 +206,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const loadInvestigation = async () => {
     if (previewMode) return;
     try {
-      const res = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      const res = await apiFetch(`/investigationView/${investigationId}`);
       const data = await res.json();
       applyInvestigation(data);
     } catch (err) {
@@ -219,9 +217,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const loadChats = async () => {
     if (previewMode) return;
     try {
-      const res = await apiFetch(`/investigationChats/${investigationId}?t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      const res = await apiFetch(`/investigationChats/${investigationId}`);
       const data = await res.json();
       setChat((Array.isArray(data) ? data : []).slice(-120));
     } catch (err) {
@@ -234,11 +230,13 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     if (previewMode) return;
     if (!character?.id && !character?.name) return;
     try {
-      const res = await apiFetch(`/characters?t=${Date.now()}`, { cache: "no-store" });
-      const list = await res.json();
-      const rows = Array.isArray(list) ? list : [];
-      const found = rows.find((item) => String(item.id) === String(character?.id)) || rows.find((item) => item.name === character?.name);
-      setInventoryItems(Array.isArray(found?.items) ? found.items : Array.isArray(character?.items) ? character.items : []);
+      if (character?.id) {
+        const res = await apiFetch(`/character-items/${character.id}`);
+        const data = await res.json();
+        setInventoryItems(Array.isArray(data?.items) ? data.items : Array.isArray(character?.items) ? character.items : []);
+      } else {
+        setInventoryItems(Array.isArray(character?.items) ? character.items : []);
+      }
     } catch (err) {
       console.error("loadCharacterInventory error", err);
       setInventoryItems(Array.isArray(character?.items) ? character.items : []);
@@ -833,7 +831,6 @@ useEffect(() => {
       })
     : [];
   const battleInputLocked = battlePlaybackLocked;
-  const shownBattleTurn = battleActive ? Math.max(1, Number(investigation?.battleTurn || 1) - (battlePlaybackLocked ? 1 : 0)) : Number(investigation?.battleTurn || 1);
 
   useEffect(() => {
     if (!battleActive) return;
@@ -1511,7 +1508,7 @@ useEffect(() => {
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>현재 위치: {currentNode?.name || "-"}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {overallProgressPercent}%</div>
-                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {shownBattleTurn}</div> : null}
+                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {investigation.battleTurn || 1}</div> : null}
                   </div>
                   {leaderDown ? (
                     <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
@@ -1560,7 +1557,7 @@ useEffect(() => {
                 ) : (
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
-                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} shownBattleTurn={shownBattleTurn} />
+                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} />
                       <div style={{ marginTop: 12 }}>
                         <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                       </div>
@@ -2284,7 +2281,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   );
 }
 
-function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now(), shownBattleTurn = 1 }) {
+function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now() }) {
   const battle = node?.battle;
   if (!battle) return null;
   const hp = Number(battle.hp || 0);
@@ -2304,7 +2301,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {shownBattleTurn}</div>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {investigation?.battleTurn || 1}</div>
       <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
       <div style={{ width: "min(520px, 100%)" }}>
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>

@@ -13,7 +13,7 @@ function toDataUrl(file) {
 }
 
 function emptyAction() {
-  return { label: "", log: "", points: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, corrosionIncrease: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
+  return { label: "", log: "", points: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
 }
 
 function createNode(id = `node-${Date.now()}`) {
@@ -43,6 +43,7 @@ function emptyBuilder() {
     backgroundImage: "",
     bgmUrl: "",
     bgmVolume: 1,
+    entryCorrosion: 0,
     start: "start",
     nodes: [createNode("start")],
   };
@@ -69,7 +70,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
   useEffect(() => { loadSaved().catch(console.error); }, []);
   useEffect(() => {
-    fetch(`http://localhost:3001/shopItems?t=${Date.now()}`)
+    fetch(`http://localhost:3001/shopItems`)
       .then((res) => res.json())
       .then((data) => setCatalog(Array.isArray(data) ? data : []))
       .catch(() => setCatalog([]));
@@ -88,7 +89,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       loadTemplate(found);
       return;
     }
-    apiFetch(`/investigations/${initialInvestigationId}?t=${Date.now()}`)
+    apiFetch(`/investigations/${initialInvestigationId}`)
       .then((res) => res.json())
       .then((data) => {
         if (data?.id) loadTemplate(data);
@@ -120,11 +121,13 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     backgroundImage: builder.backgroundImage,
     bgmUrl: builder.bgmUrl,
     bgmVolume: builder.bgmVolume,
+    entryCorrosion: Number(builder.entryCorrosion || 0),
     data: {
       start: builder.start,
       backgroundImage: builder.backgroundImage,
       bgmUrl: builder.bgmUrl,
       bgmVolume: builder.bgmVolume,
+      entryCorrosion: Number(builder.entryCorrosion || 0),
       nodes: Object.fromEntries(builder.nodes.map((node) => [node.id, {
         name: node.name || node.id,
         log: node.log || "",
@@ -180,7 +183,6 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             statPoints: Number(value?.statPoints || 0),
             damage: Number(value?.damage || 0),
             muteMinutes: Number(value?.muteMinutes || 0),
-            corrosionIncrease: Number(value?.corrosionIncrease || 0),
           }])
         ),
       }]))
@@ -216,7 +218,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       mapY: node.mapY ?? 30,
       choices: Array.isArray(node.choices) ? node.choices : [],
       investigations: Array.isArray(node.investigations) ? node.investigations : [],
-      actionResults: Object.fromEntries(Object.entries(node.actionResults || {}).map(([key, value]) => [key, { ...emptyAction(), ...(value || {}), corrosionIncrease: Number(value?.corrosionIncrease || 0) } ])),
+      actionResults: node.actionResults || {},
       battle: node.battle || null,
       npcScene: node.npcScene || null,
       clues: Array.isArray(node.clues) ? node.clues : [],
@@ -227,7 +229,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const backgroundImage = json?.backgroundImage || json?.data?.backgroundImage || template?.backgroundImage || template?.data?.backgroundImage || "";
     const bgmUrl = json?.bgmUrl || json?.data?.bgmUrl || template?.bgmUrl || template?.data?.bgmUrl || "";
     const bgmVolume = Math.max(0, Math.min(1, Number(json?.bgmVolume ?? json?.data?.bgmVolume ?? template?.bgmVolume ?? template?.data?.bgmVolume ?? 1) || 1));
-    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, bgmUrl, bgmVolume, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
+    const entryCorrosion = Number(json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0);
+    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, bgmUrl, bgmVolume, entryCorrosion, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
     setSelectedNodeId(startNodeId);
     setMessage(`${template.title} 불러오기 완료`);
   };
@@ -413,6 +416,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           <div className="section-eyebrow">기본 정보</div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 제목</div><input value={builder.title} onChange={(e) => setBuilder((prev) => ({ ...prev, title: e.target.value }))} placeholder="조사 제목" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 종류</div><select value={builder.type} onChange={(e) => setBuilder((prev) => ({ ...prev, type: e.target.value }))} style={inputStyle}><option value="group">단체조사</option><option value="daily">일일조사</option></select></div>
+          <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>최초 진입 침식 진행도</div><input type="number" min="0" value={builder.entryCorrosion || 0} onChange={(e) => setBuilder((prev) => ({ ...prev, entryCorrosion: Number(e.target.value || 0) }))} placeholder="0" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>시작 노드</div><select value={builder.start} onChange={(e) => setBuilder((prev) => ({ ...prev, start: e.target.value }))} style={inputStyle}>{builder.nodes.map((node) => <option key={node.id} value={node.id}>{node.name || node.id}</option>)}</select></div>
           <div style={{ display: "grid", gap: 8 }}>
             <label>조사 배경 이미지 업로드</label>
@@ -547,7 +551,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   <div style={fieldLabelStyle}>획득 단서 이미지</div>
                   <ImageDropInput label="단서 이미지" value={result.clueImage || ""} onChange={(value) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, clueImage: value } } }))} previewHeight={120} compact style={{ marginTop: 8 }} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={fieldLabelStyle}>행동 실행 시 피해량</div>
                     <input type="number" value={result.damage || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, damage: Number(e.target.value || 0) } } }))} placeholder="피해" style={inputStyle} />
@@ -555,10 +559,6 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={fieldLabelStyle}>행동 실행 시 기절 시간(분)</div>
                     <input type="number" value={result.muteMinutes || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, muteMinutes: Number(e.target.value || 0) } } }))} placeholder="기절(분)" style={inputStyle} />
-                  </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={fieldLabelStyle}>행동 실행 시 침식 진행도 증가</div>
-                    <input type="number" value={result.corrosionIncrease || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, corrosionIncrease: Number(e.target.value || 0) } } }))} placeholder="침식 진행도" style={inputStyle} />
                   </div>
                 </div>
               </div>

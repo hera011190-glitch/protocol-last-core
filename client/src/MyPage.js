@@ -269,7 +269,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const loadCharacterDetail = async (characterId) => {
     if (!characterId) return null;
     try {
-      const res = await fetch(`http://localhost:3001/character/${characterId}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`http://localhost:3001/character-public/${characterId}`);
       const data = await res.json();
       return data?.character || null;
     } catch {
@@ -280,7 +280,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const loadMine = async () => {
     if (!ownerUser?.id) return;
     try {
-      const res = await fetch(`http://localhost:3001/characters-lite/${ownerUser.id}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`http://localhost:3001/characters-public/${ownerUser.id}`);
       const data = await res.json();
       setAllMyCharacters(Array.isArray(data) ? data : []);
     } catch {
@@ -290,7 +290,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
   const loadAllCharacters = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/characters-lite?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`http://localhost:3001/characters-public`);
       const data = await res.json();
       setAllCharacters(Array.isArray(data) ? data : []);
     } catch {
@@ -315,7 +315,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   }, []);
 
   useEffect(() => {
-    fetch(`http://localhost:3001/shopItems?t=${Date.now()}`)
+    fetch(`http://localhost:3001/shopItems`)
       .then((res) => res.json())
       .then((data) => setCatalog(Array.isArray(data) ? data : []))
       .catch(() => setCatalog([]));
@@ -455,10 +455,10 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
     if (useType === "heal") {
       patch.currentHp = Math.min(maxHp, Number(currentUser.currentHp || maxHp) + useValue);
-    } else if (useType === "statPoint") {
-      patch.statPoints = Number(currentUser.statPoints || 0) + useValue;
     } else if (useType === "corrosionHeal") {
       patch.corrosion = Math.max(0, Number(currentUser.corrosion || 0) - useValue);
+    } else if (useType === "statPoint") {
+      patch.statPoints = Number(currentUser.statPoints || 0) + useValue;
     } else if (useType === "skill") {
       const nextSkill = meta.skillKey || meta.skillName || meta.useValue;
       if (nextSkill && !skills.some((skill) => getSkillLabel(skill) === String(nextSkill))) {
