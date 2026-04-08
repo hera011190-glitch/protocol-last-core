@@ -72,11 +72,17 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
   };
 }
 
+function getCharacterKey(character) {
+  const ownerNameKey = `${String(character?.ownerId || "").trim()}:${String(character?.name || "").trim()}`;
+  if (ownerNameKey !== ':') return ownerNameKey;
+  return String(character?.id || character?.name || "").trim();
+}
+
 function mergeCharacterStates(prevList, freshList, maps) {
-  const prevById = Object.fromEntries(dedupeCharacters(prevList || []).map((character) => [String(character.id), character]));
+  const prevById = Object.fromEntries(dedupeCharacters(prevList || []).map((character) => [getCharacterKey(character), character]));
   const saved = readSavedPositions();
   return dedupeCharacters(freshList || []).map((character, index) => {
-    const key = String(character.id);
+    const key = getCharacterKey(character);
     const prev = prevById[key];
     return buildCharacterState(character, prev || saved[key], maps, index);
   });
@@ -149,7 +155,7 @@ function dedupeCharacters(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const seen = new Set();
   return list.filter((character) => {
-    const key = String(character?.id || character?.ownerId || character?.name || "").trim();
+    const key = getCharacterKey(character);
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -295,7 +301,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!characters.length) return;
     if (Date.now() - saveTickRef.current < 1200) return;
     saveTickRef.current = Date.now();
-    const payload = Object.fromEntries(characters.map((character) => [character.id, { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
+    const payload = Object.fromEntries(dedupeCharacters(characters).map((character) => [getCharacterKey(character), { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
     try {
       localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
     } catch {}
