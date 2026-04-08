@@ -2645,9 +2645,9 @@ function buildPublicCharacterSummary(character) {
   if (!character) return character;
   const summary = summarizeCharacter(character);
   const characterId = summary.id || summary.name || "unknown";
-  const profilePath = pickLightCharacterAssetPath(character, ["image", "investigationImage", "mainImage"], 1200000);
-  const mainPath = pickLightCharacterAssetPath(character, ["mainImage", "image", "investigationImage"], 2400000);
-  const spritePath = pickLightCharacterAssetPath(character, ["investigationImage", "image", "mainImage"], 600000);
+  const profilePath = pickCharacterAssetPath(character, ["image", "mainImage", "investigationImage"]);
+  const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
+  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
 
   const toUrl = (pathKey, fallbackValue) => {
     const rawValue = getValueByPath(character, pathKey);
@@ -2655,14 +2655,18 @@ function buildPublicCharacterSummary(character) {
     return typeof rawValue === "string" && rawValue.trim() ? rawValue : (fallbackValue || "");
   };
 
+  const profileImage = profilePath ? toUrl(profilePath, summary.profileImage) : summary.profileImage;
+  const mainImage = mainPath ? toUrl(mainPath, summary.mainImage) : summary.mainImage;
+  const investigationImage = spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage;
+
   return {
     ...summary,
-    image: profilePath ? toUrl(profilePath, summary.image) : summary.image,
-    profileImage: profilePath ? toUrl(profilePath, summary.profileImage) : summary.profileImage,
-    mainImage: mainPath ? toUrl(mainPath, summary.mainImage) : summary.mainImage,
-    cardImage: mainPath ? toUrl(mainPath, summary.cardImage) : summary.cardImage,
-    investigationImage: spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage,
-    spriteImage: spritePath ? toUrl(spritePath, summary.spriteImage) : summary.spriteImage,
+    image: profileImage,
+    profileImage,
+    mainImage,
+    cardImage: mainImage || profileImage || summary.cardImage,
+    investigationImage,
+    spriteImage: investigationImage || mainImage || profileImage || summary.spriteImage,
   };
 }
 

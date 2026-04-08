@@ -85,7 +85,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       />
       <div style={shapeStyle({ position: "absolute", inset: 0 })}>
         {imageSrc ? (
-          <img src={imageSrc} alt={`${displayName}-full`} draggable={false} loading="lazy" decoding="async" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
+          <img src={imageSrc} alt={`${displayName}-full`} draggable={false} loading="eager" decoding="auto" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
         ) : null}
       </div>
       <div
