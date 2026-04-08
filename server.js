@@ -588,7 +588,7 @@ function getInvestigationSummary(item) {
   const nodeCount = Object.keys(item.data?.nodes || {}).length || 1;
   const progressPercent = Math.min(100, Math.round((uniqueVisitedCount / Math.max(nodeCount, 1)) * 100));
   const effectiveOpened = getEffectiveOpened(item);
-  return {
+  const payload = {
     id: item.id,
     title: item.title,
     type: item.type || "group",
@@ -617,6 +617,33 @@ function getInvestigationSummary(item) {
     leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
     participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
   };
+  return mapDataImages(payload, (pathKey) => toInvestigationAssetUrl(item.id, pathKey));
+}
+
+function buildInvestigationLobbyState(item) {
+  if (!item) return null;
+  syncInvestigationRoster(item);
+  const payload = {
+    id: item.id,
+    investigationId: item.id,
+    title: item.title,
+    type: item.type || "group",
+    listImage: String(item.listImage || item.data?.listImage || ""),
+    opened: !!item.opened,
+    hidden: !!item.hidden,
+    effectiveOpened: getEffectiveOpened(item),
+    started: !!item.started,
+    ended: !!item.ended,
+    endedAt: item.endedAt || "",
+    statusLabel: item.ended ? "종료" : item.started ? "진행중" : getEffectiveOpened(item) ? "대기중" : "비활성화",
+    leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
+    participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
+    participantStates: item.participantStates || {},
+    spectators: Array.isArray(item.spectators) ? item.spectators : [],
+    currentNodeId: item.currentNodeId || item.data?.start || "",
+    endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
+  };
+  return mapDataImages(payload, (pathKey) => toInvestigationAssetUrl(item.id, pathKey));
 }
 
 
@@ -1866,6 +1893,13 @@ app.get("/investigations/:id", (req, res) => {
 app.get("/investigationView/:id", (req, res) => {
   const item = investigationsDB.find((v) => v.id === req.params.id);
   if (!item) return res.status(404).json({ success: false });
+app.get("/investigationLobby/:id", (req, res) => {
+  const item = investigationsDB.find((v) => v.id === req.params.id);
+  if (!item) return res.status(404).json({ success: false });
+  syncInvestigationRoster(item);
+  res.json(buildInvestigationLobbyState(item));
+});
+
   syncInvestigationRoster(item);
   res.json(buildPublicInvestigationState(item));
 });

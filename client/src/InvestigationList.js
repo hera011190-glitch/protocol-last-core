@@ -1,8 +1,65 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import { buildApiUrl } from "./api";
+import { apiJsonCached, buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
+
+const PRELOADED_INVESTIGATION_IMAGES = new Set();
+
+function preloadInvestigationImages(urls = []) {
+  (Array.isArray(urls) ? urls : []).forEach((rawUrl) => {
+    const url = String(rawUrl || "").trim();
+    if (!url || PRELOADED_INVESTIGATION_IMAGES.has(url)) return;
+    PRELOADED_INVESTIGATION_IMAGES.add(url);
+    const img = new Image();
+    img.decoding = "sync";
+    img.loading = "eager";
+    img.src = url;
+  });
+}
+
+function CardImageLayer({ src = "", alt = "", grayscale = false }) {
+  const url = String(src || "").trim();
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      loading="eager"
+      decoding="sync"
+      fetchPriority="high"
+      draggable={false}
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        filter: grayscale ? "grayscale(1) saturate(0.12) brightness(0.86)" : "none",
+        transform: "translateZ(0)",
+        pointerEvents: "none",
+        userSelect: "none",
+      }}
+    />
+  );
+}
+
+function adminEditButtonStyle(top = 18) {
+  return {
+    position: "absolute",
+    top,
+    right: 18,
+    zIndex: 3,
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: "1px solid rgba(15,23,42,0.14)",
+    background: "rgba(255,255,255,0.92)",
+    color: "#17324a",
+    fontWeight: 900,
+    cursor: "pointer",
+  };
+}
+
 
 function readCachedInvestigations() {
   try {
@@ -93,7 +150,7 @@ function formatCorrosionRange(items = []) {
   return min === max ? `종료 시 침식 +${min}` : `종료 시 침식 +${min}~+${max}`;
 }
 
-export default function InvestigationList({ onEnter, onSpectate, activeCharacter, design, theme }) {
+export default function InvestigationList({ onEnter, onSpectate, onEditInvestigation, activeCharacter, isAdmin = false, design, theme }) {
   const [investigations, setInvestigations] = useState(() => readCachedInvestigations());
   const [view, setView] = useState("entry");
   const [dailyLeft, setDailyLeft] = useState(Number(activeCharacter?.dailyAttemptsLeft ?? 1));
@@ -103,8 +160,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      fetch(buildApiUrl(`/investigations`))
-        .then((res) => res.json())
+      apiJsonCached(`/investigations`, { ttlMs: 2500, storageKey: "plc-cache-investigations-json" })
         .then((data) => {
           if (cancelled) return;
           const next = Array.isArray(data) ? data : [];
@@ -127,6 +183,10 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
       clearInterval(timer);
     };
   }, [activeCharacter?.id, activeCharacter?.dailyAttemptsLeft]);
+
+  useEffect(() => {
+    preloadInvestigationImages((Array.isArray(investigations) ? investigations : []).map((item) => item?.listImage).filter(Boolean));
+  }, [investigations]);
 
   const dailyPool = useMemo(
     () => investigations.filter((item) => item.type === "daily" && !item.hidden && item.opened !== false && item.statusLabel !== "비활성화" && !!(item.effectiveOpened ?? item.opened)),
@@ -167,6 +227,8 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
   const dailyEntryImage = resumableDaily?.listImage || getRepresentativeImage(dailyPool);
   const groupEntryImage = getRepresentativeImage(groups) || getRepresentativeImage(completedGroups);
   const investContent = design?.siteContent?.investigations || {};
+  const editableDaily = resumableDaily || dailyPool[0] || null;
+  const editableGroup = groups[0] || completedGroups[0] || null;
 
   const openCompletedDetail = async (item) => {
     try {
@@ -215,10 +277,14 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                 position: "relative",
                 overflow: "hidden",
                 padding: 0,
-                background: dailyEntryImage ? `url(${dailyEntryImage}) center/cover no-repeat` : (theme?.panelStrong || "#fff"),
+                background: theme?.panelStrong || "#fff",
               }}
             >
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              <CardImageLayer src={dailyEntryImage} alt="일일조사" />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              {isAdmin && editableDaily ? (
+                <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(editableDaily.id); }}>수정</button>
+              ) : null}
               <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
                 <div className="section-eyebrow" style={{ color: "#243b53" }}>DAILY</div>
                 <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
@@ -229,7 +295,6 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                   {resumableDaily ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>진행 중인 일일조사 있음</div> : null}
                   {!activeCharacter ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>캐릭터 필요</div> : null}
                 </div>
-                <div style={{ color: "#22384b", fontWeight: 700 }}>{resumableDaily?.title || "선택된 일일조사 1개가 즉시 시작됩니다."}</div>
                 {resumableDaily ? (
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto" }}>
                     <button type="button" className="ghost-button" onClick={(event) => { event.stopPropagation(); onEnter(resumableDaily, { mode: "daily" }); }}>
@@ -243,8 +308,12 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
               </div>
             </div>
 
-            <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: groupEntryImage ? `url(${groupEntryImage}) center/cover no-repeat` : (theme?.panelStrong || "#fff") }}>
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 28%, rgba(255,255,255,0.18) 100%)" }} />
+            <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: theme?.panelStrong || "#fff" }}>
+              <CardImageLayer src={groupEntryImage} alt="단체조사" />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              {isAdmin && editableGroup ? (
+                <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(editableGroup.id); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onEditInvestigation?.(editableGroup.id); } }}>수정</span>
+              ) : null}
               <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
                 <div className="section-eyebrow" style={{ color: "#243b53" }}>GROUP</div>
                 <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
@@ -253,7 +322,6 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>비활성 {groups.filter((item) => !(item.effectiveOpened ?? item.opened)).length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>완료 {completedGroups.length}개</div>
                 </div>
-                <div style={{ color: "#22384b", fontWeight: 700 }}>카드를 눌러 단체조사 목록을 열어보세요.</div>
               </div>
             </button>
           </div>
@@ -271,8 +339,10 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                 const disabled = !(item.effectiveOpened ?? item.opened);
                 const started = !!item.started && !item.ended;
                 return (
-                  <div key={item.id} style={{ ...card(theme, disabled), position: "relative", overflow: "hidden", minHeight: 188, padding: 0, background: item.listImage ? `url(${item.listImage}) center/cover no-repeat` : (disabled ? "rgba(226,232,240,0.72)" : (theme?.panelStrong || "#fff")) }}>
+                  <div key={item.id} style={{ ...card(theme, disabled), position: "relative", overflow: "hidden", minHeight: 188, padding: 0, background: disabled ? "rgba(226,232,240,0.72)" : (theme?.panelStrong || "#fff") }}>
+                    <CardImageLayer src={item.listImage} alt={item.title} />
                     {item.listImage ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
+                    {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(item.id); }}>수정</button> : null}
                     <div style={{ position: "relative", zIndex: 1, padding: 20, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", minHeight: 188 }}>
                       <div style={{ maxWidth: "70%" }}>
                         <div className="section-eyebrow">{disabled ? "INACTIVE" : "GROUP"}</div>
@@ -300,7 +370,11 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                 <h3 style={{ marginTop: 10, marginBottom: 12 }}>완료된 조사</h3>
                 <div style={{ display: "grid", gap: 14 }}>
                   {completedGroups.map((item) => (
-                    <div key={item.id} style={card(theme, false)}>
+                    <div key={item.id} style={{ ...card(theme, true), position: "relative", overflow: "hidden", background: "rgba(203,213,225,0.72)", filter: "grayscale(0.15)" }}>
+                      <CardImageLayer src={item.listImage} alt={item.title} grayscale />
+                      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(244,244,245,0.96) 0%, rgba(244,244,245,0.82) 36%, rgba(244,244,245,0.38) 72%, rgba(244,244,245,0.14) 100%)" }} />
+                      {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={() => onEditInvestigation?.(item.id)}>수정</button> : null}
+                      <div style={{ position: "relative", zIndex: 1 }}>
                       <div className="section-eyebrow">COMPLETE</div>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
                         <div>
@@ -314,6 +388,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                       </div>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
                         <button type="button" className="ghost-button" onClick={() => (onSpectate ? onSpectate(item) : onEnter(item, { mode: "spectate" }))}>조사 로그 보기</button>
+                      </div>
                       </div>
                     </div>
                   ))}

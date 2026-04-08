@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import socket from "./socket";
-import { apiFetch } from "./api";
+import { apiFetch, apiJsonCached } from "./api";
 import { getMaxHpFromStat } from "./hpUtils";
 
 function buildFallbackParticipants(investigation) {
@@ -34,6 +34,7 @@ function buildFallbackParticipants(investigation) {
 
 function InvestigationLobby({
   investigationId,
+  initialInvestigation = null,
   character,
   isAdmin,
   goBack,
@@ -42,24 +43,29 @@ function InvestigationLobby({
   design,
   theme,
 }) {
-  const [investigation, setInvestigation] = useState(null);
+  const [investigation, setInvestigation] = useState(() => initialInvestigation || null);
   const [users, setUsers] = useState([]);
   const [selectedLeaders, setSelectedLeaders] = useState([]);
 
-  const loadInvestigation = async () => {
+  const loadInvestigation = async (force = false) => {
     try {
-      const res = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-      const data = await res.json();
-      setInvestigation(data);
+      const data = await apiJsonCached(`/investigationLobby/${investigationId}`, { ttlMs: 1800, force, storageKey: `plc-lobby-${investigationId}` });
+      setInvestigation((prev) => ({ ...(prev || {}), ...(data || {}) }));
       if (Array.isArray(data?.leaders) && data.leaders.length > 0) setSelectedLeaders(data.leaders);
+      return data;
     } catch (err) {
       console.error("loadInvestigation error", err);
+      return null;
     }
   };
 
   useEffect(() => {
-    loadInvestigation();
-  }, [investigationId]);
+    if (initialInvestigation?.id === investigationId) {
+      setInvestigation((prev) => prev || initialInvestigation);
+      if (Array.isArray(initialInvestigation?.leaders) && initialInvestigation.leaders.length > 0) setSelectedLeaders(initialInvestigation.leaders);
+    }
+    loadInvestigation(true);
+  }, [investigationId, initialInvestigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,8 +73,7 @@ function InvestigationLobby({
     const poll = async (force = false) => {
       if (!force && document.visibilityState === "hidden") return;
       try {
-        const res = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-        const data = await res.json();
+        const data = await apiJsonCached(`/investigationLobby/${investigationId}`, { ttlMs: 1800, force, storageKey: `plc-lobby-${investigationId}` });
         if (cancelled) return;
         setInvestigation(data);
         if (Array.isArray(data?.leaders) && data.leaders.length > 0) setSelectedLeaders(data.leaders);
@@ -113,7 +118,7 @@ function InvestigationLobby({
     const handleParticipantsUpdated = (allInvestigations) => {
       const found = (allInvestigations || []).find((v) => v.id === investigationId);
       if (found) {
-        setInvestigation(found);
+        setInvestigation((prev) => ({ ...(prev || {}), ...found, participants: found.participants || prev?.participants || [], participantStates: prev?.participantStates || {} }));
         setSelectedLeaders((prev) => (Array.isArray(found.leaders) && (found.leaders.length > 0 || prev.length === 0) ? found.leaders : prev));
       }
     };
@@ -282,8 +287,7 @@ function InvestigationLobby({
       }
       setTimeout(async () => {
         try {
-          const latestRes = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-          const latest = await latestRes.json();
+          const latest = await loadInvestigation(true);
           if (latest?.started) {
             setInvestigation(latest);
             startGame();
@@ -313,7 +317,7 @@ function InvestigationLobby({
       setInvestigation(data.investigation);
       if (Array.isArray(data.investigation?.leaders)) setSelectedLeaders(data.investigation.leaders);
     }
-    loadInvestigation();
+    loadInvestigation(true);
   };
 
   const leave = async () => {
@@ -329,7 +333,7 @@ function InvestigationLobby({
       setInvestigation(data.item);
       if (Array.isArray(data.item?.leaders)) setSelectedLeaders(data.item.leaders);
     }
-    loadInvestigation();
+    loadInvestigation(true);
   };
 
   const isParticipantOnline = (participant) => {

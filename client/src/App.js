@@ -289,6 +289,7 @@ function App() {
   const [activePage, setActivePage] = useState(() => safeReadJSON("plc-page", PAGE.HOME));
   const [activeCharacter, setActiveCharacterState] = useState(readActiveCharacter());
   const [selectedInvestigationId, setSelectedInvestigationId] = useState(() => safeReadJSON("plc-investigation-id", null));
+  const [selectedInvestigationSeed, setSelectedInvestigationSeed] = useState(() => safeReadJSON("plc-investigation-seed", null));
   const cachedDesign = safeReadJSON(DESIGN_CACHE_KEY, null);
   const [designConfig, setDesignConfig] = useState(() => cachedDesign || defaultDesign);
   const [designReady, setDesignReady] = useState(true);
@@ -371,6 +372,7 @@ function App() {
             const latest = await latestRes.json();
             const names = Array.isArray(latest?.participants) ? latest.participants.map((participant) => participant?.name) : [];
             if (latest?.started && (!runtimeCharacter?.name || names.includes(runtimeCharacter.name))) {
+              setSelectedInvestigationSeed(item || null);
               setSelectedInvestigationId(item.id);
               setSpectatorMode(false);
               setActivePage(PAGE.INVESTIGATION);
@@ -385,6 +387,7 @@ function App() {
               const retryLatest = await retryRes.json();
               const retryNames = Array.isArray(retryLatest?.participants) ? retryLatest.participants.map((participant) => participant?.name) : [];
               if (retryLatest?.started && (!runtimeCharacter?.name || retryNames.includes(runtimeCharacter.name))) {
+                setSelectedInvestigationSeed(item || null);
                 setSelectedInvestigationId(item.id);
                 setSpectatorMode(false);
                 setActivePage(PAGE.INVESTIGATION);
@@ -398,6 +401,7 @@ function App() {
           return;
         }
         if (data.character) applyActiveCharacter(data.character);
+        setSelectedInvestigationSeed(item || null);
         setSelectedInvestigationId(item.id);
         setSpectatorMode(false);
         setActivePage(PAGE.INVESTIGATION);
@@ -409,6 +413,7 @@ function App() {
           const latest = await latestRes.json();
           const names = Array.isArray(latest?.participants) ? latest.participants.map((participant) => participant?.name) : [];
           if (latest?.started && (!runtimeCharacter?.name || names.includes(runtimeCharacter.name))) {
+            setSelectedInvestigationSeed(item || null);
             setSelectedInvestigationId(item.id);
             setSpectatorMode(false);
             setActivePage(PAGE.INVESTIGATION);
@@ -420,6 +425,7 @@ function App() {
       }
     }
 
+    setSelectedInvestigationSeed(item || null);
     setSelectedInvestigationId(item.id);
     setSpectatorMode(options.mode === "spectate");
     const directGroupEntry = options.mode === "group" && !!item?.started && !item?.ended;
@@ -543,6 +549,10 @@ function App() {
   useEffect(() => {
     writeSessionJSON("plc-investigation-id", selectedInvestigationId || null);
   }, [selectedInvestigationId]);
+
+  useEffect(() => {
+    writeSessionJSON("plc-investigation-seed", selectedInvestigationSeed || null);
+  }, [selectedInvestigationSeed]);
 
   useEffect(() => {
     writeSessionJSON("plc-spectator-mode", !!spectatorMode);
@@ -739,12 +749,12 @@ function App() {
       break;
     case PAGE.INVESTIGATIONS:
       content = runtimeCharacter || isAdmin
-        ? <InvestigationList activeCharacter={runtimeCharacter} onEnter={enterInvestigation} onSpectate={(item) => enterInvestigation(item, { mode: "spectate" })} design={designConfig} theme={theme} />
+        ? <InvestigationList activeCharacter={runtimeCharacter} isAdmin={isAdmin} onEnter={enterInvestigation} onSpectate={(item) => enterInvestigation(item, { mode: "spectate" })} onEditInvestigation={(investigationId = "") => { setBuilderEditId(investigationId || ""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} design={designConfig} theme={theme} />
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.MY)} design={designConfig} theme={theme} pageKey="investigations" />;
       break;
     case PAGE.LOBBY:
       content = selectedInvestigationId && runtimeCharacter
-        ? <InvestigationLobby investigationId={selectedInvestigationId} character={runtimeCharacter} isAdmin={isAdmin} goBack={() => setActivePage(PAGE.INVESTIGATIONS)} startGame={() => setActivePage(PAGE.INVESTIGATION)} reenterGame={() => setActivePage(PAGE.INVESTIGATION)} design={designConfig} theme={theme} />
+        ? <InvestigationLobby investigationId={selectedInvestigationId} initialInvestigation={selectedInvestigationSeed} character={runtimeCharacter} isAdmin={isAdmin} goBack={() => setActivePage(PAGE.INVESTIGATIONS)} startGame={() => setActivePage(PAGE.INVESTIGATION)} reenterGame={() => setActivePage(PAGE.INVESTIGATION)} design={designConfig} theme={theme} />
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.INVESTIGATIONS)} design={designConfig} theme={theme} pageKey="investigations" />;
       break;
     case PAGE.INVESTIGATION:

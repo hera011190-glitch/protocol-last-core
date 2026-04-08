@@ -148,6 +148,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const prevLogLengthRef = useRef(0);
   const dailyRewardAutoRef = useRef("");
   const battlePlaybackLockStartedRef = useRef(0);
+  const handledBattleRoundKeyRef = useRef("");
   const prevBattleTurnRef = useRef(0);
   const postPlaybackRefreshRef = useRef(false);
   const playbackSourceRef = useRef(null);
@@ -155,10 +156,17 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     ? [...logs, ...stagedBattleLogs.map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }))]
     : logs), [battlePlaybackLocked, stagedBattleLogs, logs]);
 
+  const getBattleRoundKey = (source) => {
+    const rounds = Array.isArray(source?.lastBattleRound) ? source.lastBattleRound : [];
+    if (!rounds.length) return "";
+    return `${Number(source?.battleTurn || 0)}:${rounds.map((entry) => `${entry?.phase || ""}:${entry?.actor || ""}:${entry?.target || ""}:${entry?.effect || ""}:${entry?.text || ""}`).join("|")}`;
+  };
+
   const applyInvestigation = (data) => {
     if (!data) return;
     if (data.type === "daily") setChat([]);
     const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
+    handledBattleRoundKeyRef.current = hasRoundPlayback ? getBattleRoundKey(data) : "";
     const nodeId = data.currentNodeId || data.data?.start;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || data?.ended) {
       playbackSourceRef.current = null;
@@ -321,6 +329,15 @@ useEffect(() => {
     if (payload.investigationId !== investigationId) return;
 
     const hasRoundPlayback = Array.isArray(payload.lastBattleRound) && payload.lastBattleRound.length > 0;
+    const incomingBattleRoundKey = hasRoundPlayback ? getBattleRoundKey(payload) : "";
+    const alreadyHandledRound = !!incomingBattleRoundKey && incomingBattleRoundKey === handledBattleRoundKeyRef.current;
+
+    if (hasRoundPlayback && !alreadyHandledRound) {
+      postPlaybackRefreshRef.current = true;
+      applyInvestigation(payload);
+      return;
+    }
+
     if (!battlePlaybackLocked) setCurrentNodeId(payload.currentNodeId);
 
     if (Array.isArray(payload.sharedLogs) && payload.sharedLogs.length > 0) {
@@ -332,8 +349,6 @@ useEffect(() => {
       ]);
     }
 
-    if (hasRoundPlayback) postPlaybackRefreshRef.current = true;
-
     setInvestigation((prev) => {
       if (!prev) return prev;
       return {
@@ -341,7 +356,7 @@ useEffect(() => {
         leaders: payload.leaders || prev.leaders || [],
         participants: payload.participants || prev.participants || [],
         currentNodeId: payload.currentNodeId,
-        sharedLog: payload.sharedLog || "",
+        sharedLog: payload.sharedLog || prev.sharedLog || "",
         sharedLogs: payload.sharedLogs || prev.sharedLogs || [],
         routeHistory: payload.routeHistory || prev.routeHistory || [],
         foundItems: payload.foundItems || prev.foundItems || [],
@@ -353,7 +368,7 @@ useEffect(() => {
             : typeof prev.points === "number"
             ? prev.points
             : 0,
-        participantStates: hasRoundPlayback ? (prev.participantStates || {}) : (payload.participantStates || prev.participantStates || {}),
+        participantStates: payload.participantStates || prev.participantStates || {},
         activeNpcScene: payload.activeNpcScene !== undefined ? payload.activeNpcScene : (prev.activeNpcScene || null),
         npcLineIndex: typeof payload.npcLineIndex === "number" ? payload.npcLineIndex : (typeof prev.npcLineIndex === "number" ? prev.npcLineIndex : 0),
         pendingReward: payload.pendingReward !== undefined ? payload.pendingReward : (prev.pendingReward || null),
@@ -371,6 +386,7 @@ useEffect(() => {
         battleTurn: payload.battleTurn || prev.battleTurn || 1,
         pendingBattleActions: payload.pendingBattleActions || prev.pendingBattleActions || {},
         lastBattleRound: payload.lastBattleRound || prev.lastBattleRound || [],
+        data: payload.data || prev.data,
       };
     });
   };
