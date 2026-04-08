@@ -42,7 +42,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
   const displayOneLine = oneLine ?? character?.oneLine ?? character?.profile ?? "프로필 열기";
-  const imageSrc = image ?? character?.mainImage ?? character?.image ?? "";
+  const imageSrc = image ?? character?.mainImage ?? character?.cardImage ?? character?.profileImage ?? character?.image ?? "";
   const cardFrame = frame ?? character?.mainImageFrame;
 
   return (
@@ -85,7 +85,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       />
       <div style={shapeStyle({ position: "absolute", inset: 0 })}>
         {imageSrc ? (
-          <img src={imageSrc} alt={`${displayName}-full`} draggable={false} loading="lazy" decoding="async" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
+          <img src={imageSrc} alt={`${displayName}-full`} draggable={false} loading="eager" decoding="async" fetchPriority="high" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
         ) : null}
       </div>
       <div

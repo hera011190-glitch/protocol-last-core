@@ -160,10 +160,10 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
     const nodeId = data.currentNodeId || data.data?.start;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || data?.ended) {
-      setStagedBattleLogs([]);
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
+      setTimeout(() => setStagedBattleLogs([]), 280);
       setLocalPendingActions({});
       setMyBattleAction("");
       setActionPicker("");
@@ -931,7 +931,7 @@ useEffect(() => {
     });
     const finalSnapshotEntry = [...visibleEntries].reverse().find((entry) => entry?.snapshot && !isBattlePhaseHeader(entry));
     const finalSnapshot = finalSnapshotEntry?.snapshot || null;
-    const unlockDelay = Math.max(delay + 520, 2400);
+    const unlockDelay = Math.max(delay + 900, 3600);
     const unlockTimer = setTimeout(() => {
       if (visibleEntries.length > 0) {
         setLogs((prevLogs) => {
@@ -974,10 +974,10 @@ useEffect(() => {
           };
         });
       }
-      setStagedBattleLogs([]);
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
+      setTimeout(() => setStagedBattleLogs([]), 280);
       if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
       }
@@ -1014,7 +1014,7 @@ useEffect(() => {
       if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
       }
-    }, 900);
+    }, 1500);
     return () => clearTimeout(timer);
   }, [battlePlaybackLocked, stagedBattleLogs.length, previewMode]);
 
@@ -1971,7 +1971,7 @@ const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://ww
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const safeName = String(name || "");
   const recent = Array.isArray(rounds)
-    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 1200)
+    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 1800)
     : [];
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
@@ -2040,36 +2040,36 @@ function getBattlePlaybackTimings(entry, index = 0) {
   if (isBattlePhaseHeader(entry)) {
     return {
       isPhaseHeader: true,
-      beforeLog: index === 0 ? 60 : 160,
+      beforeLog: index === 0 ? 120 : 240,
       beforeSnapshot: 0,
-      totalAfterLog: 280,
+      totalAfterLog: 520,
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 360, totalAfterLog: 760 };
+    return { isPhaseHeader: false, beforeLog: 140, beforeSnapshot: 520, totalAfterLog: 1120 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 320, totalAfterLog: 720 };
+    return { isPhaseHeader: false, beforeLog: 120, beforeSnapshot: 440, totalAfterLog: 980 };
   }
   if (["skill", "debuff", "drain"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 360, totalAfterLog: 820 };
+    return { isPhaseHeader: false, beforeLog: 130, beforeSnapshot: 520, totalAfterLog: 1180 };
   }
   if (["guard", "shield", "buff"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 260, totalAfterLog: 620 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: 360, totalAfterLog: 920 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 280, totalAfterLog: 620 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: 400, totalAfterLog: 920 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: /회복/.test(text) ? 280 : 320, totalAfterLog: /회복/.test(text) ? 620 : 680 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: /회복/.test(text) ? 420 : 460, totalAfterLog: /회복/.test(text) ? 940 : 1020 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 220, totalAfterLog: 540 };
+    return { isPhaseHeader: false, beforeLog: 90, beforeSnapshot: 320, totalAfterLog: 820 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 300, totalAfterLog: 760 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: 420, totalAfterLog: 1040 };
   }
-  return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 260, totalAfterLog: 620 };
+  return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: 380, totalAfterLog: 920 };
 }
 
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
@@ -2323,6 +2323,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
   const effect = getRecentBattleEffect(battle.name, rounds, {}, nowTick);
   const visual = getBattleVisualState({ name: battle.name, rounds, nowTick, side: "enemy" });
   const imageSrc = battle.image || investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || currentMonsterPlaceholder;
+  const displayTurn = battlePlaybackLocked ? Math.max(1, Number(investigation?.battleTurn || 1) - 1) : (investigation?.battleTurn || 1);
 
   return (
     <div style={{ display: "grid", justifyItems: "center", gap: 10, textAlign: "center", padding: compact ? "8px 12px" : "12px 16px" }}>
@@ -2334,7 +2335,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {battlePlaybackLocked ? Math.max(1, Number(investigation?.battleTurn || 1) - 1) : (investigation?.battleTurn || 1)}</div>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {displayTurn}</div>
       <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
       <div style={{ width: "min(520px, 100%)" }}>
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>

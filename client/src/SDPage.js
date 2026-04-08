@@ -153,13 +153,32 @@ function writeLastViewedMapId(mapId) {
 
 function dedupeCharacters(rows) {
   const list = Array.isArray(rows) ? rows : [];
-  const seen = new Set();
-  return list.filter((character) => {
+  const merged = new Map();
+  list.forEach((character) => {
     const key = getCharacterKey(character);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    if (!key) return;
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, character);
+      return;
+    }
+    merged.set(key, {
+      ...prev,
+      ...character,
+      currentMap: character?.currentMap || prev?.currentMap || "",
+      spriteImage: character?.spriteImage || prev?.spriteImage || "",
+      investigationImage: character?.investigationImage || prev?.investigationImage || "",
+      mainImage: character?.mainImage || prev?.mainImage || "",
+      image: character?.image || prev?.image || "",
+      x: typeof character?.x === "number" ? character.x : prev?.x,
+      y: typeof character?.y === "number" ? character.y : prev?.y,
+      dx: typeof character?.dx === "number" ? character.dx : prev?.dx,
+      dy: typeof character?.dy === "number" ? character.dy : prev?.dy,
+      waitMs: typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs,
+      moveCooldownMs: typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs,
+    });
   });
+  return Array.from(merged.values());
 }
 
 function getSpriteImage(character) {
@@ -407,7 +426,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
             }
           }
 
-          const nearby = arr.filter((other) => String(other.id) !== String(character.id) && String(other.currentMap || maps[0]?.id || "") === String(currentMap));
+          const selfKey = getCharacterKey(character);
+          const nearby = arr.filter((other) => getCharacterKey(other) !== selfKey && String(other.currentMap || maps[0]?.id || "") === String(currentMap));
           nearby.forEach((other) => {
             const ox = Number(other.x || 0);
             const oy = Number(other.y || 0);
@@ -441,14 +461,14 @@ export default function SDPage({ activeCharacter, design, theme }) {
         const visible = characters.filter((v) => (v.currentMap || maps[0]?.id) === activeMapId);
         const candidates = visible.filter((character) => {
           const pool = Array.isArray(character.sdQuotes) ? character.sdQuotes.filter(Boolean) : [];
-          return pool.length > 0 && !next[character.id];
+          return pool.length > 0 && !next[getCharacterKey(character)];
         });
         if (candidates.length > 0) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
           const pool = Array.isArray(picked.sdQuotes) ? picked.sdQuotes.filter(Boolean) : [];
           const text = pool[Math.floor(Math.random() * pool.length)];
           const hold = Math.max(5000, Math.min(9000, 4200 + String(text || "").length * 85));
-          next[picked.id] = { text, expiresAt: now + hold };
+          next[getCharacterKey(picked)] = { text, expiresAt: now + hold };
         }
         return next;
       });
@@ -459,8 +479,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     const handleCharacterUpdated = async (event) => {
       const updated = event?.detail?.character;
-      if (updated?.id) {
-        setCharacters((prev) => dedupeCharacters(prev).map((character, index) => String(character.id) === String(updated.id) ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character));
+      if (updated?.id || updated?.name) {
+        const updatedKey = getCharacterKey(updated);
+        setCharacters((prev) => dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character));
         return;
       }
       try {
@@ -501,7 +522,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const seen = new Set();
     return characters.filter((character) => {
       if (String(character?.currentMap || "") !== targetMapId) return false;
-      const key = String(character?.id || character?.ownerId || character?.name || "");
+      const key = getCharacterKey(character);
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -513,7 +534,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!nextId || nextId === activeMapId) return;
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
-    setCharacters((prev) => dedupeCharacters(prev).map((character) => String(character.id) === String(activeCharacter?.id) ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.82, dy: spawn.dy * 0.82, waitMs: 1400, moveCooldownMs: rand(3600, 6200) } : character));
+    const activeKey = getCharacterKey(activeCharacter);
+    setCharacters((prev) => dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.82, dy: spawn.dy * 0.82, waitMs: 1400, moveCooldownMs: rand(3600, 6200) } : character));
     if (activeCharacter?.id) {
       fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));
@@ -548,9 +570,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
           {availableDirs.left ? <button type="button" onClick={() => moveByArrow("left")} style={arrowStyle({ left: 18, top: "50%", transform: "translateY(-50%)" }, theme)}>◀</button> : null}
           {availableDirs.right ? <button type="button" onClick={() => moveByArrow("right")} style={arrowStyle({ right: 18, top: "50%", transform: "translateY(-50%)" }, theme)}>▶</button> : null}
           {mapCharacters.map((character) => {
-            const q = quotes[character.id];
+            const q = quotes[getCharacterKey(character)];
             const moving = Math.abs(Number(character.dx || 0)) > 1.1 || Math.abs(Number(character.dy || 0)) > 1.1;
-            return <CharacterSprite key={character.id} character={character} quote={q} moving={moving} onClick={() => setSelectedCharacter(character)} />;
+            return <CharacterSprite key={getCharacterKey(character)} character={character} quote={q} moving={moving} onClick={() => setSelectedCharacter(character)} />;
           })}
         </div>
       </div>
