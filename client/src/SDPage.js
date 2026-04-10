@@ -193,6 +193,13 @@ function getSpriteImage(character) {
   return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
 }
 
+function getCharacterQuotePool(character) {
+  const directQuotes = Array.isArray(character?.sdQuotes) ? character.sdQuotes.map((quote) => String(quote || "").trim()).filter(Boolean) : [];
+  const fallbackQuotes = [String(character?.oneLine || "").trim()]
+    .filter(Boolean);
+  return Array.from(new Set([...directQuotes, ...fallbackQuotes]));
+}
+
 async function fetchCharactersWithFallback() {
   const now = Date.now();
   const urls = [
@@ -200,7 +207,8 @@ async function fetchCharactersWithFallback() {
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url);
+      const requestUrl = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+      const res = await fetch(requestUrl, { cache: "no-store" });
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
@@ -222,10 +230,9 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", textAlign: "center", cursor: "pointer", zIndex: 4 }}>
       {quote?.text ? (
-        <div style={{ marginBottom: "12px", display: "inline-block", maxWidth: "228px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(239,249,255,0.98), rgba(219,241,255,0.98))", color: "#0f3b63", border: "1px solid rgba(125,211,252,0.78)", boxShadow: "0 12px 24px rgba(2,132,199,0.22)", position: "relative", fontSize: "13px", fontWeight: 700, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
+        <div style={{ marginBottom: "10px", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(244,251,255,0.98) 0%, rgba(221,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.34)", boxShadow: "0 10px 26px rgba(37,99,235,0.14)", position: "relative", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
-          <div style={{ position: "absolute", inset: 0, borderRadius: "20px", pointerEvents: "none", background: "linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0))" }} />
-          <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(219,241,255,0.98), rgba(191,229,255,0.98))", borderRight: "1px solid rgba(125,211,252,0.78)", borderBottom: "1px solid rgba(125,211,252,0.78)" }} />
+          <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(221,241,255,0.98) 0%, rgba(201,231,255,0.98) 100%)", borderRight: "1px solid rgba(91,170,224,0.24)", borderBottom: "1px solid rgba(91,170,224,0.24)" }} />
         </div>
       ) : null}
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
@@ -273,6 +280,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const lastFrameRef = useRef(0);
   const saveTickRef = useRef(0);
+  const charactersRef = useRef(characters);
+  const activeMapRef = useRef(activeMapId);
   const mapRoot = design?.siteContent?.maps || {};
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
   const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
@@ -283,6 +292,14 @@ export default function SDPage({ activeCharacter, design, theme }) {
     }
     return Array.isArray(mapRoot.presets) && mapRoot.presets.length > 0 ? mapRoot.presets : FALLBACK_MAPS;
   }, [mapRoot, collections, activeCollectionId]);
+
+  useEffect(() => {
+    charactersRef.current = characters;
+  }, [characters]);
+
+  useEffect(() => {
+    activeMapRef.current = activeMapId;
+  }, [activeMapId]);
 
   const getNextMap = (currentMap, dir) => {
     const byId = maps.find((m) => m.id === currentMap);
@@ -327,13 +344,25 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!characters.length) return;
-    if (Date.now() - saveTickRef.current < 1200) return;
+    writeCachedSdCharacters(dedupeCharacters(characters));
+    if (Date.now() - saveTickRef.current < 700) return;
     saveTickRef.current = Date.now();
     const payload = Object.fromEntries(dedupeCharacters(characters).map((character) => [getCharacterKey(character), { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
     try {
       localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
     } catch {}
   }, [characters]);
+
+  useEffect(() => () => {
+    const latest = dedupeCharacters(charactersRef.current || []);
+    if (!latest.length) return;
+    writeCachedSdCharacters(latest);
+    const payload = Object.fromEntries(latest.map((character) => [getCharacterKey(character), { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
+    try {
+      localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
+    } catch {}
+    writeLastViewedMapId(activeMapRef.current);
+  }, []);
 
   useEffect(() => {
     if (!maps.length) return undefined;
@@ -342,11 +371,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const step = (timestamp) => {
       if (!lastFrameRef.current) lastFrameRef.current = timestamp;
       const rawDt = timestamp - lastFrameRef.current;
-      const dt = Math.min(72, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
-      if (dt < 24) {
-        rafId = window.requestAnimationFrame(step);
-        return;
-      }
+      const dt = Math.min(56, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
       lastFrameRef.current = timestamp;
 
       if (document.visibilityState === "visible") {
@@ -366,17 +391,37 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
           moveCooldownMs -= dt;
           if (moveCooldownMs <= 0) {
-            if (Math.random() < 0.46) {
-              waitMs = rand(2200, 4200);
-              dx *= 0.34;
-              dy *= 0.34;
-              moveCooldownMs = rand(4200, 7200);
+            const mapDef = maps.find((map) => String(map.id) === String(currentMap)) || null;
+            const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((map) => String(map.id) === String(nextId)));
+            const wantsPause = Math.random() < 0.2;
+            const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.34;
+            if (wantsPause) {
+              waitMs = rand(1400, 2600);
+              dx *= 0.28;
+              dy *= 0.28;
+              moveCooldownMs = rand(1800, 3200);
+            } else if (wantsMapChange) {
+              const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
+              if (dir === "left") {
+                dx = -rand(8.2, 11.8);
+                dy = rand(-3.4, 3.4);
+              } else if (dir === "right") {
+                dx = rand(8.2, 11.8);
+                dy = rand(-3.4, 3.4);
+              } else if (dir === "up") {
+                dx = rand(-4.8, 4.8);
+                dy = -rand(7.8, 10.6);
+              } else {
+                dx = rand(-4.8, 4.8);
+                dy = rand(7.8, 10.6);
+              }
+              moveCooldownMs = rand(1500, 2600);
             } else {
-              dx = rand(-2.25, 2.25);
-              dy = rand(-1.55, 1.55);
-              if (Math.abs(dx) < 0.55) dx = dx >= 0 ? 0.55 : -0.55;
-              if (Math.abs(dy) < 0.22) dy = dy >= 0 ? 0.22 : -0.22;
-              moveCooldownMs = rand(5200, 8600);
+              dx = rand(-8.2, 8.2);
+              dy = rand(-5.2, 5.2);
+              if (Math.abs(dx) < 2.6) dx = dx >= 0 ? 2.6 : -2.6;
+              if (Math.abs(dy) < 1.2) dy = dy >= 0 ? 1.2 : -1.2;
+              moveCooldownMs = rand(1800, 3400);
             }
           }
 
@@ -385,18 +430,58 @@ export default function SDPage({ activeCharacter, design, theme }) {
           let ny = y + dy * speedFactor;
 
           if (nx <= 4) {
-            dx *= -1;
-            nx = clamp(x + dx * speedFactor, 4, 92);
+            const nextMap = getNextMap(currentMap, "left");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = 91.2;
+              ny = clamp(ny, 10, 76);
+              dx = -Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
+              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
+              moveCooldownMs = rand(1500, 2600);
+            } else {
+              dx *= -1;
+              nx = clamp(x + dx * speedFactor, 4, 92);
+            }
           } else if (nx >= 92) {
-            dx *= -1;
-            nx = clamp(x + dx * speedFactor, 4, 92);
+            const nextMap = getNextMap(currentMap, "right");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = 8.8;
+              ny = clamp(ny, 10, 76);
+              dx = Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
+              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
+              moveCooldownMs = rand(1500, 2600);
+            } else {
+              dx *= -1;
+              nx = clamp(x + dx * speedFactor, 4, 92);
+            }
           }
           if (ny <= 8) {
-            dy *= -1;
-            ny = clamp(y + dy * speedFactor, 8, 78);
+            const nextMap = getNextMap(currentMap, "up");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = clamp(nx, 8, 92);
+              ny = 77.2;
+              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
+              dy = -Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
+              moveCooldownMs = rand(1500, 2600);
+            } else {
+              dy *= -1;
+              ny = clamp(y + dy * speedFactor, 8, 78);
+            }
           } else if (ny >= 78) {
-            dy *= -1;
-            ny = clamp(y + dy * speedFactor, 8, 78);
+            const nextMap = getNextMap(currentMap, "down");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = clamp(nx, 8, 92);
+              ny = 10.8;
+              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
+              dy = Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
+              moveCooldownMs = rand(1500, 2600);
+            } else {
+              dy *= -1;
+              ny = clamp(y + dy * speedFactor, 8, 78);
+            }
           }
 
           const selfKey = getCharacterKey(character);
@@ -432,20 +517,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
           if (payload?.expiresAt > now) next[id] = payload;
         });
         const visible = characters.filter((v) => (v.currentMap || maps[0]?.id) === activeMapId);
-        const candidates = visible.filter((character) => {
-          const pool = Array.isArray(character.sdQuotes) ? character.sdQuotes.filter(Boolean) : [];
-          return pool.length > 0 && !next[getCharacterKey(character)];
-        });
+        const candidates = visible.filter((character) => getCharacterQuotePool(character).length > 0 && !next[getCharacterKey(character)]);
         if (candidates.length > 0) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
-          const pool = Array.isArray(picked.sdQuotes) ? picked.sdQuotes.filter(Boolean) : [];
+          const pool = getCharacterQuotePool(picked);
           const text = pool[Math.floor(Math.random() * pool.length)];
-          const hold = Math.max(5000, Math.min(9000, 4200 + String(text || "").length * 85));
+          const hold = Math.max(5200, Math.min(11000, 5200 + String(text || "").length * 100));
           next[getCharacterKey(picked)] = { text, expiresAt: now + hold };
         }
         return next;
       });
-    }, 5000);
+    }, 3500);
     return () => clearInterval(quoteTimer);
   }, [characters, activeMapId, maps]);
 

@@ -129,16 +129,6 @@ function readStoredVolume() {
   }
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
-  try {
-    return await fetch(url, { ...options, signal: controller?.signal || options.signal });
-  } finally {
-    if (timer) window.clearTimeout(timer);
-  }
-}
-
 function SpeakerButton({ muted, onToggle, position = "bottom-right" }) {
   const style = position === "profile"
     ? { position: "fixed", top: 20, right: 24, zIndex: 2400 }
@@ -302,7 +292,7 @@ function App() {
   const [selectedInvestigationSeed, setSelectedInvestigationSeed] = useState(() => safeReadJSON("plc-investigation-seed", null));
   const cachedDesign = safeReadJSON(DESIGN_CACHE_KEY, null);
   const [designConfig, setDesignConfig] = useState(() => cachedDesign || defaultDesign);
-  const [designReady, setDesignReady] = useState(true);
+  const [designReady, setDesignReady] = useState(false);
   const [myUnread, setMyUnread] = useState(0);
   const [spectatorMode, setSpectatorMode] = useState(() => safeReadJSON("plc-spectator-mode", false));
   const [builderEditId, setBuilderEditId] = useState(() => safeReadJSON("plc-builder-edit-id", ""));
@@ -365,7 +355,7 @@ function App() {
 
     if (options.mode === "daily") {
       try {
-        const res = await fetchWithTimeout(buildApiUrl("/startDailyInvestigation"), {
+        const res = await fetch(buildApiUrl("/startDailyInvestigation"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id, character: runtimeCharacter }),
@@ -418,10 +408,6 @@ function App() {
         return;
       } catch (err) {
         console.error("startDailyInvestigation error", err);
-        if (err?.name === "AbortError") {
-          alert("조사 시작 요청이 지연되어 취소되었습니다. 다시 시도해주세요.");
-          return;
-        }
         try {
           const latestRes = await fetch(buildApiUrl(`/investigationView/${item.id}`));
           const latest = await latestRes.json();
@@ -458,7 +444,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    
+
     const applyDesign = (nextDesign, { persist = false } = {}) => {
       const next = nextDesign || defaultDesign;
       if (cancelled) return;
@@ -472,7 +458,8 @@ function App() {
     };
 
     const fetchDesign = () => {
-      fetch(buildApiUrl("/designConfigPublic"))
+      setDesignReady(false);
+      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store" })
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
@@ -502,12 +489,7 @@ function App() {
       applyDesign(cached, { persist: false });
     };
 
-    const cached = safeReadJSON(DESIGN_CACHE_KEY, null);
-    if (cached) {
-      applyDesign(cached, { persist: false });
-    } else {
-      fetchDesign();
-    }
+    fetchDesign();
 
     window.addEventListener("plc-design-updated", handleDesignUpdated);
     window.addEventListener("storage", handleStorage);
@@ -820,6 +802,10 @@ function App() {
     if (activePage === PAGE.INVESTIGATION) return "investigationOverlay";
     return activePage;
   })();
+
+  if (!designReady) {
+    return <div style={{ ...buildThemeVars(theme), minHeight: "100vh", background: theme?.bgMain || defaultDesign.theme?.bgMain || "#eef9ff" }} />;
+  }
 
   return (
     <div style={buildThemeVars(theme)}>

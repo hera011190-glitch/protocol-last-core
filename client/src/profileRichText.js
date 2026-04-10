@@ -1,93 +1,152 @@
 import React from "react";
 
 const DEFAULT_FONT = '"Pretendard", "Noto Sans KR", sans-serif';
+const HTML_TAG_PATTERN = /<\/?(div|p|span|br|strong|b|em|i|u|ul|ol|li|h1|h2|h3|h4|table|thead|tbody|tr|td|th|hr)(\s|>|\/)/i;
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function sanitizeFont(font) {
   const value = String(font || "").trim();
   return value || DEFAULT_FONT;
 }
 
-function parseTagHeader(source, index) {
-  if (source.startsWith("[b]", index)) return { type: "open", tag: "b", value: "", next: index + 3 };
-  if (source.startsWith("[/b]", index)) return { type: "close", tag: "b", next: index + 4 };
-  if (source.startsWith("[i]", index)) return { type: "open", tag: "i", value: "", next: index + 3 };
-  if (source.startsWith("[/i]", index)) return { type: "close", tag: "i", next: index + 4 };
-  if (source.startsWith("[/size]", index)) return { type: "close", tag: "size", next: index + 7 };
-  if (source.startsWith("[/font]", index)) return { type: "close", tag: "font", next: index + 7 };
-  if (source.startsWith("[center]", index)) return { type: "open", tag: "center", value: "", next: index + 8 };
-  if (source.startsWith("[/center]", index)) return { type: "close", tag: "center", next: index + 9 };
-  const sizeMatch = source.slice(index).match(/^\[size=(\d+)\]/);
-  if (sizeMatch) return { type: "open", tag: "size", value: Number(sizeMatch[1] || 18), next: index + sizeMatch[0].length };
-  const fontMatch = source.slice(index).match(/^\[font=([^\]]+)\]/);
-  if (fontMatch) return { type: "open", tag: "font", value: sanitizeFont(fontMatch[1]), next: index + fontMatch[0].length };
-  return null;
+export function isHtmlProfile(value) {
+  return HTML_TAG_PATTERN.test(String(value || ""));
 }
 
-function parseNodes(source, index = 0, stopTag = "") {
-  const nodes = [];
-  let buffer = "";
-  let cursor = index;
+function applyInlineMarkup(source) {
+  let html = String(source || "");
+  const replacements = [
+    [/\[b\]([\s\S]*?)\[\/b\]/gi, "<strong>$1</strong>"],
+    [/\[i\]([\s\S]*?)\[\/i\]/gi, "<em>$1</em>"],
+    [/\[center\]([\s\S]*?)\[\/center\]/gi, '<div style="text-align:center;">$1</div>'],
+    [/\[size=(\d+)\]([\s\S]*?)\[\/size\]/gi, (_, size, text) => `<span style="font-size:${Number(size || 18)}px;">${text}</span>`],
+    [/\[font=([^\]]+)\]([\s\S]*?)\[\/font\]/gi, (_, font, text) => `<span style="font-family:${escapeHtml(sanitizeFont(font))};">${text}</span>`],
+  ];
+  for (let i = 0; i < 8; i += 1) {
+    let changed = false;
+    replacements.forEach(([pattern, replacement]) => {
+      const next = html.replace(pattern, replacement);
+      if (next !== html) changed = true;
+      html = next;
+    });
+    if (!changed) break;
+  }
+  return html;
+}
 
-  const flush = () => {
-    if (!buffer) return;
-    nodes.push({ type: "text", text: buffer });
-    buffer = "";
+export function legacyProfileToHtml(value) {
+  const source = String(value || "");
+  if (!source.trim()) return "<p><br></p>";
+  if (isHtmlProfile(source)) return source;
+
+  const lines = source.replace(/\r/g, "").split("\n");
+  const chunks = [];
+  let paragraph = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    const html = paragraph.map((line) => applyInlineMarkup(escapeHtml(line))).join("<br>");
+    chunks.push(`<p style="margin:0 0 14px 0; line-height:1.95;">${html || "<br>"}</p>`);
+    paragraph = [];
   };
 
-  while (cursor < source.length) {
-    const token = source[cursor] === "[" ? parseTagHeader(source, cursor) : null;
-    if (!token) {
-      buffer += source[cursor];
-      cursor += 1;
-      continue;
+  lines.forEach((line) => {
+    const trimmed = String(line || "").trim();
+    const titleMatch = trimmed.match(/^<(.+)>$/);
+    if (titleMatch) {
+      flushParagraph();
+      chunks.push(`<h3 style="margin:18px 0 10px; text-align:center; font-weight:900; color:#16324a;">${escapeHtml(titleMatch[1])}</h3>`);
+      return;
     }
+    if (!trimmed) {
+      flushParagraph();
+      return;
+    }
+    paragraph.push(line);
+  });
+  flushParagraph();
 
-    if (token.type === "close") {
-      if (stopTag && token.tag === stopTag) {
-        flush();
-        return { nodes, next: token.next };
+  return chunks.join("") || `<p style="margin:0; line-height:1.95;">${applyInlineMarkup(escapeHtml(source)).replace(/\n/g, "<br>")}</p>`;
+}
+
+export function sanitizeProfileHtml(source) {
+  const html = String(source || "");
+  if (typeof window === "undefined" || typeof window.DOMParser === "undefined") return html;
+
+  const parser = new window.DOMParser();
+  const doc = parser.parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return html;
+
+  const allowedTags = new Set(["div", "p", "span", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "h1", "h2", "h3", "h4", "table", "thead", "tbody", "tr", "td", "th", "hr"]);
+  const allowedStyles = new Set(["text-align", "color", "font-family", "font-size", "font-weight", "font-style", "text-decoration", "background-color", "border", "border-collapse", "width", "padding", "margin"]);
+  const unwrap = (node) => {
+    const parent = node.parentNode;
+    if (!parent) return;
+    while (node.firstChild) parent.insertBefore(node.firstChild, node);
+    parent.removeChild(node);
+  };
+
+  const cleanNode = (node) => {
+    Array.from(node.childNodes).forEach((child) => {
+      if (child.nodeType === 8) {
+        child.parentNode?.removeChild(child);
+        return;
       }
-      buffer += source.slice(cursor, token.next);
-      cursor = token.next;
-      continue;
-    }
+      if (child.nodeType !== 1) return;
+      const tag = String(child.tagName || "").toLowerCase();
+      if (!allowedTags.has(tag)) {
+        unwrap(child);
+        return;
+      }
+      Array.from(child.attributes).forEach((attr) => {
+        const name = String(attr.name || "").toLowerCase();
+        if (name === "style") {
+          const nextStyle = String(attr.value || "")
+            .split(";")
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .map((part) => {
+              const [prop, ...rest] = part.split(":");
+              const key = String(prop || "").trim().toLowerCase();
+              const value = rest.join(":").trim();
+              if (!allowedStyles.has(key) || !value) return "";
+              return `${key}:${value}`;
+            })
+            .filter(Boolean)
+            .join("; ");
+          if (nextStyle) child.setAttribute("style", nextStyle);
+          else child.removeAttribute("style");
+          return;
+        }
+        if (["colspan", "rowspan"].includes(name) && ["td", "th"].includes(tag)) return;
+        child.removeAttribute(attr.name);
+      });
+      cleanNode(child);
+    });
+  };
 
-    flush();
-    const inner = parseNodes(source, token.next, token.tag);
-    nodes.push({ type: token.tag, value: token.value, children: inner.nodes });
-    cursor = inner.next;
-  }
-
-  flush();
-  return { nodes, next: cursor };
+  cleanNode(root);
+  return root.innerHTML;
 }
 
-function renderNode(node, key) {
-  if (!node) return null;
-  if (node.type === "text") return <React.Fragment key={key}>{node.text}</React.Fragment>;
-
-  const children = (node.children || []).map((child, index) => renderNode(child, `${key}-${index}`));
-
-  if (node.type === "b") return <strong key={key} style={{ fontWeight: 900 }}>{children}</strong>;
-  if (node.type === "i") return <em key={key} style={{ fontStyle: "italic" }}>{children}</em>;
-  if (node.type === "size") return <span key={key} style={{ fontSize: Number(node.value || 18), lineHeight: 1.8, display: "inline-block" }}>{children}</span>;
-  if (node.type === "font") return <span key={key} style={{ fontFamily: sanitizeFont(node.value) }}>{children}</span>;
-  if (node.type === "center") return <span key={key} style={{ display: "block", width: "100%", textAlign: "center" }}>{children}</span>;
-  return <React.Fragment key={key}>{children}</React.Fragment>;
+export function renderProfileRichContent(value) {
+  const normalized = sanitizeProfileHtml(isHtmlProfile(value) ? String(value || "") : legacyProfileToHtml(value));
+  return <div dangerouslySetInnerHTML={{ __html: normalized || "<p><br></p>" }} />;
 }
 
-export function renderProfileRichText(text) {
-  const source = String(text || "");
-  const parsed = parseNodes(source);
-  return (parsed.nodes || []).map((node, index) => renderNode(node, `profile-rich-${index}`));
+export function renderProfileRichText(value) {
+  return renderProfileRichContent(value);
 }
 
-export function renderProfileRichParagraph(text) {
-  const lines = String(text || "").split("\n");
-  return lines.map((line, index) => (
-    <React.Fragment key={`profile-line-${index}`}>
-      {renderProfileRichText(line)}
-      {index < lines.length - 1 ? <br /> : null}
-    </React.Fragment>
-  ));
+export function renderProfileRichParagraph(value) {
+  return renderProfileRichContent(value);
 }

@@ -1,18 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import socket from "./socket";
-import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
+import { apiFetch } from "./api";
 import { getMaxHpFromStat } from "./hpUtils";
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
-  try {
-    return await fetch(url, { ...options, signal: controller?.signal || options.signal });
-  } finally {
-    if (timer) window.clearTimeout(timer);
-  }
-}
 
 function buildFallbackParticipants(investigation) {
   const roster = new Map();
@@ -54,13 +44,13 @@ function InvestigationLobby({
   theme,
 }) {
   const [investigation, setInvestigation] = useState(() => initialInvestigation || null);
-  const [startPending, setStartPending] = useState(false);
   const [users, setUsers] = useState([]);
   const [selectedLeaders, setSelectedLeaders] = useState([]);
 
-  const loadInvestigation = async (force = false) => {
+  const loadInvestigation = async () => {
     try {
-      const data = await apiJsonCached(`/investigationLobby/${investigationId}`, { ttlMs: 1800, force, storageKey: `plc-lobby-${investigationId}` });
+      const res = await apiFetch(`/investigationLobby/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
+      const data = await res.json();
       setInvestigation((prev) => ({ ...(prev || {}), ...(data || {}) }));
       if (Array.isArray(data?.leaders) && data.leaders.length > 0) setSelectedLeaders(data.leaders);
       return data;
@@ -75,7 +65,7 @@ function InvestigationLobby({
       setInvestigation((prev) => prev || initialInvestigation);
       if (Array.isArray(initialInvestigation?.leaders) && initialInvestigation.leaders.length > 0) setSelectedLeaders(initialInvestigation.leaders);
     }
-    loadInvestigation(true);
+    loadInvestigation();
   }, [investigationId, initialInvestigation]);
 
   useEffect(() => {
@@ -84,7 +74,8 @@ function InvestigationLobby({
     const poll = async (force = false) => {
       if (!force && document.visibilityState === "hidden") return;
       try {
-        const data = await apiJsonCached(`/investigationLobby/${investigationId}`, { ttlMs: 1800, force, storageKey: `plc-lobby-${investigationId}` });
+        const res = await apiFetch(`/investigationLobby/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
+        const data = await res.json();
         if (cancelled) return;
         setInvestigation(data);
         if (Array.isArray(data?.leaders) && data.leaders.length > 0) setSelectedLeaders(data.leaders);
@@ -246,81 +237,81 @@ function InvestigationLobby({
   };
 
   const startInvestigation = async () => {
-    if (!isAdmin || startPending) return;
-    setStartPending(true);
-    try {
-      if (selectedLeaders.length > 0) {
-        const leaderRes = await fetchWithTimeout(buildApiUrl("/setInvestigationLeaders"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: investigationId, leaders: selectedLeaders }),
-        });
-        let leaderData = {};
-        try { leaderData = await leaderRes.json(); } catch { leaderData = {}; }
-        if (!leaderData.success) {
-          alert(leaderData.message || "리더 저장에 실패했습니다.");
-          return;
-        }
+    if (!isAdmin) return;
+    if (selectedLeaders.length > 0) {
+      const leaderRes = await apiFetch("/setInvestigationLeaders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: investigationId, leaders: selectedLeaders }),
+      });
+      let leaderData = {};
+      try { leaderData = await leaderRes.json(); } catch { leaderData = {}; }
+      if (!leaderData.success) {
+        alert(leaderData.message || "리더 저장에 실패했습니다.");
+        return;
       }
+    }
 
-      let data = {};
-      let requestOk = false;
+    let data = {};
+    let requestOk = false;
+    try {
+      const res = await apiFetch("/startInvestigation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: investigationId }),
+      });
+      requestOk = !!res.ok;
       try {
-        const res = await fetchWithTimeout(buildApiUrl("/startInvestigation"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: investigationId }),
-        });
-        requestOk = !!res.ok;
-        try {
-          data = await res.json();
-        } catch {
-          data = {};
-        }
-      } catch (error) {
-        if (error?.name === "AbortError") {
-          alert("조사 시작 요청이 지연되어 취소되었습니다. 다시 시도해주세요.");
-          return;
-        }
+        data = await res.json();
+      } catch {
         data = {};
       }
+    } catch {
+      data = {};
+    }
 
-      if (!data.success) {
-        try {
-          const latestRes = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-          const latest = await latestRes.json();
-          if (latest?.started) {
-            setInvestigation(latest);
-            startGame();
-            return;
-          }
-        } catch {
-          // ignore fallback errors
-        }
-        if (requestOk && data.started) {
-          setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
+    if (!data.success) {
+      try {
+        const latestRes = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
+        const latest = await latestRes.json();
+        if (latest?.started) {
+          setInvestigation(latest);
           startGame();
           return;
         }
+      } catch {
+        // ignore fallback errors
+      }
+      if (requestOk && data.started) {
+        setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
+        startGame();
+        return;
+      }
+      setTimeout(async () => {
         try {
-          await new Promise((resolve) => window.setTimeout(resolve, 450));
-          const latest = await loadInvestigation(true);
+          const latest = await loadInvestigation();
           if (latest?.started) {
             setInvestigation(latest);
             startGame();
             return;
           }
+          alert(data.message || "조사 시작에 실패했습니다.");
         } catch {
-          // ignore delayed reload errors
+          alert(data.message || "조사 시작에 실패했습니다.");
         }
-        alert(data.message || "조사 시작에 실패했습니다.");
-        return;
-      }
-      setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
-      startGame();
-    } finally {
-      setStartPending(false);
+      }, 450);
+      return;
     }
+    setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
+    startGame();
+  };
+
+  const enterOrStartInvestigation = () => {
+    if (investigation?.started) {
+      reenterGame();
+      return;
+    }
+    startInvestigation();
   };
 
   const participate = async () => {
@@ -336,7 +327,7 @@ function InvestigationLobby({
       setInvestigation(data.investigation);
       if (Array.isArray(data.investigation?.leaders)) setSelectedLeaders(data.investigation.leaders);
     }
-    loadInvestigation(true);
+    loadInvestigation();
   };
 
   const leave = async () => {
@@ -352,7 +343,7 @@ function InvestigationLobby({
       setInvestigation(data.item);
       if (Array.isArray(data.item?.leaders)) setSelectedLeaders(data.item.leaders);
     }
-    loadInvestigation(true);
+    loadInvestigation();
   };
 
   const isParticipantOnline = (participant) => {
@@ -395,8 +386,7 @@ function InvestigationLobby({
                   <div style={{ ...leaderChipStyle, background: "rgba(255,255,255,0.08)", color: "#f8fafc" }}>운영자</div>
                   {!investigation.started ? <button type="button" onClick={saveLeaders} className="ghost-button">리더 저장</button> : null}
                   {!investigation.started ? <button type="button" onClick={() => document.getElementById("lobby-participants")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="ghost-button">리더 지정</button> : null}
-                  {!investigation.started && canStartLobby ? <button type="button" onClick={startInvestigation} disabled={startPending} className="home-primary-button">{startPending ? "시작 중..." : "조사 시작"}</button> : null}
-                  {investigation.started ? <button type="button" onClick={reenterGame} className="home-primary-button">조사로 들어가기</button> : null}
+                  {((!investigation.started && canStartLobby) || investigation.started) ? <button type="button" onClick={enterOrStartInvestigation} className="home-primary-button">조사로 들어가기</button> : null}
                 </div>
               ) : null}
             </div>
@@ -418,11 +408,8 @@ function InvestigationLobby({
                   {isAdmin && !investigation.started && (
                     <button type="button" onClick={saveLeaders} className="ghost-button">리더 저장</button>
                   )}
-                  {isAdmin && !investigation.started && canStartLobby && (
-                    <button type="button" onClick={startInvestigation} className="home-primary-button">조사 시작</button>
-                  )}
-                  {investigation.started && (isAdmin || isParticipating) ? (
-                    <button type="button" onClick={reenterGame} className="home-primary-button">조사로 들어가기</button>
+                  {((investigation.started && (isAdmin || isParticipating)) || (isAdmin && !investigation.started && canStartLobby)) ? (
+                    <button type="button" onClick={enterOrStartInvestigation} className="home-primary-button">조사로 들어가기</button>
                   ) : null}
                   <button type="button" onClick={goBack} className="ghost-button">조사 나가기</button>
                 </div>

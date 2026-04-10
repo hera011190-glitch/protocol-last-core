@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import { apiJsonCached, buildApiUrl } from "./api";
+import ImageDropInput from "./ImageDropInput";
+import { buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
-
 const PRELOADED_INVESTIGATION_IMAGES = new Set();
 
 function preloadInvestigationImages(urls = []) {
@@ -59,7 +59,6 @@ function adminEditButtonStyle(top = 18) {
     cursor: "pointer",
   };
 }
-
 
 function readCachedInvestigations() {
   try {
@@ -134,7 +133,6 @@ function timeText(item) {
   return `${open.toLocaleString("ko-KR", { hour12: false })} 오픈`;
 }
 
-
 function getRepresentativeImage(items = []) {
   const rows = Array.isArray(items) ? items : [];
   return rows.find((item) => String(item?.listImage || "").trim())?.listImage || "";
@@ -144,74 +142,151 @@ function formatCorrosionRange(items = []) {
   const values = (Array.isArray(items) ? items : [])
     .map((item) => Number(item?.endCorrosion || 0))
     .filter((value) => value > 0);
-  if (values.length === 0) return "침식률 종료 +0";
+  if (values.length === 0) return "침식률 +0";
   const min = Math.min(...values);
   const max = Math.max(...values);
-  return min === max ? `침식률 종료 +${min}` : `침식률 종료 +${min}~+${max}`;
+  return min === max ? `침식률 +${min}` : `침식률 +${min}~+${max}`;
 }
 
-export default function InvestigationList({ onEnter, onSpectate, onEditInvestigation, activeCharacter, isAdmin = false, design, theme }) {
-  const [investigations, setInvestigations] = useState(() => readCachedInvestigations());
+function entryLabelBlock(english, korean) {
+  return (
+    <div style={{ display: "grid", gap: 2, alignContent: "start" }}>
+      <div className="section-eyebrow" style={{ color: "#243b53", marginBottom: 0, lineHeight: 1 }}>{english}</div>
+      <h3 style={{ marginTop: -4, marginBottom: 0, color: "#17324a", lineHeight: 1.02 }}>{korean}</h3>
+    </div>
+  );
+}
+
+function CardImageEditorModal({ item, value, saving, onChange, onClose, onSave, theme }) {
+  if (!item) return null;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 2600,
+        background: "rgba(2,6,23,0.58)",
+        backdropFilter: "blur(8px)",
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "min(760px, calc(100vw - 48px))",
+          maxHeight: "calc(100vh - 48px)",
+          overflow: "auto",
+          borderRadius: 28,
+          background: "rgba(255,255,255,0.98)",
+          border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`,
+          boxShadow: theme?.shadow || "0 24px 60px rgba(73,132,170,0.16)",
+          padding: 22,
+          color: theme?.textMain || "#13324b",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <div className="section-eyebrow">CARD IMAGE</div>
+            <h3 style={{ marginTop: 10, marginBottom: 0 }}>{item.title}</h3>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
+        </div>
+
+        <div style={{ display: "grid", gap: 16 }}>
+          <ImageDropInput
+            label="카드 이미지"
+            value={value}
+            onChange={onChange}
+            description="조사 카드에 표시할 이미지를 넣어줘"
+            previewHeight={260}
+          />
+
+          <div style={{ borderRadius: 24, overflow: "hidden", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, position: "relative", minHeight: 240, background: "#edf7ff" }}>
+            <CardImageLayer src={value} alt={item.title} />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.72) 30%, rgba(255,255,255,0.12) 100%)" }} />
+            <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 6 }}>
+              <div className="section-eyebrow" style={{ color: "#243b53", lineHeight: 1 }}>{item.type === "daily" ? "DAILY" : "GROUP"}</div>
+              <h3 style={{ marginTop: -2, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{item.type === "daily" ? "일일조사" : "단체조사"}</h3>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            <button type="button" className="ghost-button" onClick={onClose}>취소</button>
+            <button type="button" className="home-primary-button" onClick={onSave} disabled={saving}>{saving ? "저장 중..." : "저장"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function InvestigationList({ onEnter, onSpectate, activeCharacter, isAdmin = false, design, theme }) {
+  const [investigations, setInvestigations] = useState([]);
   const [view, setView] = useState("entry");
   const [dailyLeft, setDailyLeft] = useState(Number(activeCharacter?.dailyAttemptsLeft ?? 1));
   const [completedOpenId, setCompletedOpenId] = useState("");
   const [completedDetail, setCompletedDetail] = useState(null);
+  const [editingCardItem, setEditingCardItem] = useState(null);
+  const [cardImageDraft, setCardImageDraft] = useState("");
+  const [savingCardImage, setSavingCardImage] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const load = () => {
-      apiJsonCached(`/investigations`, { ttlMs: 2500, storageKey: "plc-cache-investigations-json" })
-        .then((data) => {
-          if (cancelled) return;
-          const next = Array.isArray(data) ? data : [];
-          setInvestigations(next);
-          writeCachedInvestigations(next);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setInvestigations((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : readCachedInvestigations()));
-        });
+
+    const load = async () => {
+      try {
+        const res = await fetch(buildApiUrl(`/investigations?t=${Date.now()}`), { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled) return;
+        const next = Array.isArray(data) ? data : [];
+        setInvestigations(next);
+        writeCachedInvestigations(next);
+      } catch {
+        if (cancelled) return;
+        setInvestigations((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : readCachedInvestigations()));
+      }
     };
+
     load();
     const timer = setInterval(() => {
       if (document.visibilityState === "hidden") return;
       load();
-    }, 10000);
+    }, 8000);
     setDailyLeft(Number(activeCharacter?.dailyAttemptsLeft ?? 1));
+
+    const handleFocusRefresh = () => load();
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleFocusRefresh);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleFocusRefresh);
     };
-  }, [activeCharacter?.id, activeCharacter?.dailyAttemptsLeft]);
+  }, [activeCharacter?.dailyAttemptsLeft]);
 
   useEffect(() => {
-    preloadInvestigationImages((Array.isArray(investigations) ? investigations : []).map((item) => item?.listImage).filter(Boolean));
+    preloadInvestigationImages(investigations.map((item) => item?.listImage).filter(Boolean));
   }, [investigations]);
 
-  const dailyPool = useMemo(
-    () => investigations.filter((item) => item.type === "daily" && !item.hidden && item.opened !== false && item.statusLabel !== "비활성화" && !!(item.effectiveOpened ?? item.opened)),
-    [investigations]
-  );
-  const dailyOwnerKeys = useMemo(() => {
-    if (!activeCharacter) return [];
-    const keys = [
-      String(activeCharacter.id || ""),
-      String(`${activeCharacter.ownerId || "owner"}:${activeCharacter.name || ""}`),
-    ].filter(Boolean);
-    return Array.from(new Set(keys));
-  }, [activeCharacter?.id, activeCharacter?.ownerId, activeCharacter?.name]);
-  const dailyOwnerKey = dailyOwnerKeys[0] || "";
-  const resumableDaily = useMemo(
-    () => investigations.find((item) => item.type === "daily" && item.started && !item.ended && (dailyOwnerKeys.includes(String(item.dailyResumeOwnerKey || "")) || (dailyOwnerKeys.includes(String(item.dailyOwnerKey || "")) && Number(item.participantsCount || 0) === 0) || hasLocalDailyResume(item.id, activeCharacter))),
-    [investigations, dailyOwnerKeys, activeCharacter]
-  );
+  const resumableDaily = useMemo(() => {
+    if (!activeCharacter) return null;
+    return investigations.find((item) => item.type === "daily" && item.started && !item.ended && (String(item.dailyOwnerKey || "") === String(activeCharacter.id || "") || String(item.dailyResumeOwnerKey || "") === String(activeCharacter.id || "") || hasLocalDailyResume(item.id, activeCharacter)));
+  }, [investigations, activeCharacter]);
+
+  const dailyPool = useMemo(() => investigations.filter((item) => item.type === "daily" && !item.hidden && (item.effectiveOpened ?? item.opened)), [investigations]);
 
   const groups = useMemo(() => {
-    const rows = investigations.filter((item) => item.type === "group" && !item.hidden && !(item.ended || item.endedAt || item.statusLabel === "종료"));
+    const rows = investigations.filter((item) => item.type === "group" && !item.hidden && !item.ended);
     return [...rows].sort((a, b) => {
-      const aDisabled = !(a.effectiveOpened ?? a.opened);
-      const bDisabled = !(b.effectiveOpened ?? b.opened);
-      if (aDisabled !== bDisabled) return aDisabled ? 1 : -1;
       const aStarted = !!a.started && !a.ended;
       const bStarted = !!b.started && !b.ended;
       if (aStarted !== bStarted) return aStarted ? -1 : 1;
@@ -232,7 +307,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
 
   const openCompletedDetail = async (item) => {
     try {
-      const res = await fetch(buildApiUrl(`/investigationView/${item.id}`));
+      const res = await fetch(buildApiUrl(`/investigationView/${item.id}?t=${Date.now()}`), { cache: "no-store" });
       const data = await res.json();
       setCompletedDetail(data);
       setCompletedOpenId(item.id);
@@ -249,8 +324,54 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
     onEnter(picked, { mode: "daily" });
   };
 
+  const openCardImageEditor = (item, event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (!item) return;
+    setEditingCardItem(item);
+    setCardImageDraft(String(item.listImage || ""));
+  };
+
+  const saveCardImage = async () => {
+    if (!editingCardItem?.id) return;
+    setSavingCardImage(true);
+    try {
+      const res = await fetch(buildApiUrl("/admin/investigationCardImage"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ investigationId: editingCardItem.id, listImage: cardImageDraft || "" }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.message || "카드 이미지 저장에 실패했습니다.");
+        return;
+      }
+      setInvestigations((prev) => prev.map((item) => item.id === editingCardItem.id ? { ...item, ...(data.item || {}), listImage: data.item?.listImage || cardImageDraft || "" } : item));
+      setEditingCardItem(null);
+      setCardImageDraft("");
+    } catch {
+      alert("카드 이미지 저장에 실패했습니다.");
+    } finally {
+      setSavingCardImage(false);
+    }
+  };
+
   return (
     <DesignPageFrame design={design} pageKey="investigations" handlers={{}} theme={theme} minHeight="100vh">
+      <CardImageEditorModal
+        item={editingCardItem}
+        value={cardImageDraft}
+        saving={savingCardImage}
+        onChange={setCardImageDraft}
+        onClose={() => {
+          if (savingCardImage) return;
+          setEditingCardItem(null);
+          setCardImageDraft("");
+        }}
+        onSave={saveCardImage}
+        theme={theme}
+      />
+
       <div style={{ color: theme?.textMain || "#13324b" }}>
         <div style={{ marginBottom: 18 }}>
           <div className="section-eyebrow">INVESTIGATION</div>
@@ -281,15 +402,12 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
               }}
             >
               <CardImageLayer src={dailyEntryImage} alt="일일조사" />
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.14) 100%)" }} />
               {isAdmin && editableDaily ? (
-                <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(editableDaily.id); }}>수정</button>
+                <button type="button" style={adminEditButtonStyle()} onClick={(event) => openCardImageEditor(editableDaily, event)}>수정</button>
               ) : null}
-              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="section-eyebrow" style={{ color: "#243b53" }}>DAILY</div>
-                  <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
-                </div>
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 14, minHeight: 260 }}>
+                {entryLabelBlock("DAILY", "일일조사")}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 {dailyLeft}</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {dailyPool.length}개</div>
@@ -306,25 +424,18 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                       {resumableDaily.title || "진행 중인 일일조사"}
                     </div>
                   </div>
-                ) : (
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button type="button" className="home-primary-button" onClick={(event) => { event.stopPropagation(); startDaily(); }}>조사 시작</button>
-                  </div>
-                )}
+                ) : null}
               </div>
             </div>
 
             <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: theme?.panelStrong || "#fff" }}>
               <CardImageLayer src={groupEntryImage} alt="단체조사" />
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.14) 100%)" }} />
               {isAdmin && editableGroup ? (
-                <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(editableGroup.id); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onEditInvestigation?.(editableGroup.id); } }}>수정</span>
+                <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => openCardImageEditor(editableGroup, event)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openCardImageEditor(editableGroup, event); }}>수정</span>
               ) : null}
-              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="section-eyebrow" style={{ color: "#243b53" }}>GROUP</div>
-                  <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
-                </div>
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 14, minHeight: 260 }}>
+                {entryLabelBlock("GROUP", "단체조사")}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {groups.filter((item) => item.effectiveOpened ?? item.opened).length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>비활성 {groups.filter((item) => !(item.effectiveOpened ?? item.opened)).length}개</div>
@@ -349,17 +460,17 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 return (
                   <div key={item.id} style={{ ...card(theme, disabled), position: "relative", overflow: "hidden", minHeight: 188, padding: 0, background: disabled ? "rgba(226,232,240,0.72)" : (theme?.panelStrong || "#fff") }}>
                     <CardImageLayer src={item.listImage} alt={item.title} />
-                    {item.listImage ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
-                    {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(item.id); }}>수정</button> : null}
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.08) 100%)" }} />
+                    {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => openCardImageEditor(item, event)}>수정</button> : null}
                     <div style={{ position: "relative", zIndex: 1, padding: 20, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", minHeight: 188 }}>
                       <div style={{ maxWidth: "70%" }}>
                         <div className="section-eyebrow">{disabled ? "INACTIVE" : "GROUP"}</div>
-                        <h3 style={{ marginTop: 10, marginBottom: 8 }}>{item.title}</h3>
+                        <h3 style={{ marginTop: 8, marginBottom: 8 }}>{item.title}</h3>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                           <div style={chip(started ? "rgba(30,64,175,0.14)" : disabled ? "rgba(100,116,139,0.14)" : "rgba(20,83,45,0.12)", started ? "#1d4ed8" : disabled ? "#475569" : "#166534")}>{started ? "진행 중" : disabled ? "비활성화" : "대기 중"}</div>
                           <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>참여 {item.participantsCount || 0}명</div>
                           <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>{timeText(item)}</div>
-                          <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number(item.endCorrosion || 0)}</div>
+                          <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>침식률 +{Number(item.endCorrosion || 0)}</div>
                         </div>
                       </div>
                       <div style={{ display: "grid", gap: 8, alignContent: "start", justifyItems: "end" }}>
@@ -380,23 +491,23 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                   {completedGroups.map((item) => (
                     <div key={item.id} style={{ ...card(theme, true), position: "relative", overflow: "hidden", background: "rgba(203,213,225,0.72)", filter: "grayscale(0.15)" }}>
                       <CardImageLayer src={item.listImage} alt={item.title} grayscale />
-                      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(244,244,245,0.96) 0%, rgba(244,244,245,0.82) 36%, rgba(244,244,245,0.38) 72%, rgba(244,244,245,0.14) 100%)" }} />
-                      {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={() => onEditInvestigation?.(item.id)}>수정</button> : null}
+                      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(244,244,245,0.96) 0%, rgba(244,244,245,0.82) 36%, rgba(244,244,245,0.38) 72%, rgba(244,244,245,0.14) 100%)" }} />
+                      {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => openCardImageEditor(item, event)}>수정</button> : null}
                       <div style={{ position: "relative", zIndex: 1 }}>
-                      <div className="section-eyebrow">COMPLETE</div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
-                        <div>
-                          <h3 style={{ marginTop: 10, marginBottom: 8 }}>{item.title}</h3>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                            <div style={chip("rgba(59,130,246,0.12)", "#1d4ed8")}>완료됨</div>
-                            <div style={chip("rgba(148,163,184,0.12)", theme?.textSoft || "#4f7390")}>참여 {item.participantsCount || 0}명</div>
+                        <div className="section-eyebrow">COMPLETE</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
+                          <div>
+                            <h3 style={{ marginTop: 10, marginBottom: 8 }}>{item.title}</h3>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                              <div style={chip("rgba(59,130,246,0.12)", "#1d4ed8")}>완료됨</div>
+                              <div style={chip("rgba(148,163,184,0.12)", theme?.textSoft || "#4f7390")}>참여 {item.participantsCount || 0}명</div>
+                            </div>
                           </div>
+                          <div style={chip("rgba(59,130,246,0.12)", "#1d4ed8")}>로그 열람 가능</div>
                         </div>
-                        <div style={chip("rgba(59,130,246,0.12)", "#1d4ed8")}>로그 열람 가능</div>
-                      </div>
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-                        <button type="button" className="ghost-button" onClick={() => (onSpectate ? onSpectate(item) : onEnter(item, { mode: "spectate" }))}>조사 로그 보기</button>
-                      </div>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                          <button type="button" className="ghost-button" onClick={() => openCompletedDetail(item)}>조사 로그 보기</button>
+                        </div>
                       </div>
                     </div>
                   ))}

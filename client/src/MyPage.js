@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import DesignPageFrame from "./DesignPageFrame";
 import ImageDropInput from "./ImageDropInput";
 import AudioSourceInput from "./AudioSourceInput";
+import ProfileRichEditor from "./ProfileRichEditor";
+import { renderProfileRichContent } from "./profileRichText";
 import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
 import { normalizeProfileCardFrame, ProfileCard } from "./profileCardShared";
 
@@ -233,6 +235,10 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const [draftDelta, setDraftDelta] = useState({ hp: 0, def: 0, atk: 0, agi: 0 });
   const [profileEdit, setProfileEdit] = useState({ name: "", age: "", bodyInfo: "", rank: "대원", oneLine: "", profile: "", image: "", mainImage: "", mainImageFrame: { x: 50, y: 26, scale: 1.06 }, investigationImage: "", profileBgm: "", profileBgmVolume: 1 });
   const profileTextareaRef = useRef(null);
+  const [relationOpen, setRelationOpen] = useState(false);
+  const [relationTargetId, setRelationTargetId] = useState("");
+  const [relationName, setRelationName] = useState("");
+  const [relationDescription, setRelationDescription] = useState("");
 
   const baseHpStat = getHpStatValue(currentUser?.stats?.hp);
   const effectiveHpStat = baseHpStat + Number(draftDelta.hp || 0);
@@ -441,6 +447,33 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     return data;
   };
 
+  const submitRelationRequest = async () => {
+    const target = receiverOptions.find((character) => String(character.id) === String(relationTargetId));
+    if (!currentUser?.id || !target?.id) return alert("대상 캐릭터를 선택해주세요.");
+    const res = await fetch("http://localhost:3001/relationRequests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromCharacterId: currentUser.id,
+        fromCharacter: currentUser.name,
+        toCharacterId: target.id,
+        toCharacter: target.name,
+        relationName,
+        description: relationDescription,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.message || "관계 신청에 실패했습니다.");
+      return;
+    }
+    setRelationOpen(false);
+    setRelationTargetId("");
+    setRelationName("");
+    setRelationDescription("");
+    alert("관계 신청을 보냈습니다.");
+  };
+
   const useItem = async (itemName, meta) => {
     const nextItems = [...inventory];
     const index = nextItems.findIndex((v) => v === itemName || v === meta.id);
@@ -574,6 +607,9 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   return (
     <DesignPageFrame design={design} pageKey="my" handlers={{}} theme={theme} minHeight="100vh">
       <div style={{ color: theme?.textMain || "#13324b" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
+          <button type="button" className="ghost-button" onClick={() => { loadAllCharacters(); setRelationOpen(true); }}>관계신청</button>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "18px", marginBottom: "18px" }}>
           <div style={card()}>
             <h2 style={{ marginTop: 0 }}>{currentUser?.name || "캐릭터 없음"}</h2>
@@ -735,21 +771,9 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
               {ownerUser?.isAdmin ? (
                 <div style={card({ padding: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.62)", gridColumn: "1 / -1" })}>
                   <div style={{ fontWeight: 900, marginBottom: 10 }}>프로필 내용</div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                    <button type="button" className="ghost-button" onClick={wrapSelectionAsTitle}>제목</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[b]", "[/b]")}>굵게</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[i]", "[/i]")}>기울기</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[size=24]", "[/size]")}>크게</button>
-                    <button type="button" className="ghost-button" onClick={() => wrapSelectionWithTag("[center]", "[/center]")}>가운데 정렬</button>
-                    <select defaultValue="" onChange={(e) => { applyFontToSelection(e.target.value); e.target.value = ""; }} style={{ ...inputStyle, width: 180, padding: "10px 12px" }}>
-                      <option value="">글씨체</option>
-                      {PROFILE_FONT_OPTIONS.map((option) => <option key={option.label} value={option.value}>{option.label}</option>)}
-                    </select>
-                    <button type="button" className="ghost-button" onClick={insertProfileTemplate}>제목/내용 양식 추가</button>
-                  </div>
-                  <label>프로필 내용<textarea ref={profileTextareaRef} value={profileEdit.profile} onChange={(e) => setProfileEdit((prev) => ({ ...prev, profile: e.target.value }))} style={{ ...inputStyle, minHeight: 220, resize: "vertical" }} /></label>
-                  <div style={{ marginTop: 10, padding: "14px 16px", borderRadius: 14, background: "rgba(240,248,255,0.9)", border: "1px solid rgba(98,176,220,0.16)", color: "#35566f", lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
-                    {renderProfileRichParagraph(profileEdit.profile || "미리보기")}
+                  <ProfileRichEditor value={profileEdit.profile} onChange={(next) => setProfileEdit((prev) => ({ ...prev, profile: next }))} minHeight={320} />
+                  <div style={{ marginTop: 10, padding: "14px 16px", borderRadius: 14, background: "rgba(240,248,255,0.9)", border: "1px solid rgba(98,176,220,0.16)", color: "#35566f", lineHeight: 1.9 }}>
+                    {renderProfileRichContent(profileEdit.profile || "<p>미리보기</p>")}
                   </div>
                 </div>
               ) : null}
@@ -797,6 +821,24 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
         </div>
       </div>
       <MailDetail mail={selectedMail} onClose={() => setSelectedMail(null)} onReceive={receiveMail} />
+      {relationOpen && typeof document !== "undefined" ? createPortal(
+        <div onClick={() => setRelationOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.56)", display: "grid", placeItems: "center", padding: 24, zIndex: 2100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(560px, 100%)", borderRadius: 28, background: "rgba(255,255,255,0.98)", padding: 22, boxShadow: "0 26px 60px rgba(15,23,42,0.22)", display: "grid", gap: 12 }}>
+            <h3 style={{ margin: 0 }}>관계 신청</h3>
+            <select value={relationTargetId} onChange={(e) => setRelationTargetId(e.target.value)} onFocus={loadAllCharacters} style={inputStyle}>
+              <option value="">대상 캐릭터 선택</option>
+              {receiverOptions.map((character) => <option key={character.id || character.name} value={character.id}>{character.name}</option>)}
+            </select>
+            <input value={relationName} onChange={(e) => setRelationName(e.target.value)} placeholder="관계 이름" style={inputStyle} />
+            <textarea value={relationDescription} onChange={(e) => setRelationDescription(e.target.value)} placeholder="설명" style={{ ...inputStyle, minHeight: 120, resize: "vertical" }} />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button type="button" className="ghost-button" onClick={() => setRelationOpen(false)}>닫기</button>
+              <button type="button" className="home-primary-button" onClick={submitRelationRequest}>신청 보내기</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
     </DesignPageFrame>
   );
 }

@@ -1893,15 +1893,15 @@ app.get("/investigations/:id", (req, res) => {
 app.get("/investigationView/:id", (req, res) => {
   const item = investigationsDB.find((v) => v.id === req.params.id);
   if (!item) return res.status(404).json({ success: false });
+  syncInvestigationRoster(item);
+  res.json(buildPublicInvestigationState(item));
+});
+
 app.get("/investigationLobby/:id", (req, res) => {
   const item = investigationsDB.find((v) => v.id === req.params.id);
   if (!item) return res.status(404).json({ success: false });
   syncInvestigationRoster(item);
   res.json(buildInvestigationLobbyState(item));
-});
-
-  syncInvestigationRoster(item);
-  res.json(buildPublicInvestigationState(item));
 });
 
 app.get("/investigationChats/:id", (req, res) => res.json(roomChats[req.params.id] || []));
@@ -2487,6 +2487,40 @@ app.get("/admin/users", (req, res) => {
 
 const customInvestigationsPath = path.join(__dirname, "customInvestigations.json");
 
+function serializeInvestigationForPersistence(item) {
+  const templateSource = item?.originalTemplate?.data?.nodes ? clone(item.originalTemplate) : {
+    id: item?.id || `custom-${Date.now()}`,
+    title: item?.title || "새 조사",
+    type: item?.type || "group",
+    data: clone(item?.data || {}),
+  };
+
+  return {
+    ...templateSource,
+    id: item?.id || templateSource.id,
+    title: item?.title || templateSource.title || "새 조사",
+    type: item?.type || templateSource.type || "group",
+    listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
+    backgroundImage: String(item?.data?.backgroundImage || templateSource?.backgroundImage || templateSource?.data?.backgroundImage || ""),
+    bgmUrl: String(item?.bgmUrl || item?.data?.bgmUrl || templateSource?.bgmUrl || templateSource?.data?.bgmUrl || ""),
+    bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
+    entryCorrosion: Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? templateSource?.entryCorrosion ?? templateSource?.data?.entryCorrosion ?? 0),
+    endCorrosion: Number(item?.endCorrosion ?? item?.data?.endCorrosion ?? templateSource?.endCorrosion ?? templateSource?.data?.endCorrosion ?? 0),
+    data: {
+      ...(templateSource?.data || {}),
+      ...(clone(item?.data || {})),
+      start: item?.data?.start || templateSource?.data?.start || item?.currentNodeId || "",
+      nodes: clone(item?.data?.nodes || templateSource?.data?.nodes || {}),
+      backgroundImage: String(item?.data?.backgroundImage || templateSource?.data?.backgroundImage || templateSource?.backgroundImage || ""),
+      listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
+      bgmUrl: String(item?.bgmUrl || item?.data?.bgmUrl || templateSource?.bgmUrl || templateSource?.data?.bgmUrl || ""),
+      bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
+      entryCorrosion: Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? templateSource?.entryCorrosion ?? templateSource?.data?.entryCorrosion ?? 0),
+      endCorrosion: Number(item?.endCorrosion ?? item?.data?.endCorrosion ?? templateSource?.endCorrosion ?? templateSource?.data?.endCorrosion ?? 0),
+    },
+  };
+}
+
 function readCustomInvestigationsFromFile() {
   try {
     if (!fs.existsSync(customInvestigationsPath)) return [];
@@ -2591,6 +2625,43 @@ app.post("/admin/publishInvestigation", (req, res) => {
     res.json({ success: false, message: "실제 조사 반영에 실패했습니다." });
   }
 });
+app.post("/admin/investigationCardImage", (req, res) => {
+  try {
+    const { investigationId, listImage } = req.body || {};
+    const item = investigationsDB.find((v) => v.id === investigationId);
+    if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
+
+    const nextImage = String(listImage || "");
+    item.listImage = nextImage;
+    item.data = {
+      ...(item.data || {}),
+      listImage: nextImage,
+    };
+    if (item.originalTemplate) {
+      item.originalTemplate = serializeInvestigationForPersistence(item);
+    }
+
+    const template = normalizeCustomTemplate({
+      id: item.id,
+      title: item.title,
+      type: item.type || "group",
+      json: serializeInvestigationForPersistence(item),
+    });
+
+    customInvestigationsDB = [
+      ...customInvestigationsDB.filter((entry) => entry.id !== template.id),
+      template,
+    ];
+    writeCustomInvestigationsToFile(customInvestigationsDB);
+    emitParticipantsUpdated();
+    emitInvestigationState(item.id);
+    return res.json({ success: true, item: getInvestigationSummary(item) });
+  } catch (err) {
+    console.error("investigationCardImage error", err);
+    return res.status(500).json({ success: false, message: "조사 카드 이미지를 저장하지 못했습니다." });
+  }
+});
+
 // ===== end custom investigation publish routes =====
 
 // ===== relation system routes =====

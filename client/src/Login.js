@@ -2,15 +2,6 @@ import { useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
 
-function buildRequestWithTimeout(timeoutMs = 12000) {
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
-  return {
-    signal: controller?.signal,
-    clear: () => { if (timer) window.clearTimeout(timer); },
-  };
-}
-
 function Login({ setUser, design, theme }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
@@ -40,23 +31,23 @@ function Login({ setUser, design, theme }) {
     }
 
     const url = mode === "login" ? buildApiUrl("/login") : buildApiUrl("/register");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
 
-    let request = null;
     try {
       setPending(true);
-      request = buildRequestWithTimeout(12000);
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: request.signal,
         body: JSON.stringify({
           id: nextId,
           pw: nextPw,
           type: "owner",
         }),
+        cache: "no-store",
+        signal: controller.signal,
       });
 
-      request.clear();
       const raw = await res.text();
       let data = {};
       try {
@@ -77,25 +68,19 @@ function Login({ setUser, design, theme }) {
         } else {
           alert(data.message || "로그인 실패");
         }
+      } else if (data.success) {
+        alert("회원가입 완료");
+        setMode("login");
+        setId(nextId);
+        setPw("");
       } else {
-        if (data.success) {
-          alert("회원가입 완료");
-          setMode("login");
-          setId(nextId);
-          setPw("");
-        } else {
-          alert(data.message || "회원가입 실패");
-        }
+        alert(data.message || "회원가입 실패");
       }
     } catch (error) {
       console.error("login error", error);
-      if (error?.name === "AbortError") {
-        alert("로그인 요청이 지연되어 취소되었습니다. 다시 시도해주세요.");
-      } else {
-        alert("서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
-      }
+      alert(error?.name === "AbortError" ? "로그인 응답이 지연되어 다시 시도해주세요." : "서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
     } finally {
-      request?.clear?.();
+      window.clearTimeout(timeout);
       setPending(false);
     }
   };
@@ -165,7 +150,6 @@ function Login({ setUser, design, theme }) {
             type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
             style={inputStyle}
           />
 
