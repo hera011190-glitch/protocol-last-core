@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
 
@@ -8,6 +8,8 @@ function Login({ setUser, design, theme }) {
   const [mode, setMode] = useState("login");
   const [pending, setPending] = useState(false);
   const requestRef = useRef(0);
+  const activeControllerRef = useRef(null);
+  const mountedRef = useRef(true);
 
   const handlers = useMemo(
     () => ({
@@ -21,6 +23,13 @@ function Login({ setUser, design, theme }) {
     []
   );
 
+  useEffect(() => () => {
+    mountedRef.current = false;
+    try {
+      activeControllerRef.current?.abort();
+    } catch {}
+  }, []);
+
   const submit = async () => {
     if (pending) return;
     const nextId = id.trim();
@@ -32,59 +41,62 @@ function Login({ setUser, design, theme }) {
     }
 
     const url = mode === "login" ? buildApiUrl("/login") : buildApiUrl("/register");
-    const currentRequest = Date.now();
+    const currentRequest = requestRef.current + 1;
     requestRef.current = currentRequest;
-    setPending(true);
-
-    const sendAuthRequest = async () => {
-      let lastError = null;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), attempt === 0 ? 8000 : 12000);
-        try {
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: nextId,
-              pw: nextPw,
-              type: "owner",
-            }),
-            cache: "no-store",
-            signal: controller.signal,
-          });
-          const raw = await res.text();
-          let data = {};
-          try {
-            data = raw ? JSON.parse(raw) : {};
-          } catch {
-            data = {};
-          }
-          return { res, data };
-        } catch (error) {
-          lastError = error;
-          if (attempt === 0) {
-            try {
-              await fetch(buildApiUrl(`/health?t=${Date.now()}`), { cache: "no-store" });
-            } catch {
-              // ignore retry ping errors
-            }
-          }
-        } finally {
-          window.clearTimeout(timeout);
-        }
-      }
-      throw lastError || new Error("auth_request_failed");
-    };
-
-    const safetyTimer = window.setTimeout(() => {
-      if (requestRef.current === currentRequest) setPending(false);
-    }, 16000);
 
     try {
-      const { res, data } = await sendAuthRequest();
-      if (requestRef.current !== currentRequest) return;
+      activeControllerRef.current?.abort();
+    } catch {}
 
+    setPending(true);
+
+    const sendAuthRequest = async (attempt) => {
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), attempt === 0 ? 6500 : 8500);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: nextId,
+            pw: nextPw,
+            type: "owner",
+          }),
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        let data = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = {};
+        }
+        return { res, data };
+      } finally {
+        window.clearTimeout(timeout);
+        if (activeControllerRef.current === controller) {
+          activeControllerRef.current = null;
+        }
+      }
+    };
+
+    try {
+      let result = null;
+      let lastError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          result = await sendAuthRequest(attempt);
+          break;
+        } catch (error) {
+          lastError = error;
+          if (error?.name !== "AbortError") break;
+        }
+      }
+      if (!result) throw lastError || new Error("auth_request_failed");
+      if (!mountedRef.current || requestRef.current !== currentRequest) return;
+
+      const { res, data } = result;
       if (!res.ok) {
         alert(data.message || "서버 응답이 올바르지 않습니다. 다시 시도해주세요.");
         return;
@@ -107,11 +119,12 @@ function Login({ setUser, design, theme }) {
       }
     } catch (error) {
       console.error("login error", error);
-      if (requestRef.current !== currentRequest) return;
-      alert(error?.name === "AbortError" ? "로그인 응답이 지연되어 자동으로 한 번 더 시도했지만 완료되지 않았습니다. 다시 시도해주세요." : "서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
+      if (!mountedRef.current || requestRef.current !== currentRequest) return;
+      alert(error?.name === "AbortError" ? "로그인 응답이 지연되어 다시 시도했지만 완료되지 않았습니다. 다시 눌러주세요." : "서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
     } finally {
-      window.clearTimeout(safetyTimer);
-      if (requestRef.current === currentRequest) setPending(false);
+      if (mountedRef.current && requestRef.current === currentRequest) {
+        setPending(false);
+      }
     }
   };
 

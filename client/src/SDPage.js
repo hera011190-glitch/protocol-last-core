@@ -4,6 +4,7 @@ import { buildApiUrl } from "./api";
 
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function normalizeKeyPart(value) { return String(value || "").trim().toLowerCase().replace(/\s+/g, " "); }
 function buttonLook(theme, kind = "ghost") {
   return kind === "primary"
     ? { background: theme?.buttonPrimaryBg || "linear-gradient(135deg, #7fdbff 0%, #39bfff 55%, #1d9dff 100%)", color: theme?.buttonPrimaryText || "#ffffff", border: "none" }
@@ -28,10 +29,10 @@ function arrowStyle(position, theme) {
   };
 }
 function spawnFromEdge(edge) {
-  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(4.8, 7.6), dy: rand(-2.1, 2.1) };
-  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-7.6, -4.8), dy: rand(-2.1, 2.1) };
-  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-2.2, 2.2), dy: rand(4.6, 7.1) };
-  return { x: rand(10, 88), y: 78, dx: rand(-2.2, 2.2), dy: rand(-7.1, -4.6) };
+  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(2.4, 4.1), dy: rand(-1.2, 1.2) };
+  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-4.1, -2.4), dy: rand(-1.2, 1.2) };
+  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-1.3, 1.3), dy: rand(2.3, 3.8) };
+  return { x: rand(10, 88), y: 78, dx: rand(-1.3, 1.3), dy: rand(-3.8, -2.3) };
 }
 
 function readSavedPositions() {
@@ -63,9 +64,9 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
     dx: typeof savedState?.dx === "number" ? savedState.dx : typeof character.dx === "number" ? character.dx : spawn.dx,
     dy: typeof savedState?.dy === "number" ? savedState.dy : typeof character.dy === "number" ? character.dy : spawn.dy,
     waitMs: typeof savedState?.waitMs === "number" ? savedState.waitMs : 0,
-    moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(4200, 7600),
+    moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(5200, 8800),
     currentMap:
-      [savedState?.currentMap, character.currentMap].find((candidate) => maps.some((map) => String(map.id) === String(candidate))) ||
+      [character.currentMap, savedState?.currentMap].find((candidate) => maps.some((map) => String(map.id) === String(candidate))) ||
       getStableDefaultMapId(character, maps, fallbackIndex) ||
       maps[0]?.id ||
       "",
@@ -73,19 +74,24 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
 }
 
 function getCharacterKey(character) {
-  const idKey = String(character?.id || "").trim();
-  if (idKey) return idKey;
-  const ownerNameKey = `${String(character?.ownerId || "").trim()}:${String(character?.name || "").trim()}`;
-  if (ownerNameKey !== ':') return ownerNameKey;
-  return String(character?.name || "").trim();
+  const idKey = normalizeKeyPart(character?.id);
+  if (idKey) return `id:${idKey}`;
+  const ownerKey = normalizeKeyPart(character?.ownerId);
+  const nameKey = normalizeKeyPart(character?.name);
+  if (ownerKey && nameKey) return `owner:${ownerKey}::${nameKey}`;
+  if (nameKey) return `name:${nameKey}`;
+  return `${Date.now()}-${Math.random()}`;
 }
 
 function getCharacterAliases(character) {
+  const idKey = normalizeKeyPart(character?.id);
+  const ownerKey = normalizeKeyPart(character?.ownerId);
+  const nameKey = normalizeKeyPart(character?.name);
   const aliases = [
-    String(character?.id || "").trim(),
-    `${String(character?.ownerId || "").trim()}:${String(character?.name || "").trim()}`,
-    String(character?.name || "").trim(),
-  ].filter((value) => value && value !== ':');
+    idKey ? `id:${idKey}` : "",
+    ownerKey && nameKey ? `owner:${ownerKey}::${nameKey}` : "",
+    nameKey ? `name:${nameKey}` : "",
+  ].filter(Boolean);
   return Array.from(new Set(aliases));
 }
 
@@ -423,35 +429,35 @@ export default function SDPage({ activeCharacter, design, theme }) {
           if (moveCooldownMs <= 0) {
             const mapDef = maps.find((map) => String(map.id) === String(currentMap)) || null;
             const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((map) => String(map.id) === String(nextId)));
-            const wantsPause = Math.random() < 0.2;
-            const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.34;
+            const wantsPause = Math.random() < 0.24;
+            const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.22;
             if (wantsPause) {
-              waitMs = rand(1400, 2600);
+              waitMs = rand(1800, 3200);
               dx *= 0.28;
               dy *= 0.28;
-              moveCooldownMs = rand(1800, 3200);
+              moveCooldownMs = rand(2600, 4200);
             } else if (wantsMapChange) {
               const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
               if (dir === "left") {
-                dx = -rand(8.2, 11.8);
-                dy = rand(-3.4, 3.4);
+                dx = -rand(3.8, 5.6);
+                dy = rand(-1.8, 1.8);
               } else if (dir === "right") {
-                dx = rand(8.2, 11.8);
-                dy = rand(-3.4, 3.4);
+                dx = rand(3.8, 5.6);
+                dy = rand(-1.8, 1.8);
               } else if (dir === "up") {
-                dx = rand(-4.8, 4.8);
-                dy = -rand(7.8, 10.6);
+                dx = rand(-2.2, 2.2);
+                dy = -rand(3.6, 5.1);
               } else {
-                dx = rand(-4.8, 4.8);
-                dy = rand(7.8, 10.6);
+                dx = rand(-2.2, 2.2);
+                dy = rand(3.6, 5.1);
               }
-              moveCooldownMs = rand(1500, 2600);
+              moveCooldownMs = rand(2600, 4200);
             } else {
-              dx = rand(-8.2, 8.2);
-              dy = rand(-5.2, 5.2);
-              if (Math.abs(dx) < 2.6) dx = dx >= 0 ? 2.6 : -2.6;
-              if (Math.abs(dy) < 1.2) dy = dy >= 0 ? 1.2 : -1.2;
-              moveCooldownMs = rand(1800, 3400);
+              dx = rand(-3.8, 3.8);
+              dy = rand(-2.4, 2.4);
+              if (Math.abs(dx) < 1.1) dx = dx >= 0 ? 1.1 : -1.1;
+              if (Math.abs(dy) < 0.6) dy = dy >= 0 ? 0.6 : -0.6;
+              moveCooldownMs = rand(2600, 4600);
             }
           }
 
@@ -465,9 +471,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 91.2;
               ny = clamp(ny, 10, 76);
-              dx = -Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
-              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
-              moveCooldownMs = rand(1500, 2600);
+              dx = -Math.max(0.3, Math.abs(dx || rand(0.4, 0.9)));
+              dy = clamp(dy || rand(-0.5, 0.5), -0.9, 0.9);
+              moveCooldownMs = rand(2600, 4200);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -478,9 +484,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 8.8;
               ny = clamp(ny, 10, 76);
-              dx = Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
-              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
-              moveCooldownMs = rand(1500, 2600);
+              dx = Math.max(0.3, Math.abs(dx || rand(0.4, 0.9)));
+              dy = clamp(dy || rand(-0.5, 0.5), -0.9, 0.9);
+              moveCooldownMs = rand(2600, 4200);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -492,9 +498,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 77.2;
-              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
-              dy = -Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
-              moveCooldownMs = rand(1500, 2600);
+              dx = clamp(dx || rand(-0.5, 0.5), -1.1, 1.1);
+              dy = -Math.max(0.3, Math.abs(dy || rand(0.4, 0.9)));
+              moveCooldownMs = rand(2600, 4200);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -505,9 +511,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 10.8;
-              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
-              dy = Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
-              moveCooldownMs = rand(1500, 2600);
+              dx = clamp(dx || rand(-0.5, 0.5), -1.1, 1.1);
+              dy = Math.max(0.3, Math.abs(dy || rand(0.4, 0.9)));
+              moveCooldownMs = rand(2600, 4200);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -552,12 +558,12 @@ export default function SDPage({ activeCharacter, design, theme }) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
           const pool = getCharacterQuotePool(picked);
           const text = pool[Math.floor(Math.random() * pool.length)];
-          const hold = Math.max(5200, Math.min(11000, 5200 + String(text || "").length * 100));
+          const hold = Math.max(5200, Math.min(11000, 5400 + String(text || "").length * 110));
           next[getCharacterKey(picked)] = { text, expiresAt: now + hold };
         }
         return next;
       });
-    }, 3500);
+    }, 2600);
     return () => clearInterval(quoteTimer);
   }, [characters, activeMapId, maps]);
 
@@ -620,7 +626,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
     const activeKey = getCharacterKey(activeCharacter);
-    setCharacters((prev) => dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.82, dy: spawn.dy * 0.82, waitMs: 1400, moveCooldownMs: rand(3600, 6200) } : character));
+    setCharacters((prev) => dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.72, dy: spawn.dy * 0.72, waitMs: 1700, moveCooldownMs: rand(4600, 7600) } : character));
     if (activeCharacter?.id) {
       fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));
