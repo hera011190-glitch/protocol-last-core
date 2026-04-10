@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import socket from "./socket";
-import { apiFetch, apiJsonCached } from "./api";
+import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
 import { getMaxHpFromStat } from "./hpUtils";
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
+  try {
+    return await fetch(url, { ...options, signal: controller?.signal || options.signal });
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
+}
 
 function buildFallbackParticipants(investigation) {
   const roster = new Map();
@@ -44,6 +54,7 @@ function InvestigationLobby({
   theme,
 }) {
   const [investigation, setInvestigation] = useState(() => initialInvestigation || null);
+  const [startPending, setStartPending] = useState(false);
   const [users, setUsers] = useState([]);
   const [selectedLeaders, setSelectedLeaders] = useState([]);
 
@@ -235,73 +246,81 @@ function InvestigationLobby({
   };
 
   const startInvestigation = async () => {
-    if (!isAdmin) return;
-    if (selectedLeaders.length > 0) {
-      const leaderRes = await apiFetch("/setInvestigationLeaders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: investigationId, leaders: selectedLeaders }),
-      });
-      let leaderData = {};
-      try { leaderData = await leaderRes.json(); } catch { leaderData = {}; }
-      if (!leaderData.success) {
-        alert(leaderData.message || "리더 저장에 실패했습니다.");
-        return;
-      }
-    }
-
-    let data = {};
-    let requestOk = false;
+    if (!isAdmin || startPending) return;
+    setStartPending(true);
     try {
-      const res = await apiFetch("/startInvestigation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: investigationId }),
-      });
-      requestOk = !!res.ok;
+      if (selectedLeaders.length > 0) {
+        const leaderRes = await fetchWithTimeout(buildApiUrl("/setInvestigationLeaders"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: investigationId, leaders: selectedLeaders }),
+        });
+        let leaderData = {};
+        try { leaderData = await leaderRes.json(); } catch { leaderData = {}; }
+        if (!leaderData.success) {
+          alert(leaderData.message || "리더 저장에 실패했습니다.");
+          return;
+        }
+      }
+
+      let data = {};
+      let requestOk = false;
       try {
-        data = await res.json();
-      } catch {
+        const res = await fetchWithTimeout(buildApiUrl("/startInvestigation"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: investigationId }),
+        });
+        requestOk = !!res.ok;
+        try {
+          data = await res.json();
+        } catch {
+          data = {};
+        }
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          alert("조사 시작 요청이 지연되어 취소되었습니다. 다시 시도해주세요.");
+          return;
+        }
         data = {};
       }
-    } catch {
-      data = {};
-    }
 
-    if (!data.success) {
-      try {
-        const latestRes = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-        const latest = await latestRes.json();
-        if (latest?.started) {
-          setInvestigation(latest);
+      if (!data.success) {
+        try {
+          const latestRes = await apiFetch(`/investigations/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
+          const latest = await latestRes.json();
+          if (latest?.started) {
+            setInvestigation(latest);
+            startGame();
+            return;
+          }
+        } catch {
+          // ignore fallback errors
+        }
+        if (requestOk && data.started) {
+          setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
           startGame();
           return;
         }
-      } catch {
-        // ignore fallback errors
-      }
-      if (requestOk && data.started) {
-        setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
-        startGame();
-        return;
-      }
-      setTimeout(async () => {
         try {
+          await new Promise((resolve) => window.setTimeout(resolve, 450));
           const latest = await loadInvestigation(true);
           if (latest?.started) {
             setInvestigation(latest);
             startGame();
             return;
           }
-          alert(data.message || "조사 시작에 실패했습니다.");
         } catch {
-          alert(data.message || "조사 시작에 실패했습니다.");
+          // ignore delayed reload errors
         }
-      }, 450);
-      return;
+        alert(data.message || "조사 시작에 실패했습니다.");
+        return;
+      }
+      setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
+      startGame();
+    } finally {
+      setStartPending(false);
     }
-    setInvestigation((prev) => (prev ? { ...prev, started: true, leaders: data.leaders || prev.leaders } : prev));
-    startGame();
   };
 
   const participate = async () => {
@@ -376,7 +395,7 @@ function InvestigationLobby({
                   <div style={{ ...leaderChipStyle, background: "rgba(255,255,255,0.08)", color: "#f8fafc" }}>운영자</div>
                   {!investigation.started ? <button type="button" onClick={saveLeaders} className="ghost-button">리더 저장</button> : null}
                   {!investigation.started ? <button type="button" onClick={() => document.getElementById("lobby-participants")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="ghost-button">리더 지정</button> : null}
-                  {!investigation.started && canStartLobby ? <button type="button" onClick={startInvestigation} className="home-primary-button">조사 시작</button> : null}
+                  {!investigation.started && canStartLobby ? <button type="button" onClick={startInvestigation} disabled={startPending} className="home-primary-button">{startPending ? "시작 중..." : "조사 시작"}</button> : null}
                   {investigation.started ? <button type="button" onClick={reenterGame} className="home-primary-button">조사로 들어가기</button> : null}
                 </div>
               ) : null}

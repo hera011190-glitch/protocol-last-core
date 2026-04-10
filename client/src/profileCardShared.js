@@ -63,6 +63,9 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
           appearance: "none",
           isolation: "isolate",
           display: "block",
+          pointerEvents: "auto",
+          position: "relative",
+          zIndex: 1,
         }),
       }}
     >

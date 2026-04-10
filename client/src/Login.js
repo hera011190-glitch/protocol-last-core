@@ -2,6 +2,15 @@ import { useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
 
+function buildRequestWithTimeout(timeoutMs = 12000) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
+  return {
+    signal: controller?.signal,
+    clear: () => { if (timer) window.clearTimeout(timer); },
+  };
+}
+
 function Login({ setUser, design, theme }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
@@ -32,11 +41,14 @@ function Login({ setUser, design, theme }) {
 
     const url = mode === "login" ? buildApiUrl("/login") : buildApiUrl("/register");
 
+    let request = null;
     try {
       setPending(true);
+      request = buildRequestWithTimeout(12000);
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: request.signal,
         body: JSON.stringify({
           id: nextId,
           pw: nextPw,
@@ -44,6 +56,7 @@ function Login({ setUser, design, theme }) {
         }),
       });
 
+      request.clear();
       const raw = await res.text();
       let data = {};
       try {
@@ -76,8 +89,13 @@ function Login({ setUser, design, theme }) {
       }
     } catch (error) {
       console.error("login error", error);
-      alert("서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
+      if (error?.name === "AbortError") {
+        alert("로그인 요청이 지연되어 취소되었습니다. 다시 시도해주세요.");
+      } else {
+        alert("서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
+      }
     } finally {
+      request?.clear?.();
       setPending(false);
     }
   };

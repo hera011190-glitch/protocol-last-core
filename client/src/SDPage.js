@@ -222,9 +222,10 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", textAlign: "center", cursor: "pointer", zIndex: 4 }}>
       {quote?.text ? (
-        <div style={{ marginBottom: "10px", display: "inline-block", maxWidth: "212px", padding: "10px 14px", borderRadius: "18px", background: "rgba(255,255,255,0.98)", color: "#16324a", boxShadow: "0 8px 20px rgba(0,0,0,0.16)", position: "relative", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all" }}>
+        <div style={{ marginBottom: "12px", display: "inline-block", maxWidth: "228px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(239,249,255,0.98), rgba(219,241,255,0.98))", color: "#0f3b63", border: "1px solid rgba(125,211,252,0.78)", boxShadow: "0 12px 24px rgba(2,132,199,0.22)", position: "relative", fontSize: "13px", fontWeight: 700, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
-          <div style={{ position: "absolute", left: "50%", bottom: "-6px", width: "12px", height: "12px", transform: "translateX(-50%) rotate(45deg)", background: "rgba(255,255,255,0.98)" }} />
+          <div style={{ position: "absolute", inset: 0, borderRadius: "20px", pointerEvents: "none", background: "linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0))" }} />
+          <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(219,241,255,0.98), rgba(191,229,255,0.98))", borderRight: "1px solid rgba(125,211,252,0.78)", borderBottom: "1px solid rgba(125,211,252,0.78)" }} />
         </div>
       ) : null}
       <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
@@ -384,58 +385,18 @@ export default function SDPage({ activeCharacter, design, theme }) {
           let ny = y + dy * speedFactor;
 
           if (nx <= 4) {
-            const nextMap = getNextMap(currentMap, "left");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = 91.2;
-              ny = clamp(ny, 10, 76);
-              dx = -Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
-              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
-              moveCooldownMs = rand(4200, 7200);
-            } else {
-              dx *= -1;
-              nx = clamp(x + dx * speedFactor, 4, 92);
-            }
+            dx *= -1;
+            nx = clamp(x + dx * speedFactor, 4, 92);
           } else if (nx >= 92) {
-            const nextMap = getNextMap(currentMap, "right");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = 8.8;
-              ny = clamp(ny, 10, 76);
-              dx = Math.max(0.55, Math.abs(dx || rand(0.8, 1.9)));
-              dy = clamp(dy || rand(-0.9, 0.9), -1.6, 1.6);
-              moveCooldownMs = rand(4200, 7200);
-            } else {
-              dx *= -1;
-              nx = clamp(x + dx * speedFactor, 4, 92);
-            }
+            dx *= -1;
+            nx = clamp(x + dx * speedFactor, 4, 92);
           }
           if (ny <= 8) {
-            const nextMap = getNextMap(currentMap, "up");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = clamp(nx, 8, 92);
-              ny = 77.2;
-              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
-              dy = -Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
-              moveCooldownMs = rand(4200, 7200);
-            } else {
-              dy *= -1;
-              ny = clamp(y + dy * speedFactor, 8, 78);
-            }
+            dy *= -1;
+            ny = clamp(y + dy * speedFactor, 8, 78);
           } else if (ny >= 78) {
-            const nextMap = getNextMap(currentMap, "down");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = clamp(nx, 8, 92);
-              ny = 10.8;
-              dx = clamp(dx || rand(-1.0, 1.0), -2.2, 2.2);
-              dy = Math.max(0.55, Math.abs(dy || rand(0.8, 1.8)));
-              moveCooldownMs = rand(4200, 7200);
-            } else {
-              dy *= -1;
-              ny = clamp(y + dy * speedFactor, 8, 78);
-            }
+            dy *= -1;
+            ny = clamp(y + dy * speedFactor, 8, 78);
           }
 
           const selfKey = getCharacterKey(character);

@@ -144,10 +144,10 @@ function formatCorrosionRange(items = []) {
   const values = (Array.isArray(items) ? items : [])
     .map((item) => Number(item?.endCorrosion || 0))
     .filter((value) => value > 0);
-  if (values.length === 0) return "종료 시 침식 +0";
+  if (values.length === 0) return "침식률 종료 +0";
   const min = Math.min(...values);
   const max = Math.max(...values);
-  return min === max ? `종료 시 침식 +${min}` : `종료 시 침식 +${min}~+${max}`;
+  return min === max ? `침식률 종료 +${min}` : `침식률 종료 +${min}~+${max}`;
 }
 
 export default function InvestigationList({ onEnter, onSpectate, onEditInvestigation, activeCharacter, isAdmin = false, design, theme }) {
@@ -286,9 +286,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(editableDaily.id); }}>수정</button>
               ) : null}
               <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <div className="section-eyebrow" style={{ color: "#243b53" }}>DAILY</div>
-                <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="section-eyebrow" style={{ color: "#243b53" }}>DAILY</div>
+                  <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 {dailyLeft}</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {dailyPool.length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{formatCorrosionRange(dailyPool)}</div>
@@ -296,7 +298,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                   {!activeCharacter ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>캐릭터 필요</div> : null}
                 </div>
                 {resumableDaily ? (
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: "auto" }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button type="button" className="ghost-button" onClick={(event) => { event.stopPropagation(); onEnter(resumableDaily, { mode: "daily" }); }}>
                       조사로 돌아가기
                     </button>
@@ -304,7 +306,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                       {resumableDaily.title || "진행 중인 일일조사"}
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button type="button" className="home-primary-button" onClick={(event) => { event.stopPropagation(); startDaily(); }}>조사 시작</button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -315,9 +321,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); onEditInvestigation?.(editableGroup.id); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onEditInvestigation?.(editableGroup.id); } }}>수정</span>
               ) : null}
               <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <div className="section-eyebrow" style={{ color: "#243b53" }}>GROUP</div>
-                <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="section-eyebrow" style={{ color: "#243b53" }}>GROUP</div>
+                  <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {groups.filter((item) => item.effectiveOpened ?? item.opened).length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>비활성 {groups.filter((item) => !(item.effectiveOpened ?? item.opened)).length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>완료 {completedGroups.length}개</div>

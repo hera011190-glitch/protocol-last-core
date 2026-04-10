@@ -129,6 +129,16 @@ function readStoredVolume() {
   }
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
+  try {
+    return await fetch(url, { ...options, signal: controller?.signal || options.signal });
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
+}
+
 function SpeakerButton({ muted, onToggle, position = "bottom-right" }) {
   const style = position === "profile"
     ? { position: "fixed", top: 20, right: 24, zIndex: 2400 }
@@ -355,7 +365,7 @@ function App() {
 
     if (options.mode === "daily") {
       try {
-        const res = await fetch(buildApiUrl("/startDailyInvestigation"), {
+        const res = await fetchWithTimeout(buildApiUrl("/startDailyInvestigation"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id, character: runtimeCharacter }),
@@ -408,6 +418,10 @@ function App() {
         return;
       } catch (err) {
         console.error("startDailyInvestigation error", err);
+        if (err?.name === "AbortError") {
+          alert("조사 시작 요청이 지연되어 취소되었습니다. 다시 시도해주세요.");
+          return;
+        }
         try {
           const latestRes = await fetch(buildApiUrl(`/investigationView/${item.id}`));
           const latest = await latestRes.json();

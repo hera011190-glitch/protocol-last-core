@@ -30,13 +30,15 @@ function writeCachedCharacters(rows) {
 
 function CharacterCard({ character, onClick, theme }) {
   return (
-    <ProfileCard
-      character={character}
-      image={character?.mainImage || character?.cardImage || character?.profileImage || character?.image || ""}
-      onClick={onClick}
-      theme={theme}
-      isOnline={!!character.isOnline}
-    />
+    <div style={{ position: "relative", zIndex: 2, pointerEvents: "auto" }}>
+      <ProfileCard
+        character={character}
+        image={character?.mainImage || character?.cardImage || character?.profileImage || character?.image || ""}
+        onClick={onClick}
+        theme={theme}
+        isOnline={!!character.isOnline}
+      />
+    </div>
   );
 }
 
@@ -201,7 +203,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
       {selectedCharacter ? (
         <CharacterProfile character={selectedCharacter} goBack={() => setSelectedCharacter(null)} theme={theme} viewerUser={user} viewerCharacter={activeCharacter} design={design} pageKey="profileCharacter" />
       ) : (
-        <div style={{ padding: "26px", color: theme?.textMain || "#13324b" }}>
+        <div style={{ padding: "26px", color: theme?.textMain || "#13324b", position: "relative", zIndex: 40 }}>
           <div style={{ marginBottom: "18px" }}>
             <div className="section-eyebrow">{content?.eyebrow || "CHARACTER"}</div>
             <h2 style={{ marginTop: "10px", marginBottom: "8px" }}>{content?.title || "캐릭터"}</h2>
