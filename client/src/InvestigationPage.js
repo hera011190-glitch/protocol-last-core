@@ -152,6 +152,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const prevBattleTurnRef = useRef(0);
   const postPlaybackRefreshRef = useRef(false);
   const playbackSourceRef = useRef(null);
+  const queuedStateUpdateRef = useRef(null);
   const liveDisplayLogs = useMemo(() => (battlePlaybackLocked && stagedBattleLogs.length > 0
     ? [...logs, ...stagedBattleLogs.map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }))]
     : logs), [battlePlaybackLocked, stagedBattleLogs, logs]);
@@ -189,6 +190,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       };
     } else {
       playbackSourceRef.current = null;
+      queuedStateUpdateRef.current = null;
     }
     setInvestigation(data);
     setCurrentNodeId(nodeId);
@@ -331,6 +333,11 @@ useEffect(() => {
     const hasRoundPlayback = Array.isArray(payload.lastBattleRound) && payload.lastBattleRound.length > 0;
     const incomingBattleRoundKey = hasRoundPlayback ? getBattleRoundKey(payload) : "";
     const alreadyHandledRound = !!incomingBattleRoundKey && incomingBattleRoundKey === handledBattleRoundKeyRef.current;
+
+    if (battlePlaybackLocked) {
+      queuedStateUpdateRef.current = payload;
+      return;
+    }
 
     if (hasRoundPlayback && !alreadyHandledRound) {
       postPlaybackRefreshRef.current = true;
@@ -891,7 +898,16 @@ useEffect(() => {
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      if (postPlaybackRefreshRef.current) {
+      const queuedState = queuedStateUpdateRef.current;
+      queuedStateUpdateRef.current = null;
+      if (queuedState) {
+        const queuedRoundKey = getBattleRoundKey(queuedState);
+        if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) {
+          loadInvestigation();
+        } else {
+          applyInvestigation(queuedState);
+        }
+      } else if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
         loadInvestigation();
       }
@@ -954,14 +970,24 @@ useEffect(() => {
     });
     const unlockDelay = Math.max(delay + 1200, 4600);
     const unlockTimer = setTimeout(() => {
+      const queuedState = queuedStateUpdateRef.current;
       setLogs((Array.isArray(investigation?.sharedLogs) ? investigation.sharedLogs : []).slice(-160));
       playbackSourceRef.current = null;
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
       setTimeout(() => setStagedBattleLogs([]), 280);
-      if (postPlaybackRefreshRef.current) {
+      if (queuedState) {
+        queuedStateUpdateRef.current = null;
+        const queuedRoundKey = getBattleRoundKey(queuedState);
+        if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) {
+          loadInvestigation();
+        } else {
+          applyInvestigation(queuedState);
+        }
+      } else if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
+        loadInvestigation();
       }
     }, unlockDelay);
     return () => {
@@ -982,6 +1008,13 @@ useEffect(() => {
         setStagedBattleLogs([]);
         setPlaybackState(null);
         setBattlePlaybackLocked(false);
+        const queuedState = queuedStateUpdateRef.current;
+        queuedStateUpdateRef.current = null;
+        if (queuedState) {
+          const queuedRoundKey = getBattleRoundKey(queuedState);
+          if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) loadInvestigation();
+          else applyInvestigation(queuedState);
+        }
       }
     }, 300);
     return () => clearInterval(timer);
@@ -993,8 +1026,15 @@ useEffect(() => {
     const timer = setTimeout(() => {
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      if (postPlaybackRefreshRef.current) {
+      const queuedState = queuedStateUpdateRef.current;
+      queuedStateUpdateRef.current = null;
+      if (queuedState) {
+        const queuedRoundKey = getBattleRoundKey(queuedState);
+        if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) loadInvestigation();
+        else applyInvestigation(queuedState);
+      } else if (postPlaybackRefreshRef.current) {
         postPlaybackRefreshRef.current = false;
+        loadInvestigation();
       }
     }, 1500);
     return () => clearTimeout(timer);
@@ -2028,37 +2068,37 @@ function getBattlePlaybackTimings(entry, index = 0) {
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 680, totalAfterLog: 1460 };
+    return { isPhaseHeader: false, beforeLog: 220, beforeSnapshot: 760, totalAfterLog: 1680 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 160, beforeSnapshot: 560, totalAfterLog: 1260 };
+    return { isPhaseHeader: false, beforeLog: 200, beforeSnapshot: 640, totalAfterLog: 1460 };
   }
   if (["skill", "debuff", "drain"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 170, beforeSnapshot: 700, totalAfterLog: 1540 };
+    return { isPhaseHeader: false, beforeLog: 220, beforeSnapshot: 820, totalAfterLog: 1780 };
   }
   if (["guard", "shield", "buff"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 150, beforeSnapshot: 520, totalAfterLog: 1180 };
+    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 620, totalAfterLog: 1380 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 150, beforeSnapshot: 560, totalAfterLog: 1200 };
+    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 660, totalAfterLog: 1420 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 150, beforeSnapshot: /회복/.test(text) ? 560 : 620, totalAfterLog: /회복/.test(text) ? 1240 : 1340 };
+    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: /회복/.test(text) ? 660 : 720, totalAfterLog: /회복/.test(text) ? 1460 : 1560 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 120, beforeSnapshot: 420, totalAfterLog: 980 };
+    return { isPhaseHeader: false, beforeLog: 170, beforeSnapshot: 520, totalAfterLog: 1180 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 160, beforeSnapshot: 620, totalAfterLog: 1380 };
+    return { isPhaseHeader: false, beforeLog: 220, beforeSnapshot: 740, totalAfterLog: 1660 };
   }
-  return { isPhaseHeader: false, beforeLog: 150, beforeSnapshot: 520, totalAfterLog: 1180 };
+  return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 620, totalAfterLog: 1360 };
 }
 
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
   const recent = getRecentBattleEntry(name, rounds, state, nowTick);
   const effect = recent?.effect || "";
   const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : 0;
-  const duration = ({ damage: 1320, attack: 1120, skill: 1340, heal: 1180, item: 1180, guard: 1040, evade: 980 })[effect] || 1080;
+  const duration = ({ damage: 1620, attack: 1420, skill: 1680, heal: 1440, item: 1460, guard: 1320, evade: 1180 })[effect] || 1320;
   const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : 1;
   const pulse = recent?.entry ? Math.sin(progress * Math.PI) : 0;
   const persistentGuard = effect === "guard" && !recent?.entry && !!state?.defending;

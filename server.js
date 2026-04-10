@@ -2220,10 +2220,11 @@ app.post("/setBattleAction", (req, res) => {
   if (Number(state.hp || 0) <= 0) return res.json({ success: false, message: "행동 불가능한 상태입니다." });
   item.pendingBattleActions[characterName] = actionName || "공격";
 
-  const aliveNames = (item.participants || [])
+  const aliveNames = Array.from(new Set((item.participants || [])
     .filter((participant) => !participant?.isAdmin && String(participant?.id || "") !== "admin" && String(participant?.ownerId || "") !== "admin" && participant?.name !== "운영자")
-    .filter((participant) => Number(item.participantStates?.[participant.name]?.hp || 0) > 0)
-    .map((participant) => participant.name);
+    .map((participant) => String(participant?.name || "").trim())
+    .filter(Boolean)
+    .filter((name) => Number(item.participantStates?.[name]?.hp || 0) > 0)));
   const allReady = aliveNames.length > 0 && aliveNames.every((name) => !!item.pendingBattleActions?.[name]);
 
   if (allReady) {

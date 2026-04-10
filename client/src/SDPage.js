@@ -73,9 +73,11 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
 }
 
 function getCharacterKey(character) {
+  const idKey = String(character?.id || "").trim();
+  if (idKey) return idKey;
   const ownerNameKey = `${String(character?.ownerId || "").trim()}:${String(character?.name || "").trim()}`;
   if (ownerNameKey !== ':') return ownerNameKey;
-  return String(character?.id || character?.name || "").trim();
+  return String(character?.name || "").trim();
 }
 
 function mergeCharacterStates(prevList, freshList, maps) {
@@ -155,14 +157,14 @@ function dedupeCharacters(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const merged = new Map();
   list.forEach((character) => {
-    const key = getCharacterKey(character);
+    const primaryKey = getCharacterKey(character);
+    const nameKey = String(character?.name || "").trim();
+    const key = primaryKey || nameKey;
     if (!key) return;
-    const prev = merged.get(key);
-    if (!prev) {
-      merged.set(key, character);
-      return;
-    }
-    merged.set(key, {
+    const existingByPrimary = merged.get(primaryKey);
+    const existingByName = nameKey ? merged.get(`name:${nameKey}`) : null;
+    const prev = existingByPrimary || existingByName || null;
+    const next = !prev ? character : {
       ...prev,
       ...character,
       currentMap: character?.currentMap || prev?.currentMap || "",
@@ -176,9 +178,15 @@ function dedupeCharacters(rows) {
       dy: typeof character?.dy === "number" ? character.dy : prev?.dy,
       waitMs: typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs,
       moveCooldownMs: typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs,
-    });
+    };
+    if (prev) {
+      merged.delete(getCharacterKey(prev));
+      if (prev?.name) merged.delete(`name:${String(prev.name).trim()}`);
+    }
+    if (primaryKey) merged.set(primaryKey, next);
+    if (nameKey) merged.set(`name:${nameKey}`, next);
   });
-  return Array.from(merged.values());
+  return Array.from(new Map(Array.from(merged.values()).map((character) => [getCharacterKey(character) || String(character?.name || "").trim(), character])).values());
 }
 
 function getSpriteImage(character) {
