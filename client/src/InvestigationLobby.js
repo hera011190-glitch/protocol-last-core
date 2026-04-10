@@ -364,8 +364,9 @@ function InvestigationLobby({
     );
   }
 
-  const leaderNames = selectedLeaders.length > 0 ? selectedLeaders.join(", ") : "리더 없음";
-  const canStartLobby = investigation?.type === "daily" ? participants.length > 0 : (participants.length > 0 && selectedLeaders.length > 0);
+  const effectiveLeaders = selectedLeaders.length > 0 ? selectedLeaders : (participants[0]?.name ? [participants[0].name] : []);
+  const leaderNames = effectiveLeaders.length > 0 ? effectiveLeaders.join(", ") : "리더 없음";
+  const canStartLobby = participants.length > 0;
 
   return (
     <DesignPageFrame design={design} pageKey="investigations" handlers={{}} theme={theme} minHeight="100vh" contentStyle={{ padding: 0 }}>
@@ -380,6 +381,7 @@ function InvestigationLobby({
                 <div style={smallChipStyle}>{investigation.started ? "진행 중" : "대기 중"}</div>
                 <div style={leaderChipStyle}>리더: {leaderNames}</div>
                 <div style={smallChipStyle}>참여 {participants.length}명</div>
+                {!investigation.started && investigation?.type === "group" && selectedLeaders.length === 0 && participants.length > 0 ? <div style={smallChipStyle}>리더 미지정 시 첫 참여자가 리더로 시작</div> : null}
               </div>
               {isAdmin ? (
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>

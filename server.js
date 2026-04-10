@@ -2082,10 +2082,7 @@ app.post("/startInvestigation", (req, res) => {
     if (!Array.isArray(item.participants) || item.participants.length <= 0) {
       return res.json({ success: false, message: "참여 인원이 있어야 조사를 시작할 수 있어." });
     }
-    if (item.type === "group" && (!Array.isArray(item.leaders) || item.leaders.length <= 0)) {
-      return res.json({ success: false, message: "운영자가 리더를 지정해야 조사를 시작할 수 있어." });
-    }
-    if (item.type === "daily" && (!Array.isArray(item.leaders) || item.leaders.length <= 0) && item.participants[0]?.name) {
+    if ((!Array.isArray(item.leaders) || item.leaders.length <= 0) && item.participants[0]?.name) {
       item.leaders = [item.participants[0].name];
     }
     syncInvestigationRoster(item);

@@ -80,13 +80,54 @@ function getCharacterKey(character) {
   return String(character?.name || "").trim();
 }
 
+function getCharacterAliases(character) {
+  const aliases = [
+    String(character?.id || "").trim(),
+    `${String(character?.ownerId || "").trim()}:${String(character?.name || "").trim()}`,
+    String(character?.name || "").trim(),
+  ].filter((value) => value && value !== ':');
+  return Array.from(new Set(aliases));
+}
+
+function findStateByAliases(source, character) {
+  const aliases = getCharacterAliases(character);
+  for (const alias of aliases) {
+    if (source?.[alias]) return source[alias];
+  }
+  return null;
+}
+
+function persistCharacterPositions(rows) {
+  const safeRows = dedupeCharacters(rows || []);
+  const payload = {};
+  safeRows.forEach((character) => {
+    const snapshot = {
+      x: character.x,
+      y: character.y,
+      dx: character.dx,
+      dy: character.dy,
+      waitMs: character.waitMs,
+      moveCooldownMs: character.moveCooldownMs,
+      currentMap: character.currentMap,
+    };
+    getCharacterAliases(character).forEach((alias) => {
+      payload[alias] = snapshot;
+    });
+  });
+  try {
+    localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
+  } catch {}
+}
+
 function mergeCharacterStates(prevList, freshList, maps) {
-  const prevById = Object.fromEntries(dedupeCharacters(prevList || []).map((character) => [getCharacterKey(character), character]));
+  const prevRows = dedupeCharacters(prevList || []);
+  const prevById = Object.fromEntries(prevRows.map((character) => [getCharacterKey(character), character]));
   const saved = readSavedPositions();
   return dedupeCharacters(freshList || []).map((character, index) => {
     const key = getCharacterKey(character);
-    const prev = prevById[key];
-    return buildCharacterState(character, prev || saved[key], maps, index);
+    const prev = prevById[key] || findStateByAliases(Object.fromEntries(prevRows.flatMap((row) => getCharacterAliases(row).map((alias) => [alias, row]))), character);
+    const savedState = findStateByAliases(saved, character) || saved[key];
+    return buildCharacterState(character, prev || savedState, maps, index);
   });
 }
 
@@ -157,13 +198,10 @@ function dedupeCharacters(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const merged = new Map();
   list.forEach((character) => {
-    const primaryKey = getCharacterKey(character);
-    const nameKey = String(character?.name || "").trim();
-    const key = primaryKey || nameKey;
-    if (!key) return;
-    const existingByPrimary = merged.get(primaryKey);
-    const existingByName = nameKey ? merged.get(`name:${nameKey}`) : null;
-    const prev = existingByPrimary || existingByName || null;
+    const aliases = getCharacterAliases(character);
+    const primaryKey = aliases[0] || getCharacterKey(character);
+    if (!primaryKey) return;
+    const prev = aliases.map((alias) => merged.get(alias)).find(Boolean) || null;
     const next = !prev ? character : {
       ...prev,
       ...character,
@@ -180,13 +218,11 @@ function dedupeCharacters(rows) {
       moveCooldownMs: typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs,
     };
     if (prev) {
-      merged.delete(getCharacterKey(prev));
-      if (prev?.name) merged.delete(`name:${String(prev.name).trim()}`);
+      getCharacterAliases(prev).forEach((alias) => merged.delete(alias));
     }
-    if (primaryKey) merged.set(primaryKey, next);
-    if (nameKey) merged.set(`name:${nameKey}`, next);
+    getCharacterAliases(next).forEach((alias) => merged.set(alias, next));
   });
-  return Array.from(new Map(Array.from(merged.values()).map((character) => [getCharacterKey(character) || String(character?.name || "").trim(), character])).values());
+  return Array.from(new Map(Array.from(merged.values()).map((character) => [getCharacterKey(character) || getCharacterAliases(character)[0], character])).values());
 }
 
 function getSpriteImage(character) {
@@ -347,20 +383,14 @@ export default function SDPage({ activeCharacter, design, theme }) {
     writeCachedSdCharacters(dedupeCharacters(characters));
     if (Date.now() - saveTickRef.current < 700) return;
     saveTickRef.current = Date.now();
-    const payload = Object.fromEntries(dedupeCharacters(characters).map((character) => [getCharacterKey(character), { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
-    try {
-      localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
-    } catch {}
+    persistCharacterPositions(characters);
   }, [characters]);
 
   useEffect(() => () => {
     const latest = dedupeCharacters(charactersRef.current || []);
     if (!latest.length) return;
     writeCachedSdCharacters(latest);
-    const payload = Object.fromEntries(latest.map((character) => [getCharacterKey(character), { x: character.x, y: character.y, dx: character.dx, dy: character.dy, waitMs: character.waitMs, moveCooldownMs: character.moveCooldownMs, currentMap: character.currentMap }]));
-    try {
-      localStorage.setItem("plc-sd-positions", JSON.stringify(payload));
-    } catch {}
+    persistCharacterPositions(latest);
     writeLastViewedMapId(activeMapRef.current);
   }, []);
 

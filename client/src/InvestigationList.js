@@ -150,9 +150,9 @@ function formatCorrosionRange(items = []) {
 
 function entryLabelBlock(english, korean) {
   return (
-    <div style={{ display: "grid", gap: 2, alignContent: "start" }}>
+    <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
       <div className="section-eyebrow" style={{ color: "#243b53", marginBottom: 0, lineHeight: 1 }}>{english}</div>
-      <h3 style={{ marginTop: -4, marginBottom: 0, color: "#17324a", lineHeight: 1.02 }}>{korean}</h3>
+      <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{korean}</h3>
     </div>
   );
 }
