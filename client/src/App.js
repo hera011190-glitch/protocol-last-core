@@ -59,6 +59,21 @@ function safeReadJSON(key, fallback) {
   }
 }
 
+function stripHeavyDesignSections(source) {
+  const base = source && typeof source === "object" ? source : defaultDesign;
+  const nextSiteContent = { ...(base.siteContent || {}) };
+  delete nextSiteContent.maps;
+  return {
+    ...defaultDesign,
+    ...base,
+    theme: { ...(defaultDesign.theme || {}), ...(base.theme || {}) },
+    pages: { ...(defaultDesign.pages || {}), ...(base.pages || {}) },
+    siteContent: { ...(defaultDesign.siteContent || {}), ...nextSiteContent },
+    sharedShellElements: Array.isArray(base.sharedShellElements) ? base.sharedShellElements : (Array.isArray(defaultDesign.sharedShellElements) ? defaultDesign.sharedShellElements : []),
+    sharedShellOverrides: typeof base.sharedShellOverrides === "object" && base.sharedShellOverrides ? base.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {}),
+  };
+}
+
 function writeSessionJSON(key, value) {
   try {
     if (value === null || value === undefined || value === "") {
@@ -290,9 +305,9 @@ function App() {
   const [activeCharacter, setActiveCharacterState] = useState(readActiveCharacter());
   const [selectedInvestigationId, setSelectedInvestigationId] = useState(() => safeReadJSON("plc-investigation-id", null));
   const [selectedInvestigationSeed, setSelectedInvestigationSeed] = useState(() => safeReadJSON("plc-investigation-seed", null));
-  const cachedDesign = safeReadJSON(DESIGN_CACHE_KEY, null);
+  const cachedDesign = stripHeavyDesignSections(safeReadJSON(DESIGN_CACHE_KEY, null) || defaultDesign);
   const [designConfig, setDesignConfig] = useState(() => cachedDesign || defaultDesign);
-  const [designReady, setDesignReady] = useState(false);
+  const [designReady, setDesignReady] = useState(true);
   const [myUnread, setMyUnread] = useState(0);
   const [spectatorMode, setSpectatorMode] = useState(() => safeReadJSON("plc-spectator-mode", false));
   const [builderEditId, setBuilderEditId] = useState(() => safeReadJSON("plc-builder-edit-id", ""));
@@ -446,7 +461,7 @@ function App() {
     let cancelled = false;
 
     const applyDesign = (nextDesign, { persist = false } = {}) => {
-      const next = nextDesign || defaultDesign;
+      const next = stripHeavyDesignSections(nextDesign || defaultDesign);
       if (cancelled) return;
       setDesignConfig(next);
       setDesignReady(true);
@@ -458,14 +473,24 @@ function App() {
     };
 
     const fetchDesign = () => {
-      setDesignReady(false);
-      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store" })
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 4500);
+      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store", signal: controller.signal })
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
           const cached = safeReadJSON(DESIGN_CACHE_KEY, defaultDesign) || defaultDesign;
           applyDesign(cached, { persist: false });
+        })
+        .finally(() => {
+          window.clearTimeout(timeout);
         });
+      return () => {
+        window.clearTimeout(timeout);
+        try {
+          controller.abort();
+        } catch {}
+      };
     };
 
     const handleDesignUpdated = (event) => {
@@ -489,12 +514,15 @@ function App() {
       applyDesign(cached, { persist: false });
     };
 
-    fetchDesign();
+    const cancelFetch = fetchDesign();
 
     window.addEventListener("plc-design-updated", handleDesignUpdated);
     window.addEventListener("storage", handleStorage);
     return () => {
       cancelled = true;
+      try {
+        cancelFetch?.();
+      } catch {}
       window.removeEventListener("plc-design-updated", handleDesignUpdated);
       window.removeEventListener("storage", handleStorage);
     };
@@ -802,10 +830,6 @@ function App() {
     if (activePage === PAGE.INVESTIGATION) return "investigationOverlay";
     return activePage;
   })();
-
-  if (!designReady) {
-    return <div style={{ ...buildThemeVars(theme), minHeight: "100vh", background: theme?.bgMain || defaultDesign.theme?.bgMain || "#eef9ff" }} />;
-  }
 
   return (
     <div style={buildThemeVars(theme)}>

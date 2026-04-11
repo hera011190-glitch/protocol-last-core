@@ -244,6 +244,9 @@ if (savedDesign && typeof savedDesign === "object") {
   };
 }
 
+let publicDesignShellCache = null;
+let publicDesignMapsCache = null;
+
 function getCharacterHpStat(rawHp) {
   const value = Number(rawHp || 0);
   if (value >= 100) return Math.max(0, Math.round((value - 100) / 10));
@@ -1570,7 +1573,9 @@ function applyBattleTurn(item, actions) {
 
 app.get("/designConfig", (req, res) => res.json(designConfig));
 
-app.get("/designConfigPublic", (req, res) => res.json(buildPublicDesignConfig(designConfig)));
+app.get("/designConfigPublic", (req, res) => res.json(getPublicDesignShellConfig()));
+
+app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig()));
 
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
@@ -1608,6 +1613,8 @@ app.post("/designConfig", (req, res) => {
     sharedShellElements: Array.isArray(payload.sharedShellElements) ? payload.sharedShellElements : (Array.isArray(defaultDesign.sharedShellElements) ? defaultDesign.sharedShellElements : []),
     sharedShellOverrides: typeof payload.sharedShellOverrides === "object" && payload.sharedShellOverrides ? payload.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {}),
   };
+  publicDesignShellCache = null;
+  publicDesignMapsCache = null;
 
   try {
     const designConfigPath = resolveDataPath("designConfig.json");
@@ -2824,8 +2831,28 @@ function buildPublicCharacter(character) {
   return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey));
 }
 
-function buildPublicDesignConfig(config) {
-  return mapDataImages(config || {}, (pathKey) => toDesignAssetUrl(pathKey));
+function buildPublicDesignShellConfig(config) {
+  const source = config && typeof config === "object" ? config : {};
+  const nextSiteContent = { ...(source.siteContent || {}) };
+  delete nextSiteContent.maps;
+  return mapDataImages({
+    ...source,
+    siteContent: nextSiteContent,
+  }, (pathKey) => toDesignAssetUrl(pathKey));
+}
+
+function buildPublicDesignMapsConfig(config) {
+  return mapDataImages((config && config.siteContent && config.siteContent.maps) ? config.siteContent.maps : {}, (pathKey) => toDesignAssetUrl(`siteContent.maps.${pathKey}`));
+}
+
+function getPublicDesignShellConfig() {
+  if (!publicDesignShellCache) publicDesignShellCache = buildPublicDesignShellConfig(designConfig);
+  return publicDesignShellCache;
+}
+
+function getPublicDesignMapsConfig() {
+  if (!publicDesignMapsCache) publicDesignMapsCache = buildPublicDesignMapsConfig(designConfig);
+  return publicDesignMapsCache;
 }
 
 function buildPublicInvestigationState(item) {

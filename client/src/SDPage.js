@@ -66,7 +66,7 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
     waitMs: typeof savedState?.waitMs === "number" ? savedState.waitMs : 0,
     moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(5200, 8800),
     currentMap:
-      [character.currentMap, savedState?.currentMap].find((candidate) => maps.some((map) => String(map.id) === String(candidate))) ||
+      [savedState?.currentMap, character.currentMap].find((candidate) => maps.some((map) => String(map.id) === String(candidate))) ||
       getStableDefaultMapId(character, maps, fallbackIndex) ||
       maps[0]?.id ||
       "",
@@ -164,6 +164,21 @@ function SDInfoModal({ character, onClose, theme }) {
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 const SD_ACTIVE_MAP_KEY = "plc-sd-active-map";
+const SD_MAP_CONFIG_CACHE_KEY = "plc-sd-map-config";
+
+function readCachedMapConfig() {
+  try {
+    const raw = sessionStorage.getItem(SD_MAP_CONFIG_CACHE_KEY) || localStorage.getItem(SD_MAP_CONFIG_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMapConfig(value) {
+  try { sessionStorage.setItem(SD_MAP_CONFIG_CACHE_KEY, JSON.stringify(value || {})); } catch {}
+  try { localStorage.setItem(SD_MAP_CONFIG_CACHE_KEY, JSON.stringify(value || {})); } catch {}
+}
 
 function readCachedSdCharacters() {
   try {
@@ -240,6 +255,68 @@ function getCharacterQuotePool(character) {
   const fallbackQuotes = [String(character?.oneLine || "").trim()]
     .filter(Boolean);
   return Array.from(new Set([...directQuotes, ...fallbackQuotes]));
+}
+
+function matchesActiveCharacter(candidate, activeCharacter) {
+  if (!candidate || !activeCharacter) return false;
+  const activeAliases = new Set(getCharacterAliases(activeCharacter));
+  if (getCharacterAliases(candidate).some((alias) => activeAliases.has(alias))) return true;
+  const ownerKey = normalizeKeyPart(activeCharacter?.ownerId);
+  const nameKey = normalizeKeyPart(activeCharacter?.name);
+  return !!ownerKey && !!nameKey && normalizeKeyPart(candidate?.ownerId) === ownerKey && normalizeKeyPart(candidate?.name) === nameKey;
+}
+
+function stabilizeCharacterRows(rows, activeCharacter, maps) {
+  const base = dedupeCharacters(rows || []);
+  if (!activeCharacter) return base;
+  const matched = [];
+  const others = [];
+  base.forEach((row) => {
+    if (matchesActiveCharacter(row, activeCharacter)) matched.push(row);
+    else others.push(row);
+  });
+  if (matched.length <= 1) return base;
+
+  const preferred = matched.find((row) => String(row?.currentMap || "") === String(activeCharacter?.currentMap || ""))
+    || matched.find((row) => typeof row?.x === "number" && typeof row?.y === "number")
+    || matched[matched.length - 1];
+
+  const merged = matched.reduce((acc, row) => ({
+    ...acc,
+    ...row,
+    id: row?.id ?? acc?.id,
+    ownerId: row?.ownerId || acc?.ownerId || "",
+    name: row?.name || acc?.name || "",
+    currentMap: row?.currentMap || acc?.currentMap || "",
+    image: row?.image || acc?.image || "",
+    profileImage: row?.profileImage || acc?.profileImage || "",
+    mainImage: row?.mainImage || acc?.mainImage || "",
+    cardImage: row?.cardImage || acc?.cardImage || "",
+    investigationImage: row?.investigationImage || acc?.investigationImage || "",
+    spriteImage: row?.spriteImage || acc?.spriteImage || "",
+    x: typeof row?.x === "number" ? row.x : acc?.x,
+    y: typeof row?.y === "number" ? row.y : acc?.y,
+    dx: typeof row?.dx === "number" ? row.dx : acc?.dx,
+    dy: typeof row?.dy === "number" ? row.dy : acc?.dy,
+    waitMs: typeof row?.waitMs === "number" ? row.waitMs : acc?.waitMs,
+    moveCooldownMs: typeof row?.moveCooldownMs === "number" ? row.moveCooldownMs : acc?.moveCooldownMs,
+  }), preferred || matched[0]);
+
+  const normalized = buildCharacterState({
+    ...merged,
+    id: activeCharacter?.id ?? merged?.id,
+    ownerId: activeCharacter?.ownerId || merged?.ownerId || "",
+    name: activeCharacter?.name || merged?.name || "",
+    image: merged?.image || activeCharacter?.image || "",
+    profileImage: merged?.profileImage || activeCharacter?.profileImage || merged?.image || "",
+    mainImage: merged?.mainImage || activeCharacter?.mainImage || merged?.profileImage || merged?.image || "",
+    cardImage: merged?.cardImage || merged?.mainImage || merged?.profileImage || merged?.image || "",
+    investigationImage: merged?.investigationImage || activeCharacter?.investigationImage || merged?.mainImage || merged?.profileImage || merged?.image || "",
+    spriteImage: merged?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || merged?.investigationImage || merged?.mainImage || merged?.profileImage || merged?.image || "",
+    currentMap: merged?.currentMap || activeCharacter?.currentMap || "",
+  }, merged, maps, 0);
+
+  return dedupeCharacters([...others, normalized]);
 }
 
 async function fetchCharactersWithFallback() {
@@ -320,17 +397,19 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const [activeMapId, setActiveMapId] = useState(() => readLastViewedMapId());
   const [quotes, setQuotes] = useState({});
   const [selectedCharacter, setSelectedCharacter] = useState(null);
+  const [remoteMapRoot, setRemoteMapRoot] = useState(() => readCachedMapConfig() || design?.siteContent?.maps || null);
   const lastFrameRef = useRef(0);
   const saveTickRef = useRef(0);
   const charactersRef = useRef(characters);
   const activeMapRef = useRef(activeMapId);
-  const mapRoot = design?.siteContent?.maps || {};
+  const quotesRef = useRef(quotes);
+  const mapRoot = remoteMapRoot || design?.siteContent?.maps || {};
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
   const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
   const maps = useMemo(() => {
     if (collections.length > 0) {
       const found = collections.find((v) => String(v.id) === String(activeCollectionId)) || collections[0];
-      return Array.isArray(found?.presets) ? found.presets : [];
+      return Array.isArray(found?.presets) && found.presets.length > 0 ? found.presets : FALLBACK_MAPS;
     }
     return Array.isArray(mapRoot.presets) && mapRoot.presets.length > 0 ? mapRoot.presets : FALLBACK_MAPS;
   }, [mapRoot, collections, activeCollectionId]);
@@ -342,6 +421,42 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     activeMapRef.current = activeMapId;
   }, [activeMapId]);
+
+  useEffect(() => {
+    quotesRef.current = quotes;
+  }, [quotes]);
+
+  useEffect(() => {
+    if (design?.siteContent?.maps && Object.keys(design.siteContent.maps || {}).length > 0) {
+      setRemoteMapRoot((prev) => (prev && Object.keys(prev || {}).length > 0 ? prev : design.siteContent.maps));
+    }
+  }, [design?.siteContent?.maps]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    fetch(buildApiUrl(`/designMapsPublic?t=${Date.now()}`), { cache: "no-store", signal: controller.signal })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (cancelled || !data || typeof data !== "object") return;
+        setRemoteMapRoot(data);
+        writeCachedMapConfig(data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const cached = readCachedMapConfig();
+        if (cached && typeof cached === "object") setRemoteMapRoot(cached);
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      try { controller.abort(); } catch {}
+    };
+  }, []);
 
   const getNextMap = (currentMap, dir) => {
     const byId = maps.find((m) => m.id === currentMap);
@@ -356,7 +471,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (cancelled) return;
       const fallbackRows = readCachedSdCharacters();
       const finalRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-      const next = mergeCharacterStates([], finalRows, maps);
+      const next = stabilizeCharacterRows(mergeCharacterStates([], finalRows, maps), activeCharacter, maps);
       setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
       if (next.length > 0) writeCachedSdCharacters(next);
       setActiveMapId((prev) => {
@@ -370,13 +485,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
     loadCharacters().catch(() => {
       setCharacters((prev) => {
         if (Array.isArray(prev) && prev.length > 0) return prev;
-        const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
+        const cached = stabilizeCharacterRows(mergeCharacterStates([], readCachedSdCharacters(), maps), activeCharacter, maps);
         return cached;
       });
       setActiveMapId((prev) => {
         const stored = prev || readLastViewedMapId();
         if (stored && maps.some((map) => String(map.id) === String(stored))) return stored;
-        const cached = mergeCharacterStates([], readCachedSdCharacters(), maps);
+        const cached = stabilizeCharacterRows(mergeCharacterStates([], readCachedSdCharacters(), maps), activeCharacter, maps);
         const mine = cached.find((v) => String(v.id) === String(activeCharacter?.id));
         return mine?.currentMap || maps[0]?.id || "";
       });
@@ -386,19 +501,19 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!characters.length) return;
-    writeCachedSdCharacters(dedupeCharacters(characters));
+    writeCachedSdCharacters(stabilizeCharacterRows(characters, activeCharacter, maps));
     if (Date.now() - saveTickRef.current < 700) return;
     saveTickRef.current = Date.now();
     persistCharacterPositions(characters);
   }, [characters]);
 
   useEffect(() => () => {
-    const latest = dedupeCharacters(charactersRef.current || []);
+    const latest = stabilizeCharacterRows(charactersRef.current || [], activeCharacter, maps);
     if (!latest.length) return;
     writeCachedSdCharacters(latest);
     persistCharacterPositions(latest);
     writeLastViewedMapId(activeMapRef.current);
-  }, []);
+  }, [activeCharacter, maps]);
 
   useEffect(() => {
     if (!maps.length) return undefined;
@@ -411,7 +526,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       lastFrameRef.current = timestamp;
 
       if (document.visibilityState === "visible") {
-        setCharacters((prev) => dedupeCharacters(prev).map((character, _, arr) => {
+        setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, _, arr) => {
           let currentMap = character.currentMap || maps[0]?.id || "";
           let x = Number(character.x || 0);
           let y = Number(character.y || 0);
@@ -534,7 +649,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           });
 
           return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs, currentMap };
-        }));
+        }), activeCharacter, maps));
       }
 
       rafId = window.requestAnimationFrame(step);
@@ -546,33 +661,47 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     const quoteTimer = setInterval(() => {
+      const now = Date.now();
+      const visible = stabilizeCharacterRows(charactersRef.current || [], activeCharacter, maps)
+        .filter((character) => String(character?.currentMap || maps[0]?.id || "") === String(activeMapRef.current || ""));
+
       setQuotes((prev) => {
+        const visibleKeySet = new Set(visible.map((character) => getCharacterKey(character)).filter(Boolean));
         const next = {};
-        const now = Date.now();
-        Object.entries(prev).forEach(([id, payload]) => {
-          if (payload?.expiresAt > now) next[id] = payload;
+        Object.entries(prev || {}).forEach(([id, payload]) => {
+          if (payload?.expiresAt > now && visibleKeySet.has(id)) next[id] = payload;
         });
-        const visible = characters.filter((v) => (v.currentMap || maps[0]?.id) === activeMapId);
+
+        const visibleKeys = visible.map((character) => getCharacterKey(character)).filter(Boolean);
+        const existingVisibleKeys = visibleKeys.filter((key) => next[key]);
+        if (existingVisibleKeys.length > 0 && Math.random() < 0.28) {
+          const removeKey = existingVisibleKeys[Math.floor(Math.random() * existingVisibleKeys.length)];
+          delete next[removeKey];
+        }
+
+        const maxVisible = Math.min(2, Math.max(1, visible.length));
+        const visibleQuoteCount = visibleKeys.filter((key) => next[key]).length;
         const candidates = visible.filter((character) => getCharacterQuotePool(character).length > 0 && !next[getCharacterKey(character)]);
-        if (candidates.length > 0) {
+
+        if (candidates.length > 0 && visibleQuoteCount < maxVisible && (visibleQuoteCount === 0 ? Math.random() < 0.9 : Math.random() < 0.58)) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
           const pool = getCharacterQuotePool(picked);
           const text = pool[Math.floor(Math.random() * pool.length)];
-          const hold = Math.max(5200, Math.min(11000, 5400 + String(text || "").length * 110));
+          const hold = Math.max(1800, Math.min(4600, 2100 + String(text || "").length * 55));
           next[getCharacterKey(picked)] = { text, expiresAt: now + hold };
         }
         return next;
       });
-    }, 2600);
+    }, 1200);
     return () => clearInterval(quoteTimer);
-  }, [characters, activeMapId, maps]);
+  }, [activeCharacter, maps]);
 
   useEffect(() => {
     const handleCharacterUpdated = async (event) => {
       const updated = event?.detail?.character;
       if (updated?.id || updated?.name) {
         const updatedKey = getCharacterKey(updated);
-        setCharacters((prev) => dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character));
+        setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps));
         return;
       }
       try {
@@ -580,7 +709,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
         setCharacters((prev) => {
           const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
           const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-          const next = mergeCharacterStates(prev, sourceRows, maps);
+          const next = stabilizeCharacterRows(mergeCharacterStates(prev, sourceRows, maps), activeCharacter, maps);
           if (next.length > 0) writeCachedSdCharacters(next);
           return next.length > 0 || prev.length === 0 ? next : prev;
         });
@@ -596,11 +725,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const stored = readLastViewedMapId();
       setActiveMapId(maps.some((map) => String(map.id) === String(stored)) ? stored : maps[0].id);
     }
-    setCharacters((prev) => dedupeCharacters(prev).map((character, index) => {
+    setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => {
       const currentMap = maps.some((map) => String(map.id) === String(character.currentMap)) ? character.currentMap : maps[index % maps.length]?.id || maps[0]?.id || "";
       return currentMap === character.currentMap ? character : { ...character, currentMap };
-    }));
-  }, [maps, activeMapId]);
+    }), activeCharacter, maps));
+  }, [maps, activeMapId, activeCharacter]);
 
   useEffect(() => {
     if (!activeMapId) return;
@@ -626,7 +755,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
     const activeKey = getCharacterKey(activeCharacter);
-    setCharacters((prev) => dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.72, dy: spawn.dy * 0.72, waitMs: 1700, moveCooldownMs: rand(4600, 7600) } : character));
+    setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.72, dy: spawn.dy * 0.72, waitMs: 1700, moveCooldownMs: rand(4600, 7600) } : character), activeCharacter, maps));
     if (activeCharacter?.id) {
       fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));
