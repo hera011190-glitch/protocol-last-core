@@ -64,7 +64,7 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
     dx: typeof savedState?.dx === "number" ? savedState.dx : typeof character.dx === "number" ? character.dx : spawn.dx,
     dy: typeof savedState?.dy === "number" ? savedState.dy : typeof character.dy === "number" ? character.dy : spawn.dy,
     waitMs: typeof savedState?.waitMs === "number" ? savedState.waitMs : 0,
-    moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(7200, 11800),
+    moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(9200, 14800),
     currentMap:
       [savedState?.currentMap, character.currentMap].find((candidate) => maps.some((map) => String(map.id) === String(candidate))) ||
       getStableDefaultMapId(character, maps, fallbackIndex) ||
@@ -270,15 +270,23 @@ function stabilizeCharacterRows(rows, activeCharacter, maps) {
   const base = dedupeCharacters(rows || []);
   if (!activeCharacter) return base;
   const others = [];
-  let merged = null;
+  const activeRows = [];
   base.forEach((row) => {
     if (matchesActiveCharacter(row, activeCharacter)) {
-      merged = merged ? { ...merged, ...row } : { ...row };
+      activeRows.push(row);
       return;
     }
     others.push(row);
   });
   const saved = findStateByAliases(readSavedPositions(), activeCharacter) || null;
+  const merged = activeRows.sort((a, b) => {
+    const aMotion = Math.abs(Number(a?.dx || 0)) + Math.abs(Number(a?.dy || 0));
+    const bMotion = Math.abs(Number(b?.dx || 0)) + Math.abs(Number(b?.dy || 0));
+    if (aMotion !== bMotion) return bMotion - aMotion;
+    const aHasMap = String(a?.currentMap || "").trim() ? 1 : 0;
+    const bHasMap = String(b?.currentMap || "").trim() ? 1 : 0;
+    return bHasMap - aHasMap;
+  })[0] || null;
   const source = merged || activeCharacter;
   const normalized = buildCharacterState({
     ...source,
@@ -292,13 +300,13 @@ function stabilizeCharacterRows(rows, activeCharacter, maps) {
     investigationImage: source?.investigationImage || activeCharacter?.investigationImage || source?.mainImage || source?.profileImage || source?.image || "",
     spriteImage: source?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || source?.investigationImage || source?.mainImage || source?.profileImage || source?.image || "",
     currentMap: saved?.currentMap || source?.currentMap || activeCharacter?.currentMap || "",
-    x: typeof saved?.x === "number" ? saved.x : source?.x,
-    y: typeof saved?.y === "number" ? saved.y : source?.y,
-    dx: typeof saved?.dx === "number" ? saved.dx : source?.dx,
-    dy: typeof saved?.dy === "number" ? saved.dy : source?.dy,
-    waitMs: typeof saved?.waitMs === "number" ? saved.waitMs : source?.waitMs,
-    moveCooldownMs: typeof saved?.moveCooldownMs === "number" ? saved.moveCooldownMs : source?.moveCooldownMs,
-  }, saved || source, maps, 0);
+    x: typeof source?.x === "number" ? source.x : saved?.x,
+    y: typeof source?.y === "number" ? source.y : saved?.y,
+    dx: typeof source?.dx === "number" ? source.dx : saved?.dx,
+    dy: typeof source?.dy === "number" ? source.dy : saved?.dy,
+    waitMs: typeof source?.waitMs === "number" ? source.waitMs : saved?.waitMs,
+    moveCooldownMs: typeof source?.moveCooldownMs === "number" ? source.moveCooldownMs : saved?.moveCooldownMs,
+  }, source || saved || activeCharacter, maps, 0);
   return dedupeCharacters([...others, normalized]);
 }
 
@@ -328,7 +336,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   const spriteImage = getSpriteImage(character);
   if (!spriteImage) return null;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
-  const tintOpacity = Math.max(0, Math.min(0.9, corrosion / 100));
+  const tintReveal = Math.max(0, Math.min(100, corrosion));
   const maskImage = `url(${spriteImage})`;
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto" }}>
@@ -353,9 +361,11 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             position: "absolute",
             inset: 0,
             zIndex: 2,
-            opacity: Math.max(0, tintOpacity * 0.82),
+            opacity: tintReveal > 0 ? 0.92 : 0,
             pointerEvents: "none",
-            background: "linear-gradient(0deg, rgba(239,68,68,0.96) 0%, rgba(239,68,68,0.76) 22%, rgba(239,68,68,0.42) 42%, rgba(239,68,68,0.14) 60%, rgba(239,68,68,0) 78%)",
+            background: "linear-gradient(0deg, rgba(220,38,38,0.98) 0%, rgba(239,68,68,0.94) 34%, rgba(248,113,113,0.78) 68%, rgba(252,165,165,0.20) 100%)",
+            clipPath: `inset(${Math.max(0, 100 - tintReveal)}% 0 0 0)`,
+            WebkitClipPath: `inset(${Math.max(0, 100 - tintReveal)}% 0 0 0)`,
             WebkitMaskImage: maskImage,
             WebkitMaskRepeat: "no-repeat",
             WebkitMaskPosition: "center",
@@ -364,7 +374,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             maskRepeat: "no-repeat",
             maskPosition: "center",
             maskSize: "contain",
-            mixBlendMode: "multiply",
+            mixBlendMode: "normal",
           }}
         />
       </div>
@@ -502,11 +512,16 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const step = (timestamp) => {
       if (!lastFrameRef.current) lastFrameRef.current = timestamp;
       const rawDt = timestamp - lastFrameRef.current;
-      const dt = Math.min(56, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
+      if (Number.isFinite(rawDt) && rawDt < 40) {
+        rafId = window.requestAnimationFrame(step);
+        return;
+      }
+      const dt = Math.min(72, Math.max(24, Number.isFinite(rawDt) ? rawDt : 24));
       lastFrameRef.current = timestamp;
 
       if (document.visibilityState === "visible") {
         setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, _, arr) => {
+          const isActiveSelf = !!activeCharacter && matchesActiveCharacter(character, activeCharacter);
           let currentMap = character.currentMap || maps[0]?.id || "";
           let x = Number(character.x || 0);
           let y = Number(character.y || 0);
@@ -516,43 +531,43 @@ export default function SDPage({ activeCharacter, design, theme }) {
           let moveCooldownMs = Number(character.moveCooldownMs || 0);
 
           if (waitMs > 0) {
-            waitMs = Math.max(0, waitMs - dt);
-            return { ...character, waitMs, dx: dx * 0.92, dy: dy * 0.92 };
+            waitMs = Math.max(0, waitMs - (isActiveSelf ? dt * 1.25 : dt));
+            return { ...character, waitMs, dx: dx * 0.94, dy: dy * 0.94 };
           }
 
           moveCooldownMs -= dt;
           if (moveCooldownMs <= 0) {
             const mapDef = maps.find((map) => String(map.id) === String(currentMap)) || null;
             const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((map) => String(map.id) === String(nextId)));
-            const wantsPause = Math.random() < 0.34;
-            const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.12;
+            const wantsPause = Math.random() < (isActiveSelf ? 0.14 : 0.24);
+            const wantsMapChange = linkedDirs.length > 0 && Math.random() < (isActiveSelf ? 0.08 : 0.10);
             if (wantsPause) {
-              waitMs = rand(3400, 6200);
-              dx *= 0.12;
-              dy *= 0.12;
-              moveCooldownMs = rand(7800, 12400);
+              waitMs = rand(isActiveSelf ? 1200 : 1800, isActiveSelf ? 2600 : 3800);
+              dx *= 0.24;
+              dy *= 0.24;
+              moveCooldownMs = rand(12400, 18800);
             } else if (wantsMapChange) {
               const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
               if (dir === "left") {
-                dx = -rand(0.78, 1.16);
-                dy = rand(-0.34, 0.34);
+                dx = -rand(0.88, 1.42);
+                dy = rand(-0.42, 0.42);
               } else if (dir === "right") {
-                dx = rand(0.78, 1.16);
-                dy = rand(-0.34, 0.34);
+                dx = rand(0.88, 1.42);
+                dy = rand(-0.42, 0.42);
               } else if (dir === "up") {
-                dx = rand(-0.22, 0.22);
-                dy = -rand(0.74, 1.08);
+                dx = rand(-0.34, 0.34);
+                dy = -rand(0.86, 1.34);
               } else {
-                dx = rand(-0.22, 0.22);
-                dy = rand(0.74, 1.08);
+                dx = rand(-0.34, 0.34);
+                dy = rand(0.86, 1.34);
               }
-              moveCooldownMs = rand(7600, 12200);
+              moveCooldownMs = rand(13200, 20800);
             } else {
-              dx = rand(-0.72, 0.72);
-              dy = rand(-0.42, 0.42);
-              if (Math.abs(dx) < 0.22) dx = dx >= 0 ? 0.22 : -0.22;
-              if (Math.abs(dy) < 0.08) dy = dy >= 0 ? 0.08 : -0.08;
-              moveCooldownMs = rand(8200, 13800);
+              dx = rand(-1.04, 1.04);
+              dy = rand(-0.56, 0.56);
+              if (Math.abs(dx) < 0.42) dx = dx >= 0 ? 0.42 : -0.42;
+              if (Math.abs(dy) < 0.18) dy = dy >= 0 ? 0.18 : -0.18;
+              moveCooldownMs = rand(14600, 22800);
             }
           }
 
@@ -566,9 +581,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 91.2;
               ny = clamp(ny, 10, 76);
-              dx = -Math.max(0.18, Math.abs(dx || rand(0.22, 0.38)));
-              dy = clamp(dy || rand(-0.14, 0.14), -0.24, 0.24);
-              moveCooldownMs = rand(7600, 12200);
+              dx = -Math.max(0.46, Math.abs(dx || rand(0.54, 0.92)));
+              dy = clamp(dy || rand(-0.24, 0.24), -0.42, 0.42);
+              moveCooldownMs = rand(13200, 20800);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -579,9 +594,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 8.8;
               ny = clamp(ny, 10, 76);
-              dx = Math.max(0.18, Math.abs(dx || rand(0.22, 0.38)));
-              dy = clamp(dy || rand(-0.14, 0.14), -0.24, 0.24);
-              moveCooldownMs = rand(7600, 12200);
+              dx = Math.max(0.46, Math.abs(dx || rand(0.54, 0.92)));
+              dy = clamp(dy || rand(-0.24, 0.24), -0.42, 0.42);
+              moveCooldownMs = rand(13200, 20800);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -593,9 +608,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 77.2;
-              dx = clamp(dx || rand(-0.14, 0.14), -0.24, 0.24);
-              dy = -Math.max(0.18, Math.abs(dy || rand(0.22, 0.38)));
-              moveCooldownMs = rand(7600, 12200);
+              dx = clamp(dx || rand(-0.24, 0.24), -0.42, 0.42);
+              dy = -Math.max(0.46, Math.abs(dy || rand(0.54, 0.92)));
+              moveCooldownMs = rand(13200, 20800);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -606,9 +621,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 10.8;
-              dx = clamp(dx || rand(-0.14, 0.14), -0.24, 0.24);
-              dy = Math.max(0.18, Math.abs(dy || rand(0.22, 0.38)));
-              moveCooldownMs = rand(7600, 12200);
+              dx = clamp(dx || rand(-0.24, 0.24), -0.42, 0.42);
+              dy = Math.max(0.46, Math.abs(dy || rand(0.54, 0.92)));
+              moveCooldownMs = rand(13200, 20800);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -654,7 +669,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
         const visibleKeys = visible.map((character) => getCharacterKey(character)).filter(Boolean);
         const existingVisibleKeys = visibleKeys.filter((key) => next[key]);
-        if (existingVisibleKeys.length > 0 && Math.random() < 0.08) {
+        if (existingVisibleKeys.length > 0 && Math.random() < 0.10) {
           const removeKey = existingVisibleKeys[Math.floor(Math.random() * existingVisibleKeys.length)];
           delete next[removeKey];
         }
@@ -663,16 +678,16 @@ export default function SDPage({ activeCharacter, design, theme }) {
         const visibleQuoteCount = visibleKeys.filter((key) => next[key]).length;
         const candidates = visible.filter((character) => getCharacterQuotePool(character).length > 0 && !next[getCharacterKey(character)]);
 
-        if (candidates.length > 0 && visibleQuoteCount < maxVisible && (visibleQuoteCount === 0 ? Math.random() < 0.28 : Math.random() < 0.12)) {
+        if (candidates.length > 0 && visibleQuoteCount < maxVisible && (visibleQuoteCount === 0 ? Math.random() < 0.12 : Math.random() < 0.04)) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
           const pool = getCharacterQuotePool(picked);
           const text = pool[Math.floor(Math.random() * pool.length)];
-          const hold = Math.max(5200, Math.min(10800, 5600 + String(text || "").length * 96));
+          const hold = Math.max(11000, Math.min(18200, 11800 + String(text || "").length * 120));
           next[getCharacterKey(picked)] = { text, expiresAt: now + hold };
         }
         return next;
       });
-    }, 4300);
+    }, 10000);
     return () => clearInterval(quoteTimer);
   }, [activeCharacter, maps]);
 
@@ -776,7 +791,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           {availableDirs.right ? <button type="button" onClick={() => moveByArrow("right")} style={arrowStyle({ right: 18, top: "50%", transform: "translateY(-50%)" }, theme)}>▶</button> : null}
           {mapCharacters.map((character) => {
             const q = quotes[getCharacterKey(character)];
-            const moving = Math.abs(Number(character.dx || 0)) > 1.1 || Math.abs(Number(character.dy || 0)) > 1.1;
+            const moving = Math.abs(Number(character.dx || 0)) > 0.42 || Math.abs(Number(character.dy || 0)) > 0.42;
             return <CharacterSprite key={getCharacterKey(character)} character={character} quote={q} moving={moving} onClick={() => setSelectedCharacter(character)} />;
           })}
         </div>

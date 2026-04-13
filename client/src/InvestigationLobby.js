@@ -1,8 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import socket, { ensureSocketConnected } from "./socket";
-import { apiFetch } from "./api";
+import socket from "./socket";
+import { apiFetch, apiJsonCached } from "./api";
 import { getMaxHpFromStat } from "./hpUtils";
+
+function normalizeImageFrame(frame) {
+  return { x: Number(frame?.x ?? 50), y: Number(frame?.y ?? 50), scale: Number(frame?.scale ?? 1) };
+}
+
+function getCoverImageStyle(frame = {}) {
+  const safe = normalizeImageFrame(frame);
+  const offsetX = (safe.x - 50) * 0.52;
+  const offsetY = (safe.y - 50) * 0.52;
+  return {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    transform: `translate(${offsetX}%, ${offsetY}%) scale(${safe.scale})`,
+    transformOrigin: "center center",
+    pointerEvents: "none",
+  };
+}
 
 function buildFallbackParticipants(investigation) {
   const roster = new Map();
@@ -47,10 +67,9 @@ function InvestigationLobby({
   const [users, setUsers] = useState([]);
   const [selectedLeaders, setSelectedLeaders] = useState([]);
 
-  const loadInvestigation = async () => {
+  const loadInvestigation = async (force = false) => {
     try {
-      const res = await apiFetch(`/investigationLobby/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-      const data = await res.json();
+      const data = await apiJsonCached(`/investigationLobby/${investigationId}`, { ttlMs: 1800, force, storageKey: `plc-lobby-${investigationId}` });
       setInvestigation((prev) => ({ ...(prev || {}), ...(data || {}) }));
       if (Array.isArray(data?.leaders) && data.leaders.length > 0) setSelectedLeaders(data.leaders);
       return data;
@@ -65,7 +84,7 @@ function InvestigationLobby({
       setInvestigation((prev) => prev || initialInvestigation);
       if (Array.isArray(initialInvestigation?.leaders) && initialInvestigation.leaders.length > 0) setSelectedLeaders(initialInvestigation.leaders);
     }
-    loadInvestigation();
+    loadInvestigation(true);
   }, [investigationId, initialInvestigation]);
 
   useEffect(() => {
@@ -74,8 +93,7 @@ function InvestigationLobby({
     const poll = async (force = false) => {
       if (!force && document.visibilityState === "hidden") return;
       try {
-        const res = await apiFetch(`/investigationLobby/${investigationId}?t=${Date.now()}`, { cache: "no-store" });
-        const data = await res.json();
+        const data = await apiJsonCached(`/investigationLobby/${investigationId}`, { ttlMs: 1800, force, storageKey: `plc-lobby-${investigationId}` });
         if (cancelled) return;
         setInvestigation(data);
         if (Array.isArray(data?.leaders) && data.leaders.length > 0) setSelectedLeaders(data.leaders);
@@ -144,7 +162,6 @@ function InvestigationLobby({
       setSelectedLeaders((prev) => (Array.isArray(payload.leaders) && (payload.leaders.length > 0 || prev.length === 0) ? payload.leaders : prev));
     };
 
-    ensureSocketConnected();
     socket.on("users", handleUsers);
     socket.on("onlineAccounts", handleUsers);
     socket.on("investigationStarted", handleStarted);
@@ -290,7 +307,7 @@ function InvestigationLobby({
       }
       setTimeout(async () => {
         try {
-          const latest = await loadInvestigation();
+          const latest = await loadInvestigation(true);
           if (latest?.started) {
             setInvestigation(latest);
             startGame();
@@ -307,14 +324,6 @@ function InvestigationLobby({
     startGame();
   };
 
-  const enterOrStartInvestigation = () => {
-    if (investigation?.started) {
-      reenterGame();
-      return;
-    }
-    startInvestigation();
-  };
-
   const participate = async () => {
     if (!character) return;
     const res = await apiFetch("/participateInvestigation", {
@@ -328,7 +337,7 @@ function InvestigationLobby({
       setInvestigation(data.investigation);
       if (Array.isArray(data.investigation?.leaders)) setSelectedLeaders(data.investigation.leaders);
     }
-    loadInvestigation();
+    loadInvestigation(true);
   };
 
   const leave = async () => {
@@ -344,7 +353,7 @@ function InvestigationLobby({
       setInvestigation(data.item);
       if (Array.isArray(data.item?.leaders)) setSelectedLeaders(data.item.leaders);
     }
-    loadInvestigation();
+    loadInvestigation(true);
   };
 
   const isParticipantOnline = (participant) => {
@@ -365,16 +374,20 @@ function InvestigationLobby({
     );
   }
 
-  const effectiveLeaders = selectedLeaders.length > 0 ? selectedLeaders : (participants[0]?.name ? [participants[0].name] : []);
-  const leaderNames = effectiveLeaders.length > 0 ? effectiveLeaders.join(", ") : "리더 없음";
-  const canStartLobby = participants.length > 0;
+  const leaderNames = selectedLeaders.length > 0 ? selectedLeaders.join(", ") : "리더 없음";
+  const canStartLobby = investigation?.type === "daily" ? participants.length > 0 : (participants.length > 0 && selectedLeaders.length > 0);
+  const lobbyEntryImage = String(investigation?.entryImage || investigation?.listImage || "").trim();
+  const lobbyEntryFrame = normalizeImageFrame(investigation?.entryImageFrame || investigation?.listImageFrame || { x: 50, y: 50, scale: 1 });
 
   return (
     <DesignPageFrame design={design} pageKey="investigations" handlers={{}} theme={theme} minHeight="100vh" contentStyle={{ padding: 0 }}>
       <div style={{ color: "white", padding: "26px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "22px", alignItems: "start" }}>
           <div style={{ display: "grid", gap: "22px" }}>
-            <div style={panelStyle}>
+            <div style={{ ...panelStyle, position: "relative", overflow: "hidden", minHeight: lobbyEntryImage ? 250 : undefined }}>
+              {lobbyEntryImage ? <img src={lobbyEntryImage} alt={investigation.title} style={getCoverImageStyle(lobbyEntryFrame)} /> : null}
+              {lobbyEntryImage ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.84) 34%, rgba(255,255,255,0.26) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
+              <div style={{ position: "relative", zIndex: 1 }}>
               <div className="section-eyebrow">LOBBY</div>
               <h2 style={{ marginTop: "10px", marginBottom: "8px" }}>{investigation.title}</h2>
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "16px" }}>
@@ -382,16 +395,17 @@ function InvestigationLobby({
                 <div style={smallChipStyle}>{investigation.started ? "진행 중" : "대기 중"}</div>
                 <div style={leaderChipStyle}>리더: {leaderNames}</div>
                 <div style={smallChipStyle}>참여 {participants.length}명</div>
-                {!investigation.started && investigation?.type === "group" && selectedLeaders.length === 0 && participants.length > 0 ? <div style={smallChipStyle}>리더 미지정 시 첫 참여자가 리더로 시작</div> : null}
               </div>
               {isAdmin ? (
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
                   <div style={{ ...leaderChipStyle, background: "rgba(255,255,255,0.08)", color: "#f8fafc" }}>운영자</div>
                   {!investigation.started ? <button type="button" onClick={saveLeaders} className="ghost-button">리더 저장</button> : null}
                   {!investigation.started ? <button type="button" onClick={() => document.getElementById("lobby-participants")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="ghost-button">리더 지정</button> : null}
-                  {((!investigation.started && canStartLobby) || investigation.started) ? <button type="button" onClick={enterOrStartInvestigation} className="home-primary-button">조사로 들어가기</button> : null}
+                  {!investigation.started && canStartLobby ? <button type="button" onClick={startInvestigation} className="home-primary-button">조사 시작</button> : null}
+                  {investigation.started ? <button type="button" onClick={reenterGame} className="home-primary-button">조사로 들어가기</button> : null}
                 </div>
               ) : null}
+              </div>
             </div>
 
             <div style={panelStyle}>
@@ -411,10 +425,13 @@ function InvestigationLobby({
                   {isAdmin && !investigation.started && (
                     <button type="button" onClick={saveLeaders} className="ghost-button">리더 저장</button>
                   )}
-                  {((investigation.started && (isAdmin || isParticipating)) || (isAdmin && !investigation.started && canStartLobby)) ? (
-                    <button type="button" onClick={enterOrStartInvestigation} className="home-primary-button">조사로 들어가기</button>
+                  {isAdmin && !investigation.started && canStartLobby && (
+                    <button type="button" onClick={startInvestigation} className="home-primary-button">조사 시작</button>
+                  )}
+                  {investigation.started && (isAdmin || isParticipating) ? (
+                    <button type="button" onClick={reenterGame} className="home-primary-button">조사로 들어가기</button>
                   ) : null}
-                  <button type="button" onClick={goBack} className="ghost-button">조사 나가기</button>
+                  <button type="button" onClick={goBack} className="ghost-button">뒤로가기</button>
                 </div>
               </div>
 

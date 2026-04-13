@@ -319,6 +319,7 @@ function App() {
   const audioPositionMapRef = useRef({});
   const activeAudioSourceRef = useRef("");
   const characterRefreshStampRef = useRef(0);
+  const characterRefreshInFlightRef = useRef(false);
   const presenceStampRef = useRef(0);
 
   const isAdmin = !!user?.isAdmin;
@@ -347,16 +348,20 @@ function App() {
   const refreshActiveCharacter = async (character = activeCharacter, options = {}) => {
     if (!character?.id || character.id === "admin") return;
     const now = Date.now();
-    const cooldown = options.force ? 0 : 8000;
+    const cooldown = options.force ? 0 : 12000;
+    if (!options.force && characterRefreshInFlightRef.current) return;
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
+    characterRefreshInFlightRef.current = true;
     try {
-      const res = await fetch(buildApiUrl(`/character-public/${character.id}`), {});
+      const res = await fetch(buildApiUrl(`/character-public/${character.id}`), { cache: "no-store" });
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);
     } catch {
       // ignore refresh errors
+    } finally {
+      characterRefreshInFlightRef.current = false;
     }
   };
 
@@ -553,7 +558,7 @@ function App() {
       if (document.visibilityState === "visible") refreshActiveCharacter(activeCharacter);
     };
     refreshIfVisible();
-    const timer = setInterval(refreshIfVisible, 30000);
+    const timer = setInterval(refreshIfVisible, 45000);
     document.addEventListener("visibilitychange", refreshIfVisible);
     window.addEventListener("focus", refreshIfVisible);
     return () => {

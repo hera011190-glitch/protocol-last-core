@@ -295,13 +295,17 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   }, [investigationId, investigation?.type, showInventory, showItems, previewMode, battlePlaybackLocked, investigation?.data?.nodes?.[currentNodeId]?.battle]);
 
   useEffect(() => {
-    let frameId = 0;
     const tick = () => {
+      if (document.visibilityState === "hidden") return;
       setNowTick(Date.now());
-      frameId = window.requestAnimationFrame(tick);
     };
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
+    tick();
+    const timer = window.setInterval(tick, 90);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, []);
 
   const pendingActionsEarly = investigation?.pendingBattleActions || {};
@@ -883,7 +887,7 @@ useEffect(() => {
       setBattleReadyUntil(0);
       return;
     }
-    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 850));
+    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 1300));
   }, [battleActive, investigation?.battleTurn, currentNodeId]);
 
   const battleInputLocked = battlePlaybackLocked || (battleActive && nowTick < battleReadyUntil);
@@ -1540,9 +1544,9 @@ useEffect(() => {
             ) : null}
             <div style={{ display: "flex", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
               <button type="button" className="home-primary-button" style={{ flex: 1, minWidth: 160, opacity: hasConfirmedExit ? 0.72 : 1 }} onClick={confirmExit}>
-                {hasConfirmedExit ? "조사 나가기" : "확인"}
+                {hasConfirmedExit ? "뒤로가기" : "확인"}
               </button>
-              <button type="button" className="ghost-button" onClick={leaveInvestigationView} style={{ flex: 1, minWidth: 160, color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>조사 나가기</button>
+              <button type="button" className="ghost-button" onClick={leaveInvestigationView} style={{ flex: 1, minWidth: 160, color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>뒤로가기</button>
             </div>
           </OverlayPanel>
         )}
@@ -1559,8 +1563,8 @@ useEffect(() => {
             </div>
           </div>
           <div style={{ position: "absolute", right: 14, top: 14, zIndex: 1050, display: "flex", gap: 8 }}>
-            {(isAdmin || canControl) && !endedReadonly && !isDaily ? <button type="button" className="ghost-button" onClick={endInvestigationNow} style={{ background: "rgba(127,29,29,0.7)", color: "white", border: "none", boxShadow: "0 16px 32px rgba(127,29,29,0.2)", backdropFilter: "blur(14px)" }}>조사 종료</button> : null}
-            <button type="button" className="ghost-button" onClick={leaveInvestigationView} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>조사 나가기</button>
+            {(isAdmin || canControl) && !endedReadonly ? <button type="button" className="ghost-button" onClick={endInvestigationNow} style={{ background: "rgba(127,29,29,0.7)", color: "white", border: "none", boxShadow: "0 16px 32px rgba(127,29,29,0.2)", backdropFilter: "blur(14px)" }}>조사 종료</button> : null}
+            <button type="button" className="ghost-button" onClick={leaveInvestigationView} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>뒤로가기</button>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "18px", alignItems: "start", minHeight: "100%" }}>
             <div style={{ display: "grid", gap: "18px", minHeight: "100%" }}>
