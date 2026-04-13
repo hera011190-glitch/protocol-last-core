@@ -96,7 +96,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
   useEffect(() => {
     if (!character?.id || character?.profileBgm) return undefined;
     let cancelled = false;
-    fetch(`http://localhost:3001/character/${character.id}?t=${Date.now()}`, { cache: "no-store" })
+    fetch(buildApiUrl(`/character/${character.id}?t=${Date.now()}`), { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;

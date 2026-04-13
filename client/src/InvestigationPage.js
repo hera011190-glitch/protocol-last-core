@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import socket from "./socket";
+import socket, { ensureSocketConnected } from "./socket";
 import { apiFetch } from "./api";
 
 function getTodayKey() {
@@ -139,6 +139,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const [editingSavedAction, setEditingSavedAction] = useState(true);
   const skipAutoActionSyncRef = useRef(false);
   const [battleActionSubmitting, setBattleActionSubmitting] = useState(false);
+  const [battleReadyUntil, setBattleReadyUntil] = useState(0);
   const [localPendingActions, setLocalPendingActions] = useState({});
   const [nowTick, setNowTick] = useState(Date.now());
   const chatScrollRef = useRef(null);
@@ -443,6 +444,7 @@ useEffect(() => {
     });
   };
 
+  ensureSocketConnected();
   socket.on("init", handleInit);
   socket.on("chat", handleChat);
   socket.on("investigationStateUpdated", handleStateUpdated);
@@ -756,6 +758,7 @@ useEffect(() => {
       return;
     }
     setShowResult(true);
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character } }));
     loadInvestigation();
   };
 
@@ -875,7 +878,15 @@ useEffect(() => {
         return { ...normalized, cooldownLeft };
       })
     : [];
-  const battleInputLocked = battlePlaybackLocked;
+  useEffect(() => {
+    if (!battleActive) {
+      setBattleReadyUntil(0);
+      return;
+    }
+    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 850));
+  }, [battleActive, investigation?.battleTurn, currentNodeId]);
+
+  const battleInputLocked = battlePlaybackLocked || (battleActive && nowTick < battleReadyUntil);
 
   useEffect(() => {
     if (!battleActive) return;
@@ -1090,6 +1101,7 @@ useEffect(() => {
       alert(data.message || "보상 배분에 실패했습니다.");
       return;
     }
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character } }));
     loadInvestigation();
   };
 
@@ -1547,7 +1559,7 @@ useEffect(() => {
             </div>
           </div>
           <div style={{ position: "absolute", right: 14, top: 14, zIndex: 1050, display: "flex", gap: 8 }}>
-            {(isAdmin || canControl) && !endedReadonly ? <button type="button" className="ghost-button" onClick={endInvestigationNow} style={{ background: "rgba(127,29,29,0.7)", color: "white", border: "none", boxShadow: "0 16px 32px rgba(127,29,29,0.2)", backdropFilter: "blur(14px)" }}>조사 종료</button> : null}
+            {(isAdmin || canControl) && !endedReadonly && !isDaily ? <button type="button" className="ghost-button" onClick={endInvestigationNow} style={{ background: "rgba(127,29,29,0.7)", color: "white", border: "none", boxShadow: "0 16px 32px rgba(127,29,29,0.2)", backdropFilter: "blur(14px)" }}>조사 종료</button> : null}
             <button type="button" className="ghost-button" onClick={leaveInvestigationView} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>조사 나가기</button>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "18px", alignItems: "start", minHeight: "100%" }}>

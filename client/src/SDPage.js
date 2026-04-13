@@ -29,10 +29,10 @@ function arrowStyle(position, theme) {
   };
 }
 function spawnFromEdge(edge) {
-  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(2.4, 4.1), dy: rand(-1.2, 1.2) };
-  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-4.1, -2.4), dy: rand(-1.2, 1.2) };
-  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-1.3, 1.3), dy: rand(2.3, 3.8) };
-  return { x: rand(10, 88), y: 78, dx: rand(-1.3, 1.3), dy: rand(-3.8, -2.3) };
+  if (edge === "left") return { x: 8, y: rand(18, 76), dx: rand(0.68, 1.08), dy: rand(-0.24, 0.24) };
+  if (edge === "right") return { x: 92, y: rand(18, 76), dx: rand(-1.08, -0.68), dy: rand(-0.24, 0.24) };
+  if (edge === "up") return { x: rand(10, 88), y: 10, dx: rand(-0.26, 0.26), dy: rand(0.64, 1.02) };
+  return { x: rand(10, 88), y: 78, dx: rand(-0.26, 0.26), dy: rand(-1.02, -0.64) };
 }
 
 function readSavedPositions() {
@@ -64,7 +64,7 @@ function buildCharacterState(character, savedState, maps, fallbackIndex = 0) {
     dx: typeof savedState?.dx === "number" ? savedState.dx : typeof character.dx === "number" ? character.dx : spawn.dx,
     dy: typeof savedState?.dy === "number" ? savedState.dy : typeof character.dy === "number" ? character.dy : spawn.dy,
     waitMs: typeof savedState?.waitMs === "number" ? savedState.waitMs : 0,
-    moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(5200, 8800),
+    moveCooldownMs: typeof savedState?.moveCooldownMs === "number" ? savedState.moveCooldownMs : rand(7200, 11800),
     currentMap:
       [savedState?.currentMap, character.currentMap].find((candidate) => maps.some((map) => String(map.id) === String(candidate))) ||
       getStableDefaultMapId(character, maps, fallbackIndex) ||
@@ -269,53 +269,36 @@ function matchesActiveCharacter(candidate, activeCharacter) {
 function stabilizeCharacterRows(rows, activeCharacter, maps) {
   const base = dedupeCharacters(rows || []);
   if (!activeCharacter) return base;
-  const matched = [];
   const others = [];
+  let merged = null;
   base.forEach((row) => {
-    if (matchesActiveCharacter(row, activeCharacter)) matched.push(row);
-    else others.push(row);
+    if (matchesActiveCharacter(row, activeCharacter)) {
+      merged = merged ? { ...merged, ...row } : { ...row };
+      return;
+    }
+    others.push(row);
   });
-  if (matched.length <= 1) return base;
-
-  const preferred = matched.find((row) => String(row?.currentMap || "") === String(activeCharacter?.currentMap || ""))
-    || matched.find((row) => typeof row?.x === "number" && typeof row?.y === "number")
-    || matched[matched.length - 1];
-
-  const merged = matched.reduce((acc, row) => ({
-    ...acc,
-    ...row,
-    id: row?.id ?? acc?.id,
-    ownerId: row?.ownerId || acc?.ownerId || "",
-    name: row?.name || acc?.name || "",
-    currentMap: row?.currentMap || acc?.currentMap || "",
-    image: row?.image || acc?.image || "",
-    profileImage: row?.profileImage || acc?.profileImage || "",
-    mainImage: row?.mainImage || acc?.mainImage || "",
-    cardImage: row?.cardImage || acc?.cardImage || "",
-    investigationImage: row?.investigationImage || acc?.investigationImage || "",
-    spriteImage: row?.spriteImage || acc?.spriteImage || "",
-    x: typeof row?.x === "number" ? row.x : acc?.x,
-    y: typeof row?.y === "number" ? row.y : acc?.y,
-    dx: typeof row?.dx === "number" ? row.dx : acc?.dx,
-    dy: typeof row?.dy === "number" ? row.dy : acc?.dy,
-    waitMs: typeof row?.waitMs === "number" ? row.waitMs : acc?.waitMs,
-    moveCooldownMs: typeof row?.moveCooldownMs === "number" ? row.moveCooldownMs : acc?.moveCooldownMs,
-  }), preferred || matched[0]);
-
+  const saved = findStateByAliases(readSavedPositions(), activeCharacter) || null;
+  const source = merged || activeCharacter;
   const normalized = buildCharacterState({
-    ...merged,
-    id: activeCharacter?.id ?? merged?.id,
-    ownerId: activeCharacter?.ownerId || merged?.ownerId || "",
-    name: activeCharacter?.name || merged?.name || "",
-    image: merged?.image || activeCharacter?.image || "",
-    profileImage: merged?.profileImage || activeCharacter?.profileImage || merged?.image || "",
-    mainImage: merged?.mainImage || activeCharacter?.mainImage || merged?.profileImage || merged?.image || "",
-    cardImage: merged?.cardImage || merged?.mainImage || merged?.profileImage || merged?.image || "",
-    investigationImage: merged?.investigationImage || activeCharacter?.investigationImage || merged?.mainImage || merged?.profileImage || merged?.image || "",
-    spriteImage: merged?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || merged?.investigationImage || merged?.mainImage || merged?.profileImage || merged?.image || "",
-    currentMap: merged?.currentMap || activeCharacter?.currentMap || "",
-  }, merged, maps, 0);
-
+    ...source,
+    id: activeCharacter?.id ?? source?.id,
+    ownerId: activeCharacter?.ownerId || source?.ownerId || "",
+    name: activeCharacter?.name || source?.name || "",
+    image: source?.image || activeCharacter?.image || "",
+    profileImage: source?.profileImage || activeCharacter?.profileImage || source?.image || "",
+    mainImage: source?.mainImage || activeCharacter?.mainImage || source?.profileImage || source?.image || "",
+    cardImage: source?.cardImage || source?.mainImage || source?.profileImage || source?.image || "",
+    investigationImage: source?.investigationImage || activeCharacter?.investigationImage || source?.mainImage || source?.profileImage || source?.image || "",
+    spriteImage: source?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || source?.investigationImage || source?.mainImage || source?.profileImage || source?.image || "",
+    currentMap: saved?.currentMap || source?.currentMap || activeCharacter?.currentMap || "",
+    x: typeof saved?.x === "number" ? saved.x : source?.x,
+    y: typeof saved?.y === "number" ? saved.y : source?.y,
+    dx: typeof saved?.dx === "number" ? saved.dx : source?.dx,
+    dy: typeof saved?.dy === "number" ? saved.dy : source?.dy,
+    waitMs: typeof saved?.waitMs === "number" ? saved.waitMs : source?.waitMs,
+    moveCooldownMs: typeof saved?.moveCooldownMs === "number" ? saved.moveCooldownMs : source?.moveCooldownMs,
+  }, saved || source, maps, 0);
   return dedupeCharacters([...others, normalized]);
 }
 
@@ -345,48 +328,45 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   const spriteImage = getSpriteImage(character);
   if (!spriteImage) return null;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
-  const tintOpacity = Math.max(0, Math.min(0.82, corrosion / 100));
+  const tintOpacity = Math.max(0, Math.min(0.9, corrosion / 100));
+  const maskImage = `url(${spriteImage})`;
   return (
-    <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", textAlign: "center", cursor: "pointer", zIndex: 4 }}>
+    <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto" }}>
       {quote?.text ? (
-        <div style={{ marginBottom: "10px", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(244,251,255,0.98) 0%, rgba(221,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.34)", boxShadow: "0 10px 26px rgba(37,99,235,0.14)", position: "relative", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
+        <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translateX(-50%)", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
-          <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(221,241,255,0.98) 0%, rgba(201,231,255,0.98) 100%)", borderRight: "1px solid rgba(91,170,224,0.24)", borderBottom: "1px solid rgba(91,170,224,0.24)" }} />
+          <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(225,241,255,0.98) 0%, rgba(206,233,255,0.98) 100%)", borderRight: "1px solid rgba(91,170,224,0.22)", borderBottom: "1px solid rgba(91,170,224,0.22)" }} />
         </div>
       ) : null}
-      <div style={{ fontSize: "16px", fontWeight: 900, marginBottom: "6px", color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
-      <div style={{ width: "132px", height: "132px", margin: "0 auto", transform: moving ? `translate3d(0,0,0) rotate(${character.dx >= 0 ? 1.2 : -1.2}deg)` : "translate3d(0,0,0) rotate(0deg)", transition: "transform 0.22s ease-out", willChange: "transform", position: "relative", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
-        {spriteImage ? (
-          <>
-            <img
-              src={spriteImage}
-              alt=""
-              loading="eager"
-              decoding="async"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                position: "absolute",
-                inset: 0,
-                zIndex: 1,
-                filter: `saturate(${1 + tintOpacity * 0.45}) hue-rotate(${-corrosion * 0.35}deg)`,
-              }}
-            />
-            <div
-              aria-hidden
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 2,
-                opacity: Math.max(0, tintOpacity * 0.35),
-                pointerEvents: "none",
-                borderRadius: "50%",
-                background: "radial-gradient(circle at 50% 72%, rgba(255,78,78,0.38), rgba(120,0,0,0.18) 55%, rgba(120,0,0,0) 72%)",
-              }}
-            />
-          </>
-        ) : null}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 138, fontSize: "16px", fontWeight: 900, color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
+      <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translateX(-50%) ${moving ? `rotate(${character.dx >= 0 ? 0.32 : -0.32}deg)` : "rotate(0deg)"}`, transition: "transform 0.42s ease-out", willChange: "transform", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
+        <img
+          src={spriteImage}
+          alt=""
+          loading="eager"
+          decoding="async"
+          style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
+        />
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 2,
+            opacity: Math.max(0, tintOpacity * 0.82),
+            pointerEvents: "none",
+            background: "linear-gradient(0deg, rgba(239,68,68,0.96) 0%, rgba(239,68,68,0.76) 22%, rgba(239,68,68,0.42) 42%, rgba(239,68,68,0.14) 60%, rgba(239,68,68,0) 78%)",
+            WebkitMaskImage: maskImage,
+            WebkitMaskRepeat: "no-repeat",
+            WebkitMaskPosition: "center",
+            WebkitMaskSize: "contain",
+            maskImage: maskImage,
+            maskRepeat: "no-repeat",
+            maskPosition: "center",
+            maskSize: "contain",
+            mixBlendMode: "multiply",
+          }}
+        />
       </div>
     </div>
   );
@@ -544,35 +524,35 @@ export default function SDPage({ activeCharacter, design, theme }) {
           if (moveCooldownMs <= 0) {
             const mapDef = maps.find((map) => String(map.id) === String(currentMap)) || null;
             const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((map) => String(map.id) === String(nextId)));
-            const wantsPause = Math.random() < 0.24;
-            const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.22;
+            const wantsPause = Math.random() < 0.34;
+            const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.12;
             if (wantsPause) {
-              waitMs = rand(1800, 3200);
-              dx *= 0.28;
-              dy *= 0.28;
-              moveCooldownMs = rand(2600, 4200);
+              waitMs = rand(3400, 6200);
+              dx *= 0.12;
+              dy *= 0.12;
+              moveCooldownMs = rand(7800, 12400);
             } else if (wantsMapChange) {
               const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
               if (dir === "left") {
-                dx = -rand(3.8, 5.6);
-                dy = rand(-1.8, 1.8);
+                dx = -rand(0.78, 1.16);
+                dy = rand(-0.34, 0.34);
               } else if (dir === "right") {
-                dx = rand(3.8, 5.6);
-                dy = rand(-1.8, 1.8);
+                dx = rand(0.78, 1.16);
+                dy = rand(-0.34, 0.34);
               } else if (dir === "up") {
-                dx = rand(-2.2, 2.2);
-                dy = -rand(3.6, 5.1);
+                dx = rand(-0.22, 0.22);
+                dy = -rand(0.74, 1.08);
               } else {
-                dx = rand(-2.2, 2.2);
-                dy = rand(3.6, 5.1);
+                dx = rand(-0.22, 0.22);
+                dy = rand(0.74, 1.08);
               }
-              moveCooldownMs = rand(2600, 4200);
+              moveCooldownMs = rand(7600, 12200);
             } else {
-              dx = rand(-3.8, 3.8);
-              dy = rand(-2.4, 2.4);
-              if (Math.abs(dx) < 1.1) dx = dx >= 0 ? 1.1 : -1.1;
-              if (Math.abs(dy) < 0.6) dy = dy >= 0 ? 0.6 : -0.6;
-              moveCooldownMs = rand(2600, 4600);
+              dx = rand(-0.72, 0.72);
+              dy = rand(-0.42, 0.42);
+              if (Math.abs(dx) < 0.22) dx = dx >= 0 ? 0.22 : -0.22;
+              if (Math.abs(dy) < 0.08) dy = dy >= 0 ? 0.08 : -0.08;
+              moveCooldownMs = rand(8200, 13800);
             }
           }
 
@@ -586,9 +566,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 91.2;
               ny = clamp(ny, 10, 76);
-              dx = -Math.max(0.3, Math.abs(dx || rand(0.4, 0.9)));
-              dy = clamp(dy || rand(-0.5, 0.5), -0.9, 0.9);
-              moveCooldownMs = rand(2600, 4200);
+              dx = -Math.max(0.18, Math.abs(dx || rand(0.22, 0.38)));
+              dy = clamp(dy || rand(-0.14, 0.14), -0.24, 0.24);
+              moveCooldownMs = rand(7600, 12200);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -599,9 +579,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = 8.8;
               ny = clamp(ny, 10, 76);
-              dx = Math.max(0.3, Math.abs(dx || rand(0.4, 0.9)));
-              dy = clamp(dy || rand(-0.5, 0.5), -0.9, 0.9);
-              moveCooldownMs = rand(2600, 4200);
+              dx = Math.max(0.18, Math.abs(dx || rand(0.22, 0.38)));
+              dy = clamp(dy || rand(-0.14, 0.14), -0.24, 0.24);
+              moveCooldownMs = rand(7600, 12200);
             } else {
               dx *= -1;
               nx = clamp(x + dx * speedFactor, 4, 92);
@@ -613,9 +593,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 77.2;
-              dx = clamp(dx || rand(-0.5, 0.5), -1.1, 1.1);
-              dy = -Math.max(0.3, Math.abs(dy || rand(0.4, 0.9)));
-              moveCooldownMs = rand(2600, 4200);
+              dx = clamp(dx || rand(-0.14, 0.14), -0.24, 0.24);
+              dy = -Math.max(0.18, Math.abs(dy || rand(0.22, 0.38)));
+              moveCooldownMs = rand(7600, 12200);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -626,9 +606,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
               currentMap = nextMap;
               nx = clamp(nx, 8, 92);
               ny = 10.8;
-              dx = clamp(dx || rand(-0.5, 0.5), -1.1, 1.1);
-              dy = Math.max(0.3, Math.abs(dy || rand(0.4, 0.9)));
-              moveCooldownMs = rand(2600, 4200);
+              dx = clamp(dx || rand(-0.14, 0.14), -0.24, 0.24);
+              dy = Math.max(0.18, Math.abs(dy || rand(0.22, 0.38)));
+              moveCooldownMs = rand(7600, 12200);
             } else {
               dy *= -1;
               ny = clamp(y + dy * speedFactor, 8, 78);
@@ -662,7 +642,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     const quoteTimer = setInterval(() => {
       const now = Date.now();
-      const visible = stabilizeCharacterRows(charactersRef.current || [], activeCharacter, maps)
+      const visible = dedupeCharacters(charactersRef.current || [])
         .filter((character) => String(character?.currentMap || maps[0]?.id || "") === String(activeMapRef.current || ""));
 
       setQuotes((prev) => {
@@ -674,7 +654,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
         const visibleKeys = visible.map((character) => getCharacterKey(character)).filter(Boolean);
         const existingVisibleKeys = visibleKeys.filter((key) => next[key]);
-        if (existingVisibleKeys.length > 0 && Math.random() < 0.28) {
+        if (existingVisibleKeys.length > 0 && Math.random() < 0.08) {
           const removeKey = existingVisibleKeys[Math.floor(Math.random() * existingVisibleKeys.length)];
           delete next[removeKey];
         }
@@ -683,16 +663,16 @@ export default function SDPage({ activeCharacter, design, theme }) {
         const visibleQuoteCount = visibleKeys.filter((key) => next[key]).length;
         const candidates = visible.filter((character) => getCharacterQuotePool(character).length > 0 && !next[getCharacterKey(character)]);
 
-        if (candidates.length > 0 && visibleQuoteCount < maxVisible && (visibleQuoteCount === 0 ? Math.random() < 0.9 : Math.random() < 0.58)) {
+        if (candidates.length > 0 && visibleQuoteCount < maxVisible && (visibleQuoteCount === 0 ? Math.random() < 0.28 : Math.random() < 0.12)) {
           const picked = candidates[Math.floor(Math.random() * candidates.length)];
           const pool = getCharacterQuotePool(picked);
           const text = pool[Math.floor(Math.random() * pool.length)];
-          const hold = Math.max(1800, Math.min(4600, 2100 + String(text || "").length * 55));
+          const hold = Math.max(5200, Math.min(10800, 5600 + String(text || "").length * 96));
           next[getCharacterKey(picked)] = { text, expiresAt: now + hold };
         }
         return next;
       });
-    }, 1200);
+    }, 4300);
     return () => clearInterval(quoteTimer);
   }, [activeCharacter, maps]);
 
@@ -740,14 +720,19 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const mapCharacters = useMemo(() => {
     const targetMapId = String(currentMap?.id || "");
     const seen = new Set();
+    let activeShown = false;
     return characters.filter((character) => {
       if (String(character?.currentMap || "") !== targetMapId) return false;
       const key = getCharacterKey(character);
       if (!key || seen.has(key)) return false;
+      if (activeCharacter && matchesActiveCharacter(character, activeCharacter)) {
+        if (activeShown) return false;
+        activeShown = true;
+      }
       seen.add(key);
       return true;
     });
-  }, [characters, currentMap]);
+  }, [characters, currentMap, activeCharacter]);
   const availableDirs = currentMap?.neighbors || {};
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);

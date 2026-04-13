@@ -135,7 +135,7 @@ function timeText(item) {
 
 function getRepresentativeImage(items = []) {
   const rows = Array.isArray(items) ? items : [];
-  return rows.find((item) => String(item?.listImage || "").trim())?.listImage || "";
+  return rows.find((item) => String(item?.entryImage || item?.listImage || "").trim())?.entryImage || rows.find((item) => String(item?.entryImage || item?.listImage || "").trim())?.listImage || "";
 }
 
 function formatCorrosionRange(items = []) {
@@ -152,12 +152,12 @@ function entryLabelBlock(english, korean) {
   return (
     <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
       <div className="section-eyebrow" style={{ color: "#243b53", marginBottom: 0, lineHeight: 1 }}>{english}</div>
-      <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{korean}</h3>
+      <h3 style={{ marginTop: 4, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{korean}</h3>
     </div>
   );
 }
 
-function CardImageEditorModal({ item, value, saving, onChange, onClose, onSave, theme }) {
+function CardImageEditorModal({ item, value, entryValue, saving, onChange, onEntryChange, onClose, onSave, theme }) {
   if (!item) return null;
   return (
     <div
@@ -201,20 +201,39 @@ function CardImageEditorModal({ item, value, saving, onChange, onClose, onSave, 
         </div>
 
         <div style={{ display: "grid", gap: 16 }}>
-          <ImageDropInput
-            label="카드 이미지"
-            value={value}
-            onChange={onChange}
-            description="조사 카드에 표시할 이미지를 넣어줘"
-            previewHeight={260}
-          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <ImageDropInput
+              label="목록 카드 이미지"
+              value={value}
+              onChange={onChange}
+              description="단체조사 목록에 보이는 개별 조사 카드 이미지"
+              previewHeight={240}
+            />
+            <ImageDropInput
+              label="입구 카드 이미지"
+              value={entryValue}
+              onChange={onEntryChange}
+              description="처음 보이는 일일조사/단체조사 큰 카드 이미지"
+              previewHeight={240}
+            />
+          </div>
 
-          <div style={{ borderRadius: 24, overflow: "hidden", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, position: "relative", minHeight: 240, background: "#edf7ff" }}>
-            <CardImageLayer src={value} alt={item.title} />
-            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.72) 30%, rgba(255,255,255,0.12) 100%)" }} />
-            <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 6 }}>
-              <div className="section-eyebrow" style={{ color: "#243b53", lineHeight: 1 }}>{item.type === "daily" ? "DAILY" : "GROUP"}</div>
-              <h3 style={{ marginTop: -2, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{item.type === "daily" ? "일일조사" : "단체조사"}</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={{ borderRadius: 24, overflow: "hidden", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, position: "relative", minHeight: 240, background: "#edf7ff" }}>
+              <CardImageLayer src={entryValue || value} alt={item.title} />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.76) 34%, rgba(255,255,255,0.16) 100%)" }} />
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 6 }}>
+                <div className="section-eyebrow" style={{ color: "#243b53", lineHeight: 1 }}>{item.type === "daily" ? "DAILY" : "GROUP"}</div>
+                <h3 style={{ marginTop: 4, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{item.type === "daily" ? "일일조사" : "단체조사"}</h3>
+              </div>
+            </div>
+            <div style={{ borderRadius: 24, overflow: "hidden", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, position: "relative", minHeight: 240, background: "#edf7ff" }}>
+              <CardImageLayer src={value} alt={item.title} />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.76) 34%, rgba(255,255,255,0.16) 100%)" }} />
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 6 }}>
+                <div className="section-eyebrow" style={{ color: "#243b53", lineHeight: 1 }}>{item.type === "daily" ? "DAILY" : "GROUP"}</div>
+                <h3 style={{ marginTop: 4, marginBottom: 0, color: "#17324a", lineHeight: 1.04 }}>{item.type === "daily" ? "일일조사" : "단체조사"}</h3>
+              </div>
             </div>
           </div>
 
@@ -236,6 +255,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
   const [completedDetail, setCompletedDetail] = useState(null);
   const [editingCardItem, setEditingCardItem] = useState(null);
   const [cardImageDraft, setCardImageDraft] = useState("");
+  const [entryCardImageDraft, setEntryCardImageDraft] = useState("");
   const [savingCardImage, setSavingCardImage] = useState(false);
 
   useEffect(() => {
@@ -330,6 +350,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
     if (!item) return;
     setEditingCardItem(item);
     setCardImageDraft(String(item.listImage || ""));
+    setEntryCardImageDraft(String(item.entryImage || item.listImage || ""));
   };
 
   const saveCardImage = async () => {
@@ -339,16 +360,17 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
       const res = await fetch(buildApiUrl("/admin/investigationCardImage"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ investigationId: editingCardItem.id, listImage: cardImageDraft || "" }),
+        body: JSON.stringify({ investigationId: editingCardItem.id, listImage: cardImageDraft || "", entryImage: entryCardImageDraft || cardImageDraft || "" }),
       });
       const data = await res.json();
       if (!data.success) {
         alert(data.message || "카드 이미지 저장에 실패했습니다.");
         return;
       }
-      setInvestigations((prev) => prev.map((item) => item.id === editingCardItem.id ? { ...item, ...(data.item || {}), listImage: data.item?.listImage || cardImageDraft || "" } : item));
+      setInvestigations((prev) => prev.map((item) => item.id === editingCardItem.id ? { ...item, ...(data.item || {}), listImage: data.item?.listImage || cardImageDraft || "", entryImage: data.item?.entryImage || entryCardImageDraft || cardImageDraft || "" } : item));
       setEditingCardItem(null);
       setCardImageDraft("");
+      setEntryCardImageDraft("");
     } catch {
       alert("카드 이미지 저장에 실패했습니다.");
     } finally {
@@ -361,12 +383,15 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
       <CardImageEditorModal
         item={editingCardItem}
         value={cardImageDraft}
+        entryValue={entryCardImageDraft}
         saving={savingCardImage}
         onChange={setCardImageDraft}
+        onEntryChange={setEntryCardImageDraft}
         onClose={() => {
           if (savingCardImage) return;
           setEditingCardItem(null);
           setCardImageDraft("");
+          setEntryCardImageDraft("");
         }}
         onSave={saveCardImage}
         theme={theme}
@@ -430,7 +455,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
 
             <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: theme?.panelStrong || "#fff" }}>
               <CardImageLayer src={groupEntryImage} alt="단체조사" />
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.14) 100%)" }} />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.78) 32%, rgba(255,255,255,0.16) 100%)" }} />
               {isAdmin && editableGroup ? (
                 <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => openCardImageEditor(editableGroup, event)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openCardImageEditor(editableGroup, event); }}>수정</span>
               ) : null}
@@ -451,7 +476,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                 <div className="section-eyebrow">GROUP LIST</div>
                 <h3 style={{ marginTop: 10, marginBottom: 0 }}>단체조사 목록</h3>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setView("entry")}>뒤로가기</button>
+              <button type="button" onClick={() => setView("entry")} style={{ padding: "11px 16px", borderRadius: 999, border: "1px solid rgba(191,219,254,0.22)", background: "linear-gradient(135deg, rgba(255,255,255,0.96), rgba(219,234,254,0.92))", color: "#17324a", fontWeight: 900, boxShadow: "0 10px 20px rgba(2,6,23,0.10)", cursor: "pointer" }}>조사로 돌아가기</button>
             </div>
             <div style={{ display: "grid", gap: 14 }}>
               {groups.map((item) => {
@@ -491,7 +516,7 @@ export default function InvestigationList({ onEnter, onSpectate, activeCharacter
                   {completedGroups.map((item) => (
                     <div key={item.id} style={{ ...card(theme, true), position: "relative", overflow: "hidden", background: "rgba(203,213,225,0.72)", filter: "grayscale(0.15)" }}>
                       <CardImageLayer src={item.listImage} alt={item.title} grayscale />
-                      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(244,244,245,0.96) 0%, rgba(244,244,245,0.82) 36%, rgba(244,244,245,0.38) 72%, rgba(244,244,245,0.14) 100%)" }} />
+                      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(244,244,245,0.96) 0%, rgba(244,244,245,0.82) 36%, rgba(244,244,245,0.38) 72%, rgba(244,244,245,0.14) 100%)" }} />
                       {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => openCardImageEditor(item, event)}>수정</button> : null}
                       <div style={{ position: "relative", zIndex: 1 }}>
                         <div className="section-eyebrow">COMPLETE</div>

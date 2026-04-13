@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import DesignPageFrame from "./DesignPageFrame";
 import ImageDropInput from "./ImageDropInput";
 import AudioSourceInput from "./AudioSourceInput";
+import { buildApiUrl } from "./api";
 import ProfileRichEditor from "./ProfileRichEditor";
 import { renderProfileRichContent } from "./profileRichText";
 import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
@@ -175,7 +176,7 @@ function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {} }) 
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{ fontWeight: 800, color: "#16324a" }}>프로필 카드 미리보기</div>
-      <div onPointerDown={startDrag} style={{ width: 112, maxWidth: "100%", cursor: image ? "grab" : "default", marginLeft: 56 }}>
+      <div onPointerDown={startDrag} style={{ width: "100%", minHeight: 420, cursor: image ? "grab" : "default", margin: "0 auto", display: "grid", alignItems: "stretch" }}>
         <ProfileCard character={{ name: previewCharacter?.name || "미리보기", rank: previewCharacter?.rank || "대원", oneLine: previewCharacter?.oneLine || "카드 미리보기", mainImage: image, mainImageFrame: safeFrame }} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -275,7 +276,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const loadCharacterDetail = async (characterId) => {
     if (!characterId) return null;
     try {
-      const res = await fetch(`http://localhost:3001/character-public/${characterId}`);
+      const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
       const data = await res.json();
       return data?.character || null;
     } catch {
@@ -286,7 +287,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const loadMine = async () => {
     if (!ownerUser?.id) return;
     try {
-      const res = await fetch(`http://localhost:3001/characters-public/${ownerUser.id}`);
+      const res = await fetch(buildApiUrl(`/characters-public/${ownerUser.id}`));
       const data = await res.json();
       setAllMyCharacters(Array.isArray(data) ? data : []);
     } catch {
@@ -296,7 +297,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
   const loadAllCharacters = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/characters-public`);
+      const res = await fetch(buildApiUrl(`/characters-public`));
       const data = await res.json();
       setAllCharacters(Array.isArray(data) ? data : []);
     } catch {
@@ -306,7 +307,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
   const loadMail = async () => {
     if (!currentUser?.id) return;
-    const res = await fetch(`http://localhost:3001/mails/${currentUser.id}?t=${Date.now()}`);
+    const res = await fetch(buildApiUrl(`/mails/${currentUser.id}?t=${Date.now()}`));
     const data = await res.json();
     setMailList(Array.isArray(data) ? data : []);
     localStorage.setItem(`plc-mail-seen-${currentUser.id}`, "1");
@@ -321,7 +322,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   }, []);
 
   useEffect(() => {
-    fetch(`http://localhost:3001/shopItems`)
+    fetch(buildApiUrl(`/shopItems`))
       .then((res) => res.json())
       .then((data) => setCatalog(Array.isArray(data) ? data : []))
       .catch(() => setCatalog([]));
@@ -432,7 +433,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   };
 
   const saveCharacterPatch = async (patch) => {
-    const res = await fetch("http://localhost:3001/updateCharacter", {
+    const res = await fetch(buildApiUrl(`/updateCharacter`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ charId: currentUser.id, ...patch }),
@@ -450,7 +451,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const submitRelationRequest = async () => {
     const target = receiverOptions.find((character) => String(character.id) === String(relationTargetId));
     if (!currentUser?.id || !target?.id) return alert("대상 캐릭터를 선택해주세요.");
-    const res = await fetch("http://localhost:3001/relationRequests", {
+    const res = await fetch(buildApiUrl(`/relationRequests`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -531,7 +532,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     }
     if (Number(coinToSend || 0) > Number(currentUser.coins || 0)) return alert("코인이 부족합니다.");
     const receiver = receiverOptions.find((v) => String(v.id) === String(receiverId)) || {};
-    const res = await fetch("http://localhost:3001/mails/send", {
+    const res = await fetch(buildApiUrl(`/mails/send`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -581,13 +582,13 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const openMail = async (mail) => {
     setSelectedMail(mail);
     if (!mail.read) {
-      await fetch(`http://localhost:3001/mails/${mail.id}/read`, { method: "POST" });
+      await fetch(buildApiUrl(`/mails/${mail.id}/read`), { method: "POST" });
       await loadMail();
     }
   };
 
   const receiveMail = async (mail) => {
-    const res = await fetch(`http://localhost:3001/mails/${mail.id}/receive`, { method: "POST" });
+    const res = await fetch(buildApiUrl(`/mails/${mail.id}/receive`), { method: "POST" });
     const data = await res.json();
     if (!data.success) return alert(data.message || "우편 수령 실패");
     if (data.character) onUpdateUser(data.character);
@@ -762,7 +763,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
                     <ImageDropInput label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={68} previewFit="contain" compact />
                     <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact helperText="프로필 화면에 들어가면 이 BGM이 자동으로 재생돼." />
                   </div>
-                  <div style={{ display: "grid", gap: 10, justifyItems: "start", width: "100%", maxWidth: 180, overflow: "hidden", marginLeft: 52 }}>
+                  <div style={{ display: "grid", gap: 10, justifyItems: "stretch", width: "100%", overflow: "hidden", margin: "0 auto" }}>
                     <FullBodyFrameEditor image={profileEdit.mainImage} frame={profileEdit.mainImageFrame} previewCharacter={{ name: profileEdit.name, rank: profileEdit.rank, oneLine: profileEdit.oneLine }} onChange={(frame) => setProfileEdit((prev) => ({ ...prev, mainImageFrame: frame }))} />
                   </div>
                 </div>

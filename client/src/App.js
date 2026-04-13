@@ -20,7 +20,7 @@ import DesignPageFrame from "./DesignPageFrame";
 import renderElement from "./renderElement";
 import ShopPage from "./ShopPage";
 import { clearActiveCharacterStorage, readActiveCharacter, saveActiveCharacter } from "./storageHelpers";
-import socket from "./socket";
+import socket, { ensureSocketConnected, ensureSocketDisconnected } from "./socket";
 import { applyDomOverrides } from "./designDomUtils";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
 import { buildApiUrl } from "./api";
@@ -312,6 +312,7 @@ function App() {
   const [spectatorMode, setSpectatorMode] = useState(() => safeReadJSON("plc-spectator-mode", false));
   const [builderEditId, setBuilderEditId] = useState(() => safeReadJSON("plc-builder-edit-id", ""));
   const [audioOverride, setAudioOverride] = useState(null);
+  const [loginScreenKey, setLoginScreenKey] = useState(0);
   const [audioMuted, setAudioMuted] = useState(() => readStoredMuted());
   const [audioVolume, setAudioVolume] = useState(() => readStoredVolume());
   const audioRef = useRef(null);
@@ -601,6 +602,7 @@ function App() {
       const now = Date.now();
       if (!force && now - presenceStampRef.current < 12000) return;
       presenceStampRef.current = now;
+      ensureSocketConnected();
       socket.emit("register", {
         id: user.id,
         ownerId: activeCharacter?.ownerId || user.id,
@@ -739,7 +741,9 @@ function App() {
   };
 
   const logout = () => {
-    socket.emit("unregister");
+    try { socket.emit("unregister"); } catch {}
+    ensureSocketDisconnected();
+    setLoginScreenKey((prev) => prev + 1);
     setUser(null);
     applyActiveCharacter(null);
     setSelectedInvestigationId(null);
@@ -792,7 +796,7 @@ function App() {
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.MY)} design={designConfig} theme={theme} pageKey="shop" />;
       break;
     case PAGE.MY:
-      content = !user ? <Login setUser={handleLogin} design={designConfig} theme={theme} /> : isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : activeCharacter ? <MyPage currentUser={activeCharacter} ownerUser={user} onUpdateUser={(character) => { applyActiveCharacter(character); reloadUnread(character); }} design={designConfig} theme={theme} /> : <CharacterSelect user={user} setCharacter={(character) => { applyActiveCharacter(character); reloadUnread(character); setActivePage(PAGE.MY); }} goBack={() => setActivePage(PAGE.HOME)} activeCharacter={activeCharacter} design={designConfig} theme={theme} />;
+      content = !user ? <Login key={loginScreenKey} setUser={handleLogin} design={designConfig} theme={theme} /> : isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : activeCharacter ? <MyPage currentUser={activeCharacter} ownerUser={user} onUpdateUser={(character) => { applyActiveCharacter(character); reloadUnread(character); }} design={designConfig} theme={theme} /> : <CharacterSelect user={user} setCharacter={(character) => { applyActiveCharacter(character); reloadUnread(character); setActivePage(PAGE.MY); }} goBack={() => setActivePage(PAGE.HOME)} activeCharacter={activeCharacter} design={designConfig} theme={theme} />;
       break;
     case PAGE.ADMIN:
       content = isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : null;

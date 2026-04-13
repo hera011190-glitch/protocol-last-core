@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import socket from "./socket";
+import socket, { ensureSocketConnected } from "./socket";
 import { apiFetch } from "./api";
 import { getMaxHpFromStat } from "./hpUtils";
 
@@ -144,6 +144,7 @@ function InvestigationLobby({
       setSelectedLeaders((prev) => (Array.isArray(payload.leaders) && (payload.leaders.length > 0 || prev.length === 0) ? payload.leaders : prev));
     };
 
+    ensureSocketConnected();
     socket.on("users", handleUsers);
     socket.on("onlineAccounts", handleUsers);
     socket.on("investigationStarted", handleStarted);

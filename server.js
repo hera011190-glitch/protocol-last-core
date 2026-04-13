@@ -403,6 +403,7 @@ function buildInvestigation(def) {
     title: def.title,
     type: def.type,
     listImage: String(def?.listImage || def?.data?.listImage || ""),
+    entryImage: String(def?.entryImage || def?.data?.entryImage || def?.listImage || def?.data?.listImage || ""),
     entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
     endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
     bgmUrl,
@@ -411,6 +412,7 @@ function buildInvestigation(def) {
       ...def.data,
       backgroundImage: def?.data?.backgroundImage || def?.backgroundImage || "",
       listImage: String(def?.listImage || def?.data?.listImage || ""),
+      entryImage: String(def?.entryImage || def?.data?.entryImage || def?.listImage || def?.data?.listImage || ""),
       entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
       endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
       bgmUrl,
@@ -596,6 +598,7 @@ function getInvestigationSummary(item) {
     title: item.title,
     type: item.type || "group",
     listImage: String(item.listImage || item.data?.listImage || ""),
+    entryImage: String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || ""),
     opened: item.opened,
     hidden: !!item.hidden,
     effectiveOpened,
@@ -632,6 +635,7 @@ function buildInvestigationLobbyState(item) {
     title: item.title,
     type: item.type || "group",
     listImage: String(item.listImage || item.data?.listImage || ""),
+    entryImage: String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || ""),
     opened: !!item.opened,
     hidden: !!item.hidden,
     effectiveOpened: getEffectiveOpened(item),
@@ -1059,6 +1063,8 @@ function applyNodeEntryEffects(item, node) {
     if (node.npcScene.name && !item.foundNPCs.includes(node.npcScene.name)) item.foundNPCs.push(node.npcScene.name);
     setEventBanner(item, `${node.npcScene.name || "NPC"} 등장`, "normal", 2200);
     addSharedLog(item, `[NPC 조우] ${node.npcScene.name || "NPC"}와 대화를 시작한다.`);
+    const firstNpcLine = Array.isArray(node.npcScene.lines) ? node.npcScene.lines[0] : null;
+    if (firstNpcLine?.text) addSharedLog(item, `[NPC] ${node.npcScene.name || "NPC"}: ${firstNpcLine.text}`);
   }
 }
 
@@ -2336,16 +2342,19 @@ app.post("/advanceNpcScene", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item || !item.activeNpcScene?.lines?.length) return res.json({ success: true, closed: true });
   const current = item.activeNpcScene.lines[item.npcLineIndex] || {};
+  const npcName = item.activeNpcScene?.name || "NPC";
   const rawOptions = Array.isArray(current.options) ? current.options.filter(Boolean) : [];
   const visibleOptions = rawOptions.filter((option) => String(option?.text || "").trim());
   if (visibleOptions.length > 0) {
     return res.json({ success: false, message: "선택지를 골라야 해." });
   }
   if (rawOptions.length > 0) {
+    if (current?.text) addSharedLog(item, `[NPC] ${npcName}: ${current.text}`);
     applyNpcOptionOutcome(item, rawOptions[0]);
     emitInvestigationState(investigationId);
     return res.json({ success: true });
   }
+  if (current?.text) addSharedLog(item, `[NPC] ${npcName}: ${current.text}`);
   if (item.npcLineIndex >= item.activeNpcScene.lines.length - 1) {
     markNpcSceneCompleted(item, item.currentNodeId);
     item.activeNpcScene = null;
@@ -2362,9 +2371,12 @@ app.post("/chooseNpcOption", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item || !item.activeNpcScene?.lines?.length) return res.json({ success: true, closed: true });
   const current = item.activeNpcScene.lines[item.npcLineIndex] || {};
+  const npcName = item.activeNpcScene?.name || "NPC";
   const option = Array.isArray(current.options) ? current.options[Number(optionIndex)] : null;
   if (!option) return res.json({ success: false, message: "선택지를 찾을 수 없습니다." });
 
+  if (current?.text) addSharedLog(item, `[NPC] ${npcName}: ${current.text}`);
+  if (option?.text) addSharedLog(item, `[선택] ${option.text}`);
   applyNpcOptionOutcome(item, option);
 
   emitInvestigationState(investigationId);
@@ -2505,6 +2517,7 @@ function serializeInvestigationForPersistence(item) {
     title: item?.title || templateSource.title || "새 조사",
     type: item?.type || templateSource.type || "group",
     listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
+    entryImage: String(item?.entryImage || item?.data?.entryImage || templateSource?.entryImage || templateSource?.data?.entryImage || item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
     backgroundImage: String(item?.data?.backgroundImage || templateSource?.backgroundImage || templateSource?.data?.backgroundImage || ""),
     bgmUrl: String(item?.bgmUrl || item?.data?.bgmUrl || templateSource?.bgmUrl || templateSource?.data?.bgmUrl || ""),
     bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
@@ -2517,6 +2530,7 @@ function serializeInvestigationForPersistence(item) {
       nodes: clone(item?.data?.nodes || templateSource?.data?.nodes || {}),
       backgroundImage: String(item?.data?.backgroundImage || templateSource?.data?.backgroundImage || templateSource?.backgroundImage || ""),
       listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
+      entryImage: String(item?.entryImage || item?.data?.entryImage || templateSource?.entryImage || templateSource?.data?.entryImage || item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
       bgmUrl: String(item?.bgmUrl || item?.data?.bgmUrl || templateSource?.bgmUrl || templateSource?.data?.bgmUrl || ""),
       bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
       entryCorrosion: Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? templateSource?.entryCorrosion ?? templateSource?.data?.entryCorrosion ?? 0),
@@ -2631,15 +2645,18 @@ app.post("/admin/publishInvestigation", (req, res) => {
 });
 app.post("/admin/investigationCardImage", (req, res) => {
   try {
-    const { investigationId, listImage } = req.body || {};
+    const { investigationId, listImage, entryImage } = req.body || {};
     const item = investigationsDB.find((v) => v.id === investigationId);
     if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
 
-    const nextImage = String(listImage || "");
-    item.listImage = nextImage;
+    const nextListImage = String(listImage || "");
+    const nextEntryImage = String(entryImage || nextListImage || "");
+    item.listImage = nextListImage;
+    item.entryImage = nextEntryImage;
     item.data = {
       ...(item.data || {}),
-      listImage: nextImage,
+      listImage: nextListImage,
+      entryImage: nextEntryImage,
     };
     if (item.originalTemplate) {
       item.originalTemplate = serializeInvestigationForPersistence(item);
@@ -2864,6 +2881,7 @@ function buildPublicInvestigationState(item) {
     title: item.title,
     type: item.type,
     listImage: String(item.listImage || item.data?.listImage || ""),
+    entryImage: String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || ""),
     entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
     endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
     currentNodeId: item.currentNodeId,
@@ -3303,6 +3321,7 @@ app.post("/endInvestigationOnly", (req, res) => {
   const { id, endedBy } = req.body || {};
   const item = investigationsDB.find((v) => v.id === id);
   if (!item) return res.json({ success: false, message: "조사를 찾지 못했어." });
+  if (item.type === "daily") return res.json({ success: false, message: "일일조사는 수동 종료할 수 없어." });
   const safeEndedBy = String(endedBy || "운영자");
   const isLeader = safeEndedBy !== "운영자" && Array.isArray(item.leaders) && item.leaders.includes(safeEndedBy);
   if (safeEndedBy !== "운영자" && !isLeader) {

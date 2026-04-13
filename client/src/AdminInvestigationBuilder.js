@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch } from "./api";
+import { apiFetch, buildApiUrl } from "./api";
 import ImageDropInput from "./ImageDropInput";
 import AudioSourceInput from "./AudioSourceInput";
 
@@ -72,7 +72,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
   useEffect(() => { loadSaved().catch(console.error); }, []);
   useEffect(() => {
-    fetch(`http://localhost:3001/shopItems`)
+    apiFetch(`/shopItems?t=${Date.now()}`)
       .then((res) => res.json())
       .then((data) => setCatalog(Array.isArray(data) ? data : []))
       .catch(() => setCatalog([]));

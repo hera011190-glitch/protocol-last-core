@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CharacterProfile from "./CharacterProfile";
 import DesignPageFrame from "./DesignPageFrame";
-import socket from "./socket";
+import socket, { ensureSocketConnected } from "./socket";
 import { buildApiUrl } from "./api";
 import { ProfileCard } from "./profileCardShared";
 
@@ -119,6 +119,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
         .filter(([, seenAt]) => now - Number(seenAt || 0) < 30000)
         .map(([key]) => key)
     );
+    ensureSocketConnected();
     socket.emit("register", {
       id: user.id,
       ownerId: activeCharacter?.ownerId || user.id,
@@ -158,6 +159,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
     };
     const handleCharacterUpdated = () => requestLoad(true);
     requestLoad(true);
+    ensureSocketConnected();
     socket.on("users", handleUsers);
     socket.on("onlineAccounts", handleUsers);
     document.addEventListener("visibilitychange", handleVisible);
