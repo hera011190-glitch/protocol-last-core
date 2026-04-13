@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import ImageDropInput from "./ImageDropInput";
 import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
@@ -181,6 +181,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const [completedOpenId, setCompletedOpenId] = useState("");
   const [completedDetail, setCompletedDetail] = useState(null);
   const [imageEditor, setImageEditor] = useState(null);
+  const imagePreviewDragRef = useRef(null);
   const [imageSaving, setImageSaving] = useState(false);
 
   useEffect(() => {
@@ -286,6 +287,41 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
     });
   };
 
+  const updateEditorFrame = (patch) => {
+    setImageEditor((prev) => {
+      if (!prev) return prev;
+      const nextFrame = {
+        scale: Math.max(1, Number(patch?.scale ?? prev.frame?.scale ?? 1) || 1),
+        x: Math.max(-50, Math.min(50, Number(patch?.x ?? prev.frame?.x ?? 0) || 0)),
+        y: Math.max(-50, Math.min(50, Number(patch?.y ?? prev.frame?.y ?? 0) || 0)),
+      };
+      return { ...prev, frame: nextFrame };
+    });
+  };
+
+  const startImagePreviewDrag = (event) => {
+    if (!imageEditor?.imageUrl) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const baseFrame = imageEditor.frame || { scale: 1, x: 0, y: 0 };
+    imagePreviewDragRef.current = { startX, startY, x: Number(baseFrame.x || 0), y: Number(baseFrame.y || 0) };
+    const handleMove = (moveEvent) => {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      updateEditorFrame({
+        x: (imagePreviewDragRef.current?.x || 0) + (dx / 220) * 100,
+        y: (imagePreviewDragRef.current?.y || 0) + (dy / 220) * 100,
+      });
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      imagePreviewDragRef.current = null;
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  };
+
   const saveImageEditor = async () => {
     if (!imageEditor?.id) return;
     setImageSaving(true);
@@ -359,7 +395,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableDaily, "entry"); }}>수정</button>
               ) : null}
               <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <div className="section-eyebrow" style={{ color: "#243b53" }}>DAILY</div>
+                <span className="feature-label">일일조사</span>
                 <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 {dailyLeft}</div>
@@ -388,7 +424,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableGroup, "entry"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); openImageEditor(editableGroup, "entry"); } }}>수정</span>
               ) : null}
               <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <div className="section-eyebrow" style={{ color: "#243b53" }}>GROUP</div>
+                <span className="feature-label">단체조사</span>
                 <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {groups.filter((item) => item.effectiveOpened ?? item.opened).length}개</div>
@@ -418,7 +454,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                     {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => { event.stopPropagation(); openImageEditor(item, "list"); }}>수정</button> : null}
                     <div style={{ position: "relative", zIndex: 1, padding: 20, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", minHeight: 188 }}>
                       <div style={{ maxWidth: "70%" }}>
-                        <div className="section-eyebrow">{disabled ? "INACTIVE" : "GROUP"}</div>
+                        <div className="section-eyebrow">{disabled ? "비활성" : "단체조사"}</div>
                         <h3 style={{ marginTop: 10, marginBottom: 8 }}>{item.title}</h3>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                           <div style={chip(started ? "rgba(30,64,175,0.14)" : disabled ? "rgba(100,116,139,0.14)" : "rgba(20,83,45,0.12)", started ? "#1d4ed8" : disabled ? "#475569" : "#166534")}>{started ? "진행 중" : disabled ? "비활성화" : "대기 중"}</div>
@@ -501,8 +537,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
           <div style={{ width: "min(680px, calc(100vw - 48px))", maxHeight: "calc(100vh - 48px)", overflow: "auto", padding: 22, borderRadius: 24, background: "rgba(255,255,255,0.98)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, boxShadow: theme?.shadow || "0 18px 38px rgba(73,132,170,0.16)", display: "grid", gap: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
               <div>
-                <div className="section-eyebrow">CARD IMAGE</div>
-                <h3 style={{ marginTop: 10, marginBottom: 0 }}>{imageEditor.title} · {imageEditor.mode === "entry" ? "입구 카드 이미지" : "목록 카드 이미지"}</h3>
+                <h3 style={{ marginTop: 0, marginBottom: 0 }}>{imageEditor.title} · {imageEditor.mode === "entry" ? "입구 카드 이미지" : "목록 카드 이미지"}</h3>
               </div>
               <button type="button" className="ghost-button" onClick={() => setImageEditor(null)}>닫기</button>
             </div>
@@ -516,6 +551,27 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
               previewHeight={260}
               previewOverlay={imageEditor.mode === "list" ? <div style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)", width: "100%", height: "100%" }} /> : <div style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)", width: "100%", height: "100%" }} />}
             />
+            <div style={{ display: "grid", gap: 12, padding: 16, borderRadius: 20, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>실제 카드 미리보기</div>
+              <div style={{ display: "grid", placeItems: "center" }}>
+                <div style={{ width: 244, maxWidth: "100%", aspectRatio: "3 / 4", position: "relative", overflow: "hidden", borderRadius: 28, background: "linear-gradient(180deg, rgba(238,248,255,0.98), rgba(210,236,250,0.95))", boxShadow: "0 18px 40px rgba(61,112,148,0.18)" }}>
+                  {imageEditor.image ? <CardImageLayer src={imageEditor.image} version={imageEditor.version || Date.now()} frame={imageEditor.frame || { scale: 1, x: 0, y: 0 }} /> : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: theme?.textSoft || "#6b8aa4", fontWeight: 700 }}>미리보기</div>}
+                  <div style={{ position: "absolute", inset: 0, background: imageEditor.mode === "list" ? "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.58) 34%, rgba(255,255,255,0.18) 72%, rgba(255,255,255,0.05) 100%)" : "linear-gradient(180deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.38) 28%, rgba(255,255,255,0.06) 100%)", pointerEvents: "none" }} />
+                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "18px 18px 20px", pointerEvents: "none" }}>
+                    <div>
+                      <span className="feature-label">{imageEditor.type === "group" ? "단체조사" : "일일조사"}</span>
+                    </div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ fontSize: 26, fontWeight: 900, color: "#16364b", lineHeight: 1.18 }}>{imageEditor.title || "조사 카드"}</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {imageEditor.type === "group" ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{`참여 ${groupPlayers.length}/${groupSettings.maxPlayers}`}</div> : <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{`남은 횟수 ${remainingDailyAttempts}`}</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: theme?.textSoft || "#6b8aa4", textAlign: "center" }}>위 미리보기가 실제 카드에 가까운 화면이야. 드래그와 조절은 바로 위 미리보기에서 계속 할 수 있어.</div>
+            </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <button type="button" className="ghost-button" onClick={() => setImageEditor(null)}>취소</button>
               <button type="button" className="home-primary-button" onClick={saveImageEditor} disabled={imageSaving}>{imageSaving ? "저장 중..." : "저장"}</button>

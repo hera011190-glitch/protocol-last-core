@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import DesignPageFrame from "./DesignPageFrame";
 import ImageDropInput from "./ImageDropInput";
@@ -240,6 +240,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const [relationTargetId, setRelationTargetId] = useState("");
   const [relationName, setRelationName] = useState("");
   const [relationDescription, setRelationDescription] = useState("");
+  const [saveNotice, setSaveNotice] = useState("");
 
   const baseHpStat = getHpStatValue(currentUser?.stats?.hp);
   const effectiveHpStat = baseHpStat + Number(draftDelta.hp || 0);

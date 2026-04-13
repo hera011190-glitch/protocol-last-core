@@ -338,16 +338,17 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
   const maskImage = `url(${spriteImage})`;
+  const tintInset = `${Math.max(0, 100 - tintReveal)}% 0 0 0`;
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto" }}>
       {quote?.text ? (
-        <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translateX(-50%)", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
+        <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translate3d(-50%, 0, 0)", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
           <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(225,241,255,0.98) 0%, rgba(206,233,255,0.98) 100%)", borderRight: "1px solid rgba(91,170,224,0.22)", borderBottom: "1px solid rgba(91,170,224,0.22)" }} />
         </div>
       ) : null}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 138, fontSize: "16px", fontWeight: 900, color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
-      <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translateX(-50%) ${moving ? `rotate(${character.dx >= 0 ? 0.32 : -0.32}deg)` : "rotate(0deg)"}`, transition: "transform 0.42s ease-out", willChange: "transform", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
+      <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translateX(-50%) ${moving ? `rotate(${character.dx >= 0 ? 0.22 : -0.22}deg)` : "rotate(0deg)"}`, transition: "transform 0.28s linear", willChange: "transform", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         <img
           src={spriteImage}
           alt=""
@@ -364,8 +365,9 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             opacity: tintReveal > 0 ? 0.96 : 0,
             pointerEvents: "none",
             background: "linear-gradient(180deg, rgba(255,214,214,0) 0%, rgba(248,113,113,0.08) 24%, rgba(239,68,68,0.28) 48%, rgba(220,38,38,0.82) 76%, rgba(153,27,27,0.98) 100%)",
-            transform: `translateY(${Math.max(0, 100 - tintReveal)}%)`,
-            transition: "transform 0.36s ease-out, opacity 0.3s ease",
+            clipPath: `inset(${tintInset})`,
+            WebkitClipPath: `inset(${tintInset})`,
+            transition: "clip-path 0.36s ease-out, -webkit-clip-path 0.36s ease-out, opacity 0.3s ease",
             WebkitMaskImage: maskImage,
             WebkitMaskRepeat: "no-repeat",
             WebkitMaskPosition: "center",

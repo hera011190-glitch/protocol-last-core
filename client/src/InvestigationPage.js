@@ -154,6 +154,10 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   const postPlaybackRefreshRef = useRef(false);
   const playbackSourceRef = useRef(null);
   const queuedStateUpdateRef = useRef(null);
+  const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
+  const displayBattle = playbackState?.battle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
+  const playbackBattleActive = !!playbackState?.active && !!playbackState?.battle;
+  const battleActive = !!currentNode?.battle || playbackBattleActive;
   const liveDisplayLogs = useMemo(() => (battlePlaybackLocked && stagedBattleLogs.length > 0
     ? [...logs, ...stagedBattleLogs.map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }))]
     : logs), [battlePlaybackLocked, stagedBattleLogs, logs]);
@@ -794,7 +798,6 @@ useEffect(() => {
     prevBattleTurnRef.current = turn;
   }, [investigation?.battleTurn, character?.name]);
 
-  const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
   const investigationButtons = currentNode?.investigations || [];
   const effectiveChoices = (() => {
     if (!currentNode) return [];
