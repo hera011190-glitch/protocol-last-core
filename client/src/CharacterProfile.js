@@ -3,6 +3,7 @@ import defaultDesign from "./defaultDesign";
 import { applyDomOverrides } from "./designDomUtils";
 import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
 import { renderProfileRichContent } from "./profileRichText";
+import { buildApiUrl } from "./api";
 
 function meter(label, value, percent, gradient) {
   return (

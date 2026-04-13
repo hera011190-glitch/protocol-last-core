@@ -4,6 +4,13 @@ import socket from "./socket";
 import { apiFetch, apiJsonCached } from "./api";
 import { getMaxHpFromStat } from "./hpUtils";
 
+function withInvestigationImageVersion(src = "", version = 0) {
+  const url = String(src || "").trim();
+  const stamp = Number(version || 0);
+  if (!url || !stamp) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}v=${stamp}`;
+}
+
 function normalizeImageFrame(frame) {
   return { x: Number(frame?.x ?? 50), y: Number(frame?.y ?? 50), scale: Number(frame?.scale ?? 1) };
 }
@@ -385,7 +392,7 @@ function InvestigationLobby({
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "22px", alignItems: "start" }}>
           <div style={{ display: "grid", gap: "22px" }}>
             <div style={{ ...panelStyle, position: "relative", overflow: "hidden", minHeight: lobbyEntryImage ? 250 : undefined }}>
-              {lobbyEntryImage ? <img src={lobbyEntryImage} alt={investigation.title} style={getCoverImageStyle(lobbyEntryFrame)} /> : null}
+              {lobbyEntryImage ? <img src={withInvestigationImageVersion(lobbyEntryImage, investigation?.imageUpdatedAt)} alt={investigation.title} style={getCoverImageStyle(lobbyEntryFrame)} /> : null}
               {lobbyEntryImage ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.84) 34%, rgba(255,255,255,0.26) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
               <div style={{ position: "relative", zIndex: 1 }}>
               <div className="section-eyebrow">LOBBY</div>

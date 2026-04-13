@@ -19,6 +19,13 @@ function preloadInvestigationImages(urls = []) {
   });
 }
 
+function withImageVersion(src = "", version = 0) {
+  const url = String(src || "").trim();
+  const stamp = Number(version || 0);
+  if (!url || !stamp) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}v=${stamp}`;
+}
+
 function normalizeImageFrame(frame) {
   return { x: Number(frame?.x ?? 50), y: Number(frame?.y ?? 50), scale: Number(frame?.scale ?? 1) };
 }
@@ -41,8 +48,8 @@ function getCoverImageStyle(frame = {}, grayscale = false) {
   };
 }
 
-function CardImageLayer({ src = "", alt = "", grayscale = false, frame = null }) {
-  const url = String(src || "").trim();
+function CardImageLayer({ src = "", alt = "", grayscale = false, frame = null, version = 0 }) {
+  const url = withImageVersion(src, version);
   if (!url) return null;
   return (
     <img
@@ -126,12 +133,13 @@ function card(theme, disabled = false, clickable = false) {
 
 function chip(bg, color) {
   return {
-    padding: "6px 10px",
+    padding: "5px 9px",
     borderRadius: 999,
     background: bg,
     color,
     fontWeight: 800,
-    fontSize: 12,
+    fontSize: 11.5,
+    lineHeight: 1.2,
   };
 }
 
@@ -301,8 +309,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
         return;
       }
       const updated = data.item || {};
-      setInvestigations((prev) => (Array.isArray(prev) ? prev.map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item) : prev));
-      writeCachedInvestigations((Array.isArray(investigations) ? investigations : []).map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item));
+      setInvestigations((prev) => {
+        const nextRows = Array.isArray(prev) ? prev.map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item) : prev;
+        writeCachedInvestigations(nextRows);
+        return nextRows;
+      });
       setImageEditor(null);
     } catch {
       alert('이미지를 저장하지 못했습니다.');
@@ -342,7 +353,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 background: theme?.panelStrong || "#fff",
               }}
             >
-              <CardImageLayer src={dailyEntryImage} alt="일일조사" frame={editableDaily?.entryImageFrame || editableDaily?.listImageFrame} />
+              <CardImageLayer src={dailyEntryImage} alt="일일조사" frame={editableDaily?.entryImageFrame || editableDaily?.listImageFrame} version={editableDaily?.imageUpdatedAt} />
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
               {isAdmin && editableDaily ? (
                 <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableDaily, "entry"); }}>수정</button>
@@ -371,7 +382,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
             </div>
 
             <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: theme?.panelStrong || "#fff" }}>
-              <CardImageLayer src={groupEntryImage} alt="단체조사" frame={editableGroup?.entryImageFrame || editableGroup?.listImageFrame} />
+              <CardImageLayer src={groupEntryImage} alt="단체조사" frame={editableGroup?.entryImageFrame || editableGroup?.listImageFrame} version={editableGroup?.imageUpdatedAt} />
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
               {isAdmin && editableGroup ? (
                 <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableGroup, "entry"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); openImageEditor(editableGroup, "entry"); } }}>수정</span>
@@ -402,7 +413,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 const started = !!item.started && !item.ended;
                 return (
                   <div key={item.id} style={{ ...card(theme, disabled), position: "relative", overflow: "hidden", minHeight: 188, padding: 0, background: disabled ? "rgba(226,232,240,0.72)" : (theme?.panelStrong || "#fff") }}>
-                    <CardImageLayer src={item.listImage} alt={item.title} frame={item.listImageFrame} />
+                    <CardImageLayer src={item.listImage} alt={item.title} frame={item.listImageFrame} version={item.imageUpdatedAt} />
                     {item.listImage ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
                     {isAdmin ? <button type="button" style={adminEditButtonStyle(16)} onClick={(event) => { event.stopPropagation(); openImageEditor(item, "list"); }}>수정</button> : null}
                     <div style={{ position: "relative", zIndex: 1, padding: 20, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", minHeight: 188 }}>

@@ -146,7 +146,7 @@ function QuoteEditor({ quotes, onSave, style = {} }) {
 }
 
 
-function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {} }) {
+function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {}, theme }) {
   const safeFrame = normalizeProfileCardFrame(frame);
   const dragRef = useRef(null);
 
@@ -176,8 +176,8 @@ function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {} }) 
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{ fontWeight: 800, color: "#16324a" }}>프로필 카드 미리보기</div>
-      <div onPointerDown={startDrag} style={{ width: "100%", maxWidth: 320, minHeight: 336, cursor: image ? "grab" : "default", margin: "0 auto", display: "grid", alignItems: "stretch" }}>
-        <ProfileCard character={{ name: previewCharacter?.name || "미리보기", rank: previewCharacter?.rank || "대원", oneLine: previewCharacter?.oneLine || "카드 미리보기", mainImage: image, mainImageFrame: safeFrame }} />
+      <div onPointerDown={startDrag} style={{ width: "100%", maxWidth: 232, minHeight: 336, cursor: image ? "grab" : "default", margin: "0 auto", display: "grid", alignItems: "stretch" }}>
+        <ProfileCard theme={theme} character={{ name: previewCharacter?.name || "미리보기", rank: previewCharacter?.rank || "대원", oneLine: previewCharacter?.oneLine || "카드 미리보기", mainImage: image, mainImageFrame: safeFrame }} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <label>가로 위치<input type="range" min="20" max="80" step="1" value={safeFrame.x} onChange={(e) => onChange({ ...safeFrame, x: Number(e.target.value) })} /></label>
@@ -333,6 +333,12 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   }, [currentUser?.id]);
 
   useEffect(() => {
+    if (!saveNotice) return undefined;
+    const timer = window.setTimeout(() => setSaveNotice(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [saveNotice]);
+
+  useEffect(() => {
     setDraftDelta({ hp: 0, def: 0, atk: 0, agi: 0 });
   }, [currentUser?.id, currentUser?.stats?.hp, currentUser?.stats?.def, currentUser?.stats?.atk, currentUser?.stats?.agi, currentUser?.statPoints]);
 
@@ -429,7 +435,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
       profileBgm: profileEdit.profileBgm,
       profileBgmVolume: Math.max(0, Math.min(1, Number(profileEdit.profileBgmVolume ?? 1) || 1)),
     });
-    if (data.success) alert("프로필을 저장했습니다.");
+    if (data.success) setSaveNotice("프로필 저장 완료");
   };
 
   const saveCharacterPatch = async (patch) => {
@@ -442,6 +448,8 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     if (data.success && data.character) {
       onUpdateUser(data.character);
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
+      Promise.allSettled([loadMine(), loadAllCharacters()]).catch(() => {});
+      return data;
     }
     await loadMine();
     await loadAllCharacters();
@@ -575,7 +583,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
     });
     if (data.success) {
       setDraftDelta({ hp: 0, def: 0, atk: 0, agi: 0 });
-      alert("스텟이 저장되었습니다.");
+      setSaveNotice("스탯 저장 완료");
     }
   };
 
@@ -736,7 +744,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
         </div>
 
         <ItemUsePanel items={inventory} catalog={catalog} onUse={useItem} />
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 760px) minmax(280px, 0.84fr)", gap: 12, alignItems: "stretch", marginBottom: "18px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 840px) minmax(240px, 0.72fr)", gap: 12, alignItems: "stretch", marginBottom: "18px" }}>
           <div style={card({ padding: "12px 14px", borderRadius: "18px", maxWidth: 780, width: "100%" })}>
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>캐릭터 수정</h3>
             <div style={{ color: "#6a87a3", marginBottom: 10 }}>이미지 3종을 수정할 수 있습니다.</div>
@@ -756,15 +764,15 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
 
               <div style={card({ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.62)" })}>
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>이미지</div>
-                <div style={{ display: "grid", gridTemplateColumns: "128px minmax(0, 1fr)", gap: "12px", alignItems: "start" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "156px minmax(0, 1fr)", gap: "12px", alignItems: "start" }}>
                   <div style={{ display: "grid", gap: 8 }}>
-                    <ImageDropInput label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEdit((prev) => ({ ...prev, image: value }))} previewHeight={96} compact />
-                    <ImageDropInput label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, investigationImage: value }))} previewHeight={96} previewFit="contain" compact />
-                    <ImageDropInput label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={96} previewFit="contain" compact />
+                    <ImageDropInput label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEdit((prev) => ({ ...prev, image: value }))} previewHeight={112} compact />
+                    <ImageDropInput label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, investigationImage: value }))} previewHeight={112} previewFit="contain" compact />
+                    <ImageDropInput label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={112} previewFit="contain" compact />
                     <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact helperText="프로필 화면에 들어가면 이 BGM이 자동으로 재생돼." />
                   </div>
                   <div style={{ display: "grid", gap: 10, justifyItems: "stretch", width: "100%", overflow: "hidden", margin: "0 auto" }}>
-                    <FullBodyFrameEditor image={profileEdit.mainImage} frame={profileEdit.mainImageFrame} previewCharacter={{ name: profileEdit.name, rank: profileEdit.rank, oneLine: profileEdit.oneLine }} onChange={(frame) => setProfileEdit((prev) => ({ ...prev, mainImageFrame: frame }))} />
+                    <FullBodyFrameEditor image={profileEdit.mainImage} frame={profileEdit.mainImageFrame} previewCharacter={{ name: profileEdit.name, rank: profileEdit.rank, oneLine: profileEdit.oneLine }} theme={theme} onChange={(frame) => setProfileEdit((prev) => ({ ...prev, mainImageFrame: frame }))} />
                   </div>
                 </div>
               </div>
@@ -779,7 +787,8 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
                 </div>
               ) : null}
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 12 }}>
+              <div style={{ minHeight: 20, color: "#2563eb", fontWeight: 800 }}>{saveNotice}</div>
               <button type="button" className="home-primary-button" onClick={saveProfileEdit}>프로필 저장</button>
             </div>
           </div>
@@ -790,7 +799,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
               style={{ minHeight: 200, height: "100%" }}
               onSave={async (next) => {
                 const data = await saveCharacterPatch({ sdQuotes: next });
-                if (data.success) alert("SD 대사를 저장했습니다.");
+                if (data.success) setSaveNotice("SD 대사 저장 완료");
               }}
             />
             <div style={card({ padding: "12px 14px", borderRadius: "16px", minHeight: 220, height: "100%" })}>

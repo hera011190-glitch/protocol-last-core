@@ -328,6 +328,14 @@ function normalizeNpcScene(scene) {
   };
 }
 
+function normalizeInvestigationImageFrame(frame) {
+  return {
+    x: Number(frame?.x ?? 50),
+    y: Number(frame?.y ?? 50),
+    scale: Number(frame?.scale ?? 1),
+  };
+}
+
 function normalizeActionResult(result) {
   const clueTitle = String(result?.clue || "");
   const clueText = String(result?.clueText || "");
@@ -404,6 +412,9 @@ function buildInvestigation(def) {
     type: def.type,
     listImage: String(def?.listImage || def?.data?.listImage || ""),
     entryImage: String(def?.entryImage || def?.data?.entryImage || def?.listImage || def?.data?.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(def?.listImageFrame || def?.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(def?.entryImageFrame || def?.data?.entryImageFrame || def?.listImageFrame || def?.data?.listImageFrame),
+    imageUpdatedAt: Number(def?.imageUpdatedAt ?? def?.data?.imageUpdatedAt ?? 0),
     entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
     endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
     bgmUrl,
@@ -413,6 +424,9 @@ function buildInvestigation(def) {
       backgroundImage: def?.data?.backgroundImage || def?.backgroundImage || "",
       listImage: String(def?.listImage || def?.data?.listImage || ""),
       entryImage: String(def?.entryImage || def?.data?.entryImage || def?.listImage || def?.data?.listImage || ""),
+      listImageFrame: normalizeInvestigationImageFrame(def?.listImageFrame || def?.data?.listImageFrame),
+      entryImageFrame: normalizeInvestigationImageFrame(def?.entryImageFrame || def?.data?.entryImageFrame || def?.listImageFrame || def?.data?.listImageFrame),
+      imageUpdatedAt: Number(def?.imageUpdatedAt ?? def?.data?.imageUpdatedAt ?? 0),
       entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
       endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
       bgmUrl,
@@ -599,6 +613,9 @@ function getInvestigationSummary(item) {
     type: item.type || "group",
     listImage: String(item.listImage || item.data?.listImage || ""),
     entryImage: String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(item.listImageFrame || item.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(item.entryImageFrame || item.data?.entryImageFrame || item.listImageFrame || item.data?.listImageFrame),
+    imageUpdatedAt: Number(item.imageUpdatedAt || item.data?.imageUpdatedAt || 0),
     opened: item.opened,
     hidden: !!item.hidden,
     effectiveOpened,
@@ -636,6 +653,9 @@ function buildInvestigationLobbyState(item) {
     type: item.type || "group",
     listImage: String(item.listImage || item.data?.listImage || ""),
     entryImage: String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(item.listImageFrame || item.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(item.entryImageFrame || item.data?.entryImageFrame || item.listImageFrame || item.data?.listImageFrame),
+    imageUpdatedAt: Number(item.imageUpdatedAt || item.data?.imageUpdatedAt || 0),
     opened: !!item.opened,
     hidden: !!item.hidden,
     effectiveOpened: getEffectiveOpened(item),
@@ -2173,7 +2193,6 @@ app.post("/moveInvestigation", (req, res) => {
   if (uniqueVisited.length >= nodeCount && !item.readyToEnd && !nextNode.battle) {
     item.readyToEnd = true;
     item.endNoticeDismissed = false;
-    addSharedLog(item, "모든 구역을 다 돌아봤다! 최종 목적지가 아니라 모든 구역 방문이 완료 기준이야. 조사 종료 버튼을 눌러 종료할 수 있어.");
   }
 
   emitInvestigationState(investigationId);
@@ -2518,6 +2537,9 @@ function serializeInvestigationForPersistence(item) {
     type: item?.type || templateSource.type || "group",
     listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
     entryImage: String(item?.entryImage || item?.data?.entryImage || templateSource?.entryImage || templateSource?.data?.entryImage || item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(item?.listImageFrame || item?.data?.listImageFrame || templateSource?.listImageFrame || templateSource?.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(item?.entryImageFrame || item?.data?.entryImageFrame || templateSource?.entryImageFrame || templateSource?.data?.entryImageFrame || item?.listImageFrame || item?.data?.listImageFrame || templateSource?.listImageFrame || templateSource?.data?.listImageFrame),
+    imageUpdatedAt: Number(item?.imageUpdatedAt ?? item?.data?.imageUpdatedAt ?? templateSource?.imageUpdatedAt ?? templateSource?.data?.imageUpdatedAt ?? 0),
     backgroundImage: String(item?.data?.backgroundImage || templateSource?.backgroundImage || templateSource?.data?.backgroundImage || ""),
     bgmUrl: String(item?.bgmUrl || item?.data?.bgmUrl || templateSource?.bgmUrl || templateSource?.data?.bgmUrl || ""),
     bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
@@ -2531,6 +2553,9 @@ function serializeInvestigationForPersistence(item) {
       backgroundImage: String(item?.data?.backgroundImage || templateSource?.data?.backgroundImage || templateSource?.backgroundImage || ""),
       listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
       entryImage: String(item?.entryImage || item?.data?.entryImage || templateSource?.entryImage || templateSource?.data?.entryImage || item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
+      listImageFrame: normalizeInvestigationImageFrame(item?.listImageFrame || item?.data?.listImageFrame || templateSource?.listImageFrame || templateSource?.data?.listImageFrame),
+      entryImageFrame: normalizeInvestigationImageFrame(item?.entryImageFrame || item?.data?.entryImageFrame || templateSource?.entryImageFrame || templateSource?.data?.entryImageFrame || item?.listImageFrame || item?.data?.listImageFrame || templateSource?.listImageFrame || templateSource?.data?.listImageFrame),
+      imageUpdatedAt: Number(item?.imageUpdatedAt ?? item?.data?.imageUpdatedAt ?? templateSource?.imageUpdatedAt ?? templateSource?.data?.imageUpdatedAt ?? 0),
       bgmUrl: String(item?.bgmUrl || item?.data?.bgmUrl || templateSource?.bgmUrl || templateSource?.data?.bgmUrl || ""),
       bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
       entryCorrosion: Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? templateSource?.entryCorrosion ?? templateSource?.data?.entryCorrosion ?? 0),
@@ -2645,18 +2670,27 @@ app.post("/admin/publishInvestigation", (req, res) => {
 });
 app.post("/admin/investigationCardImage", (req, res) => {
   try {
-    const { investigationId, listImage, entryImage } = req.body || {};
+    const { investigationId, listImage, entryImage, listImageFrame, entryImageFrame } = req.body || {};
     const item = investigationsDB.find((v) => v.id === investigationId);
     if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
 
-    const nextListImage = String(listImage || "");
-    const nextEntryImage = String(entryImage || nextListImage || "");
+    const nextListImage = listImage !== undefined ? String(listImage || "") : String(item.listImage || item.data?.listImage || "");
+    const nextEntryImage = entryImage !== undefined ? String(entryImage || "") : String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || nextListImage || "");
+    const nextListImageFrame = listImageFrame !== undefined ? normalizeInvestigationImageFrame(listImageFrame) : normalizeInvestigationImageFrame(item.listImageFrame || item.data?.listImageFrame);
+    const nextEntryImageFrame = entryImageFrame !== undefined ? normalizeInvestigationImageFrame(entryImageFrame) : normalizeInvestigationImageFrame(item.entryImageFrame || item.data?.entryImageFrame || item.listImageFrame || item.data?.listImageFrame);
+    const imageUpdatedAt = Date.now();
     item.listImage = nextListImage;
     item.entryImage = nextEntryImage;
+    item.listImageFrame = nextListImageFrame;
+    item.entryImageFrame = nextEntryImageFrame;
+    item.imageUpdatedAt = imageUpdatedAt;
     item.data = {
       ...(item.data || {}),
       listImage: nextListImage,
       entryImage: nextEntryImage,
+      listImageFrame: nextListImageFrame,
+      entryImageFrame: nextEntryImageFrame,
+      imageUpdatedAt,
     };
     if (item.originalTemplate) {
       item.originalTemplate = serializeInvestigationForPersistence(item);
@@ -2882,6 +2916,9 @@ function buildPublicInvestigationState(item) {
     type: item.type,
     listImage: String(item.listImage || item.data?.listImage || ""),
     entryImage: String(item.entryImage || item.data?.entryImage || item.listImage || item.data?.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(item.listImageFrame || item.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(item.entryImageFrame || item.data?.entryImageFrame || item.listImageFrame || item.data?.listImageFrame),
+    imageUpdatedAt: Number(item.imageUpdatedAt || item.data?.imageUpdatedAt || 0),
     entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
     endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
     currentNodeId: item.currentNodeId,
@@ -3321,7 +3358,6 @@ app.post("/endInvestigationOnly", (req, res) => {
   const { id, endedBy } = req.body || {};
   const item = investigationsDB.find((v) => v.id === id);
   if (!item) return res.json({ success: false, message: "조사를 찾지 못했어." });
-  if (item.type === "daily") return res.json({ success: false, message: "일일조사는 수동 종료할 수 없어." });
   const safeEndedBy = String(endedBy || "운영자");
   const isLeader = safeEndedBy !== "운영자" && Array.isArray(item.leaders) && item.leaders.includes(safeEndedBy);
   if (safeEndedBy !== "운영자" && !isLeader) {

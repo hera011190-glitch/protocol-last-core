@@ -300,13 +300,13 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       setNowTick(Date.now());
     };
     tick();
-    const timer = window.setInterval(tick, 90);
+    const timer = window.setInterval(tick, battleActive ? 80 : 140);
     document.addEventListener("visibilitychange", tick);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, []);
+  }, [battleActive]);
 
   const pendingActionsEarly = investigation?.pendingBattleActions || {};
 
@@ -1407,19 +1407,21 @@ useEffect(() => {
                 </div>
               ) : null}
 
-              <div>
+              <div style={{ display: "grid", minHeight: 0, maxHeight: "min(72vh, 640px)", gridTemplateRows: "auto auto minmax(0, 1fr) auto" }}>
                 <div className="section-eyebrow">NPC</div>
-                <h3 style={{ marginTop: 10 }}>{activeNpcScene.name || "NPC"}</h3>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                  <div style={{ ...topChipStyle, padding: "4px 10px" }}>대사 {npcLineIndex + 1}/{Array.isArray(activeNpcScene.lines) ? activeNpcScene.lines.length : 1}</div>
-                  {npcHasChoices ? (
-                    <div style={{ ...topChipStyle, padding: "4px 10px" }}>선택지 {npcOptions.length}개</div>
-                  ) : (
-                    <div style={{ ...topChipStyle, padding: "4px 10px" }}>클릭으로 다음 진행</div>
-                  )}
+                <div>
+                  <h3 style={{ marginTop: 10 }}>{activeNpcScene.name || "NPC"}</h3>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <div style={{ ...topChipStyle, padding: "4px 10px" }}>대사 {npcLineIndex + 1}/{Array.isArray(activeNpcScene.lines) ? activeNpcScene.lines.length : 1}</div>
+                    {npcHasChoices ? (
+                      <div style={{ ...topChipStyle, padding: "4px 10px" }}>선택지 {npcOptions.length}개</div>
+                    ) : (
+                      <div style={{ ...topChipStyle, padding: "4px 10px" }}>클릭으로 다음 진행</div>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ color: "#dbe7f5", whiteSpace: "pre-wrap", lineHeight: 1.9, marginTop: 12 }}>
+                <div style={{ color: "#dbe7f5", whiteSpace: "pre-wrap", lineHeight: 1.9, marginTop: 12, minHeight: 0, overflowY: "auto", paddingRight: 6 }}>
                   {currentNpcLine.text || ""}
                 </div>
 
@@ -2009,7 +2011,7 @@ const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://ww
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const safeName = String(name || "");
   const recent = Array.isArray(rounds)
-    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 2800)
+    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 3600)
     : [];
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
@@ -2317,7 +2319,7 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
     badgeColor: getBattleEffectLabelColor(effect),
     wrapperStyle: {
       transform: `translate(${translateX.toFixed(2)}px, ${translateY.toFixed(2)}px) scale(${scale.toFixed(3)})`,
-      transition: persistentGuard ? "box-shadow 0.18s ease, opacity 0.18s ease" : "transform 0.04s linear, box-shadow 0.12s ease, opacity 0.12s ease",
+      transition: persistentGuard ? "box-shadow 0.18s ease, opacity 0.18s ease" : "transform 0.02s linear, box-shadow 0.1s ease, opacity 0.1s ease",
       boxShadow: frameBoxShadow || "none",
     },
     imageStyle: {
@@ -2384,7 +2386,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
         <div style={topChipStyle}>DEF {battle.def || 0}</div>
         <div style={topChipStyle}>AGI {battle.agi || 0}</div>
       </div>
-      {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 12 }}>{visual.badge}</div> : null}
+      {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 12, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
     </div>
   );
 }
@@ -2429,7 +2431,7 @@ function BattlePartyStrip({ participants, participantStates, pendingActions, rou
             <div style={{ marginTop: "6px", fontSize: "11px", color: "#e2e8f0" }}>HP {hp}/{maxHp}</div>
             {dead ? <div style={{ marginTop: "6px", fontSize: "11px", color: "#fecaca", fontWeight: 800 }}>관전</div> : null}
             {!dead ? <div style={{ marginTop: 4, fontSize: 11, color: pendingActions?.[participant.name] ? "#bae6fd" : battlePlaybackLocked ? "#fef08a" : "#cbd5e1", fontWeight: 900 }}>{pendingActions?.[participant.name] ? "선택 완료" : battlePlaybackLocked ? "행동 진행 중" : "대기 중"}</div> : null}
-            {effect ? <div style={{ marginTop: 4, fontSize: 11, color: visual.badgeColor, fontWeight: 900 }}>{visual.badge}</div> : null}
+            {effect ? <div style={{ marginTop: 4, fontSize: 11, color: visual.badgeColor, fontWeight: 900, textShadow: "0 0 10px rgba(255,255,255,0.16)" }}>{visual.badge}</div> : null}
           </div>
         );
       })}
