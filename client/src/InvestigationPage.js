@@ -816,8 +816,6 @@ useEffect(() => {
     return direct;
   })();
   const directionalChoices = buildDirectionalChoices(effectiveChoices);
-  const playbackBattleActive = !!playbackState?.battle;
-  const battleActive = !!currentNode?.battle || playbackBattleActive;
   const endedReadonly = !!isSpectator && !!investigation?.ended;
   const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
   const endConfirmations = Array.isArray(investigation?.endConfirmations) ? investigation.endConfirmations : [];
