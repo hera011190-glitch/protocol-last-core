@@ -338,7 +338,8 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
   const maskImage = `url(${spriteImage})`;
-  const tintInset = `${Math.max(0, 100 - tintReveal)}% 0 0 0`;
+  const tintStart = Math.max(0, 100 - tintReveal - 18);
+  const tintMid = Math.max(0, 100 - tintReveal - 6);
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto" }}>
       {quote?.text ? (
@@ -362,12 +363,10 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             position: "absolute",
             inset: 0,
             zIndex: 2,
-            opacity: tintReveal > 0 ? 0.96 : 0,
+            opacity: tintReveal > 0 ? 0.98 : 0,
             pointerEvents: "none",
-            background: "linear-gradient(180deg, rgba(255,214,214,0) 0%, rgba(248,113,113,0.08) 24%, rgba(239,68,68,0.28) 48%, rgba(220,38,38,0.82) 76%, rgba(153,27,27,0.98) 100%)",
-            clipPath: `inset(${tintInset})`,
-            WebkitClipPath: `inset(${tintInset})`,
-            transition: "clip-path 0.36s ease-out, -webkit-clip-path 0.36s ease-out, opacity 0.3s ease",
+            background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) ${tintStart}%, rgba(248,113,113,0.18) ${tintMid}%, rgba(239,68,68,0.42) ${Math.max(tintMid + 10, 76)}%, rgba(185,28,28,0.96) 100%)`,
+            transition: "background 0.36s ease-out, opacity 0.3s ease",
             WebkitMaskImage: maskImage,
             WebkitMaskRepeat: "no-repeat",
             WebkitMaskPosition: "center",

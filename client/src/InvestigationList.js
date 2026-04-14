@@ -278,12 +278,34 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
 
   const openImageEditor = (item, mode = "list") => {
     if (!item?.id) return;
+    const type = item.type || (mode === "entry" && view === "group" ? "group" : "daily");
+    const previewBadges = mode === "entry"
+      ? (type === "group"
+          ? [
+              `활성 ${groups.filter((row) => row.effectiveOpened ?? row.opened).length}개`,
+              `비활성 ${groups.filter((row) => !(row.effectiveOpened ?? row.opened)).length}개`,
+              `완료 ${completedGroups.length}개`,
+            ]
+          : [
+              `남은 횟수 ${dailyLeft}`,
+              `활성 ${dailyPool.length}개`,
+              formatCorrosionRange(dailyPool),
+            ])
+      : [
+          !!item.started && !item.ended ? "진행 중" : ((item.effectiveOpened ?? item.opened) ? "대기 중" : "비활성화"),
+          type === "group" ? `참여 ${item.participantsCount || 0}명` : `남은 횟수 ${dailyLeft}`,
+          type === "group" ? `종료 시 침식 +${Number(item.endCorrosion || 0)}` : `침식 ${Number(item.endCorrosion || 0)}`,
+        ];
     setImageEditor({
       id: item.id,
+      type,
       title: item.title || "조사",
       mode,
       image: mode === "entry" ? String(item.entryImage || item.listImage || "") : String(item.listImage || item.entryImage || ""),
       frame: normalizeImageFrame(mode === "entry" ? (item.entryImageFrame || item.listImageFrame || { x: 50, y: 50, scale: 1 }) : (item.listImageFrame || item.entryImageFrame || { x: 50, y: 50, scale: 1 })),
+      badges: previewBadges.filter(Boolean),
+      eyebrow: mode === "entry" ? (type === "group" ? "GROUP" : "DAILY") : (type === "group" ? "GROUP MISSION" : "DAILY MISSION"),
+      version: Number(item.imageUpdatedAt || Date.now()),
     });
   };
 
@@ -291,26 +313,26 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
     setImageEditor((prev) => {
       if (!prev) return prev;
       const nextFrame = {
-        scale: Math.max(1, Number(patch?.scale ?? prev.frame?.scale ?? 1) || 1),
-        x: Math.max(-50, Math.min(50, Number(patch?.x ?? prev.frame?.x ?? 0) || 0)),
-        y: Math.max(-50, Math.min(50, Number(patch?.y ?? prev.frame?.y ?? 0) || 0)),
+        scale: Math.max(0.7, Math.min(1.8, Number(patch?.scale ?? prev.frame?.scale ?? 1) || 1)),
+        x: Math.max(0, Math.min(100, Number(patch?.x ?? prev.frame?.x ?? 50) || 50)),
+        y: Math.max(0, Math.min(100, Number(patch?.y ?? prev.frame?.y ?? 50) || 50)),
       };
       return { ...prev, frame: nextFrame };
     });
   };
 
   const startImagePreviewDrag = (event) => {
-    if (!imageEditor?.imageUrl) return;
+    if (!imageEditor?.image) return;
     const startX = event.clientX;
     const startY = event.clientY;
-    const baseFrame = imageEditor.frame || { scale: 1, x: 0, y: 0 };
-    imagePreviewDragRef.current = { startX, startY, x: Number(baseFrame.x || 0), y: Number(baseFrame.y || 0) };
+    const baseFrame = imageEditor.frame || { scale: 1, x: 50, y: 50 };
+    imagePreviewDragRef.current = { startX, startY, x: Number(baseFrame.x || 50), y: Number(baseFrame.y || 50) };
     const handleMove = (moveEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
       updateEditorFrame({
-        x: (imagePreviewDragRef.current?.x || 0) + (dx / 220) * 100,
-        y: (imagePreviewDragRef.current?.y || 0) + (dy / 220) * 100,
+        x: (imagePreviewDragRef.current?.x || 50) + (dx / 220) * 32,
+        y: (imagePreviewDragRef.current?.y || 50) + (dy / 220) * 32,
       });
     };
     const handleUp = () => {
@@ -394,10 +416,13 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
               {isAdmin && editableDaily ? (
                 <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableDaily, "entry"); }}>수정</button>
               ) : null}
-              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <span className="feature-label">일일조사</span>
-                <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "flex", flexDirection: "column", gap: 12, minHeight: 260 }}>
+                <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+                  <div className="section-eyebrow">DAILY</div>
+                  <span className="feature-label">일일조사</span>
+                  <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>일일조사</h3>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 {dailyLeft}</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {dailyPool.length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{formatCorrosionRange(dailyPool)}</div>
@@ -423,10 +448,13 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
               {isAdmin && editableGroup ? (
                 <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableGroup, "entry"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); openImageEditor(editableGroup, "entry"); } }}>수정</span>
               ) : null}
-              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "grid", gap: 12, minHeight: 260 }}>
-                <span className="feature-label">단체조사</span>
-                <h3 style={{ marginTop: 2, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ position: "relative", zIndex: 1, padding: 22, display: "flex", flexDirection: "column", gap: 12, minHeight: 260 }}>
+                <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+                  <div className="section-eyebrow">GROUP</div>
+                  <span className="feature-label">단체조사</span>
+                  <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>단체조사</h3>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 {groups.filter((item) => item.effectiveOpened ?? item.opened).length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>비활성 {groups.filter((item) => !(item.effectiveOpened ?? item.opened)).length}개</div>
                   <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>완료 {completedGroups.length}개</div>
@@ -554,17 +582,18 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
             <div style={{ display: "grid", gap: 12, padding: 16, borderRadius: 20, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>실제 카드 미리보기</div>
               <div style={{ display: "grid", placeItems: "center" }}>
-                <div style={{ width: 244, maxWidth: "100%", aspectRatio: "3 / 4", position: "relative", overflow: "hidden", borderRadius: 28, background: "linear-gradient(180deg, rgba(238,248,255,0.98), rgba(210,236,250,0.95))", boxShadow: "0 18px 40px rgba(61,112,148,0.18)" }}>
-                  {imageEditor.image ? <CardImageLayer src={imageEditor.image} version={imageEditor.version || Date.now()} frame={imageEditor.frame || { scale: 1, x: 0, y: 0 }} /> : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: theme?.textSoft || "#6b8aa4", fontWeight: 700 }}>미리보기</div>}
+                <div onPointerDown={startImagePreviewDrag} style={{ width: 244, maxWidth: "100%", aspectRatio: "3 / 4", position: "relative", overflow: "hidden", borderRadius: 28, background: "linear-gradient(180deg, rgba(238,248,255,0.98), rgba(210,236,250,0.95))", boxShadow: "0 18px 40px rgba(61,112,148,0.18)", cursor: imageEditor.image ? "grab" : "default" }}>
+                  {imageEditor.image ? <CardImageLayer src={imageEditor.image} version={imageEditor.version || Date.now()} frame={imageEditor.frame || { scale: 1, x: 50, y: 50 }} /> : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: theme?.textSoft || "#6b8aa4", fontWeight: 700 }}>미리보기</div>}
                   <div style={{ position: "absolute", inset: 0, background: imageEditor.mode === "list" ? "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.58) 34%, rgba(255,255,255,0.18) 72%, rgba(255,255,255,0.05) 100%)" : "linear-gradient(180deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.38) 28%, rgba(255,255,255,0.06) 100%)", pointerEvents: "none" }} />
                   <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "18px 18px 20px", pointerEvents: "none" }}>
-                    <div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div className="section-eyebrow">{imageEditor.eyebrow || (imageEditor.type === "group" ? "GROUP" : "DAILY")}</div>
                       <span className="feature-label">{imageEditor.type === "group" ? "단체조사" : "일일조사"}</span>
                     </div>
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ fontSize: 26, fontWeight: 900, color: "#16364b", lineHeight: 1.18 }}>{imageEditor.title || "조사 카드"}</div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {imageEditor.type === "group" ? <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{`참여 ${groupPlayers.length}/${groupSettings.maxPlayers}`}</div> : <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>{`남은 횟수 ${remainingDailyAttempts}`}</div>}
+                        {(Array.isArray(imageEditor.badges) ? imageEditor.badges : []).map((badge, index) => <div key={`${badge}-${index}`} style={chip("rgba(255,255,255,0.86)", "#17324a")}>{badge}</div>)}
                       </div>
                     </div>
                   </div>

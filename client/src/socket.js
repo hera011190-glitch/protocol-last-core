@@ -2,24 +2,13 @@ import { io } from "socket.io-client";
 import { API_BASE } from "./api";
 
 const socket = io(API_BASE, {
-  autoConnect: false,
+  autoConnect: true,
   transports: ["websocket", "polling"],
 });
 
+export default socket;
+
 export function ensureSocketConnected() {
-  if (!socket.connected) {
-    try { socket.connect(); } catch {}
-  }
+  if (!socket.connected) socket.connect();
   return socket;
 }
-
-export function ensureSocketDisconnected() {
-  try {
-    socket.removeAllListeners();
-  } catch {}
-  try {
-    if (socket.connected || socket.active) socket.disconnect();
-  } catch {}
-}
-
-export default socket;
