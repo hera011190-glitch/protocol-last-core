@@ -179,7 +179,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      setTimeout(() => setStagedBattleLogs([]), 280);
+      setTimeout(() => setStagedBattleLogs([]), 120);
       setLocalPendingActions({});
       setMyBattleAction("");
       setActionPicker("");
@@ -766,7 +766,7 @@ useEffect(() => {
       return;
     }
     setShowResult(true);
-    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character } }));
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { force: true } }));
     loadInvestigation();
   };
 
@@ -888,7 +888,7 @@ useEffect(() => {
       setBattleReadyUntil(0);
       return;
     }
-    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 1300));
+    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 260));
   }, [battleActive, investigation?.battleTurn, currentNodeId]);
 
   const battleInputLocked = battlePlaybackLocked || (battleActive && nowTick < battleReadyUntil);
@@ -984,7 +984,7 @@ useEffect(() => {
       }
       delay += timing.totalAfterLog;
     });
-    const unlockDelay = Math.max(delay + 1200, 4600);
+    const unlockDelay = Math.max(delay + 180, 820);
     const unlockTimer = setTimeout(() => {
       const queuedState = queuedStateUpdateRef.current;
       setLogs((Array.isArray(investigation?.sharedLogs) ? investigation.sharedLogs : []).slice(-160));
@@ -992,7 +992,7 @@ useEffect(() => {
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      setTimeout(() => setStagedBattleLogs([]), 280);
+      setTimeout(() => setStagedBattleLogs([]), 120);
       if (queuedState) {
         queuedStateUpdateRef.current = null;
         const queuedRoundKey = getBattleRoundKey(queuedState);
@@ -1019,7 +1019,7 @@ useEffect(() => {
     setMyBattleAction("");
     setActionPicker("");
     const timer = setInterval(() => {
-      if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > 12000) {
+      if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > 2100) {
         battlePlaybackLockStartedRef.current = 0;
         setStagedBattleLogs([]);
         setPlaybackState(null);
@@ -1032,7 +1032,7 @@ useEffect(() => {
           else applyInvestigation(queuedState);
         }
       }
-    }, 300);
+    }, 160);
     return () => clearInterval(timer);
   }, [battlePlaybackLocked]);
 
@@ -1052,7 +1052,7 @@ useEffect(() => {
         postPlaybackRefreshRef.current = false;
         loadInvestigation();
       }
-    }, 1500);
+    }, 320);
     return () => clearTimeout(timer);
   }, [battlePlaybackLocked, stagedBattleLogs.length, previewMode]);
 
@@ -1106,7 +1106,7 @@ useEffect(() => {
       alert(data.message || "보상 배분에 실패했습니다.");
       return;
     }
-    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character } }));
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { force: true } }));
     loadInvestigation();
   };
 
@@ -2081,36 +2081,36 @@ function getBattlePlaybackTimings(entry, index = 0) {
   if (isBattlePhaseHeader(entry)) {
     return {
       isPhaseHeader: true,
-      beforeLog: index === 0 ? 120 : 240,
+      beforeLog: index === 0 ? 70 : 120,
       beforeSnapshot: 0,
-      totalAfterLog: 520,
+      totalAfterLog: 160,
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 220, beforeSnapshot: 760, totalAfterLog: 1680 };
+    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 180, totalAfterLog: 360 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 200, beforeSnapshot: 640, totalAfterLog: 1460 };
+    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 160, totalAfterLog: 300 };
   }
   if (["skill", "debuff", "drain"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 220, beforeSnapshot: 820, totalAfterLog: 1780 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 200, totalAfterLog: 420 };
   }
   if (["guard", "shield", "buff"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 620, totalAfterLog: 1380 };
+    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 160, totalAfterLog: 300 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 660, totalAfterLog: 1420 };
+    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 170, totalAfterLog: 320 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: /회복/.test(text) ? 660 : 720, totalAfterLog: /회복/.test(text) ? 1460 : 1560 };
+    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: /회복/.test(text) ? 170 : 180, totalAfterLog: /회복/.test(text) ? 320 : 340 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 170, beforeSnapshot: 520, totalAfterLog: 1180 };
+    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 130, totalAfterLog: 240 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 220, beforeSnapshot: 740, totalAfterLog: 1660 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 200, totalAfterLog: 380 };
   }
-  return { isPhaseHeader: false, beforeLog: 180, beforeSnapshot: 620, totalAfterLog: 1360 };
+  return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 160, totalAfterLog: 300 };
 }
 
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {

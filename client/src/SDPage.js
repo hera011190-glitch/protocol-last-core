@@ -337,7 +337,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   if (!spriteImage) return null;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
-  const maskImage = `url(${spriteImage})`;
+  const tintStrength = tintReveal / 100;
   const tintStart = Math.max(0, 100 - tintReveal - 18);
   const tintMid = Math.max(0, 100 - tintReveal - 6);
   return (
@@ -363,21 +363,39 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             position: "absolute",
             inset: 0,
             zIndex: 2,
-            opacity: tintReveal > 0 ? 0.98 : 0,
             pointerEvents: "none",
-            background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) ${tintStart}%, rgba(248,113,113,0.18) ${tintMid}%, rgba(239,68,68,0.42) ${Math.max(tintMid + 10, 76)}%, rgba(185,28,28,0.96) 100%)`,
-            transition: "background 0.36s ease-out, opacity 0.3s ease",
-            WebkitMaskImage: maskImage,
-            WebkitMaskRepeat: "no-repeat",
-            WebkitMaskPosition: "center",
-            WebkitMaskSize: "contain",
-            maskImage: maskImage,
-            maskRepeat: "no-repeat",
-            maskPosition: "center",
-            maskSize: "contain",
-            mixBlendMode: "multiply",
+            opacity: tintReveal > 0 ? 1 : 0,
+            transition: "opacity 0.28s ease",
           }}
-        />
+        >
+          <img
+            src={spriteImage}
+            alt=""
+            loading="eager"
+            decoding="async"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              position: "absolute",
+              inset: 0,
+              opacity: Math.min(0.95, 0.12 + tintStrength * 1.05),
+              filter: `sepia(1) saturate(${(2.2 + tintStrength * 3.2).toFixed(2)}) hue-rotate(-40deg) brightness(${(0.8 + tintStrength * 0.08).toFixed(2)}) contrast(1.1)`,
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) ${Math.max(0, tintStart - 8)}%, rgba(255,180,180,0.08) ${Math.max(0, tintMid - 2)}%, rgba(255,88,88,${(0.18 + tintStrength * 0.18).toFixed(3)}) ${Math.min(100, tintMid + 18)}%, rgba(205,0,0,${(0.42 + tintStrength * 0.22).toFixed(3)}) 100%)`,
+              mixBlendMode: "screen",
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.18) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.7) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.18) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.7) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+            }}
+          />
+        </div>
       </div>
     </div>
   );

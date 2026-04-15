@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import ImageDropInput from "./ImageDropInput";
 import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
@@ -155,6 +154,48 @@ function timeText(item) {
   return `${open.toLocaleString("ko-KR", { hour12: false })} 오픈`;
 }
 
+
+function InvestigationEntryPreviewCard({ item, type, theme, imageSrc, frame, version, titleOverride = "" }) {
+  const isDaily = type === "daily";
+  return (
+    <div style={{ ...card(theme, false, false), position: "relative", minHeight: 246, overflow: "hidden", paddingTop: 22, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+        <div style={{ position: "absolute", inset: 0, background: isDaily ? "linear-gradient(180deg, rgba(94,167,217,0.12), rgba(255,255,255,0.04))" : "linear-gradient(180deg, rgba(101,126,234,0.15), rgba(255,255,255,0.04))" }} />
+        <CardImageLayer src={imageSrc || item?.cardImage || getRepresentativeImage([item], "entry")} alt={item?.title || "조사 카드"} frame={frame || item?.cardImageFrame || { x: 50, y: 50, scale: 1 }} version={version || item?.imageUpdatedAt || 0} />
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.18) 38%, rgba(255,255,255,0) 74%)" }} />
+      </div>
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div style={{ fontSize: 12, letterSpacing: 2.6, fontWeight: 900, color: isDaily ? "#1d4ed8" : "#4338ca", textTransform: "uppercase" }}>{isDaily ? "DAILY" : "GROUP"}</div>
+        <div style={{ marginTop: 4, fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{isDaily ? "일일조사" : "단체조사"}</div>
+        <div style={{ marginTop: 8, fontSize: 14, fontWeight: 900, color: "#13324b" }}>{titleOverride || item?.title || (isDaily ? "일일조사" : "단체조사")}</div>
+      </div>
+      <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={chip("rgba(255,255,255,0.86)", "#17324a")}>{isDaily ? `남은 ${Math.max(0, 3 - Number(item?.attempts || 0))}회` : `활성 ${Array.isArray(item?.participants) ? item.participants.length : 0}명`}</span>
+        <span style={chip("rgba(255,255,255,0.86)", "#17324a")}>{isDaily ? `침식 +${Number(item?.corrosionGain || 0)}` : timeText(item)}</span>
+      </div>
+    </div>
+  );
+}
+
+function InvestigationInnerPreviewCard({ item, theme, imageSrc, frame, version }) {
+  return (
+    <div style={{ ...card(theme, !item?.effectiveOpened, false), position: "relative", minHeight: 172, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+        <CardImageLayer src={imageSrc || item?.cardImage || getRepresentativeImage([item], "list")} alt={item?.title || "조사 카드"} frame={frame || item?.cardImageFrame || { x: 50, y: 50, scale: 1 }} version={version || item?.imageUpdatedAt || 0} grayscale={!item?.effectiveOpened} />
+        <div style={{ position: "absolute", inset: 0, background: item?.effectiveOpened ? "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.5) 34%, rgba(255,255,255,0.08) 72%)" : "linear-gradient(90deg, rgba(226,232,240,0.92) 0%, rgba(226,232,240,0.74) 38%, rgba(226,232,240,0.32) 78%)" }} />
+      </div>
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div style={{ fontSize: 12, letterSpacing: 2.6, fontWeight: 900, color: item?.effectiveOpened ? "#1d4ed8" : "#64748b", textTransform: "uppercase" }}>{String(item?.titleEn || item?.title || "INVESTIGATION").toUpperCase()}</div>
+        <div style={{ marginTop: 3, fontSize: 18, fontWeight: 900, color: item?.effectiveOpened ? "#0f172a" : "#334155" }}>{item?.type === "daily" ? "일일조사" : "단체조사"}</div>
+        <div style={{ marginTop: 8, fontSize: 14, fontWeight: 900, color: item?.effectiveOpened ? "#13324b" : "#475569" }}>{item?.title}</div>
+      </div>
+      <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <span style={chip("rgba(255,255,255,0.82)", item?.effectiveOpened ? "#17324a" : "#475569")}>{item?.type === "daily" ? `남은 ${Math.max(0, 3 - Number(item?.attempts || 0))}회` : `${item?.effectiveOpened ? "활성" : "비활성"}`}</span>
+        <span style={chip("rgba(255,255,255,0.82)", item?.effectiveOpened ? "#17324a" : "#475569")}>{`침식 +${Number(item?.corrosionGain || 0)}`}</span>
+      </div>
+    </div>
+  );
+}
 
 function getRepresentativeImage(items = [], mode = "list") {
   const rows = Array.isArray(items) ? items : [];
@@ -569,37 +610,89 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
               </div>
               <button type="button" className="ghost-button" onClick={() => setImageEditor(null)}>닫기</button>
             </div>
-            <ImageDropInput
-              label={imageEditor.mode === "entry" ? "입구 카드 이미지" : "목록 카드 이미지"}
-              value={imageEditor.image}
-              onChange={(value) => setImageEditor((prev) => ({ ...prev, image: value }))}
-              frame={imageEditor.frame}
-              onFrameChange={(frame) => setImageEditor((prev) => ({ ...prev, frame }))}
-              adjustable
-              previewHeight={260}
-              previewOverlay={imageEditor.mode === "list" ? <div style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)", width: "100%", height: "100%" }} /> : <div style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)", width: "100%", height: "100%" }} />}
-            />
-            <div style={{ display: "grid", gap: 12, padding: 16, borderRadius: 20, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>실제 카드 미리보기</div>
-              <div style={{ display: "grid", placeItems: "center" }}>
-                <div onPointerDown={startImagePreviewDrag} style={{ width: 244, maxWidth: "100%", aspectRatio: "3 / 4", position: "relative", overflow: "hidden", borderRadius: 28, background: "linear-gradient(180deg, rgba(238,248,255,0.98), rgba(210,236,250,0.95))", boxShadow: "0 18px 40px rgba(61,112,148,0.18)", cursor: imageEditor.image ? "grab" : "default" }}>
-                  {imageEditor.image ? <CardImageLayer src={imageEditor.image} version={imageEditor.version || Date.now()} frame={imageEditor.frame || { scale: 1, x: 50, y: 50 }} /> : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: theme?.textSoft || "#6b8aa4", fontWeight: 700 }}>미리보기</div>}
-                  <div style={{ position: "absolute", inset: 0, background: imageEditor.mode === "list" ? "linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.58) 34%, rgba(255,255,255,0.18) 72%, rgba(255,255,255,0.05) 100%)" : "linear-gradient(180deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.38) 28%, rgba(255,255,255,0.06) 100%)", pointerEvents: "none" }} />
-                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "18px 18px 20px", pointerEvents: "none" }}>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div className="section-eyebrow">{imageEditor.eyebrow || (imageEditor.type === "group" ? "GROUP" : "DAILY")}</div>
-                      <span className="feature-label">{imageEditor.type === "group" ? "단체조사" : "일일조사"}</span>
-                    </div>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 26, fontWeight: 900, color: "#16364b", lineHeight: 1.18 }}>{imageEditor.title || "조사 카드"}</div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {(Array.isArray(imageEditor.badges) ? imageEditor.badges : []).map((badge, index) => <div key={`${badge}-${index}`} style={chip("rgba(255,255,255,0.86)", "#17324a")}>{badge}</div>)}
-                      </div>
-                    </div>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(260px, 320px) minmax(320px, 1fr)", alignItems: "stretch" }}>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gap: 10, padding: 16, borderRadius: 18, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>{imageEditor.mode === "entry" ? "입구 카드 이미지" : "목록 카드 이미지"}</div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        setImageEditor((prev) => ({ ...prev, image: String(reader.result || "") }));
+                      };
+                      reader.readAsDataURL(file);
+                      event.target.value = "";
+                    }}
+                  />
+                  <div style={{ fontSize: 12, color: theme?.textSoft || "#6b8aa4", lineHeight: 1.55 }}>
+                    이미지를 올린 뒤 오른쪽 실제 카드 미리보기에서 바로 드래그해서 위치를 맞춰주세요.
                   </div>
                 </div>
+                <div style={{ display: "grid", gap: 10, padding: 14, borderRadius: 18, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(148,163,184,0.2)" }}>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#4f7390", fontWeight: 700 }}>
+                    확대
+                    <input type="range" min="0.8" max="2.2" step="0.01" value={Number(imageEditor.frame?.scale || 1)} onChange={(event) => setImageEditor((prev) => ({ ...prev, frame: { ...(prev.frame || { x: 50, y: 50, scale: 1 }), scale: Number(event.target.value || 1) } }))} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#4f7390", fontWeight: 700 }}>
+                    가로 위치
+                    <input type="range" min="0" max="100" step="0.1" value={Number(imageEditor.frame?.x ?? 50)} onChange={(event) => setImageEditor((prev) => ({ ...prev, frame: { ...(prev.frame || { x: 50, y: 50, scale: 1 }), x: Number(event.target.value || 50) } }))} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#4f7390", fontWeight: 700 }}>
+                    세로 위치
+                    <input type="range" min="0" max="100" step="0.1" value={Number(imageEditor.frame?.y ?? 50)} onChange={(event) => setImageEditor((prev) => ({ ...prev, frame: { ...(prev.frame || { x: 50, y: 50, scale: 1 }), y: Number(event.target.value || 50) } }))} />
+                  </label>
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: theme?.textSoft || "#6b8aa4", textAlign: "center" }}>위 미리보기가 실제 카드에 가까운 화면이야. 드래그와 조절은 바로 위 미리보기에서 계속 할 수 있어.</div>
+              <div style={{ display: "grid", gap: 12, padding: 16, borderRadius: 20, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>실제 카드 미리보기</div>
+                <div style={{ display: "grid", placeItems: "center", minHeight: imageEditor.mode === "list" ? 220 : 320 }}>
+                  <div
+                    onPointerDown={startImagePreviewDrag}
+                    style={{
+                      width: imageEditor.mode === "list" ? 320 : 244,
+                      maxWidth: "100%",
+                      cursor: imageEditor.image ? "grab" : "default",
+                    }}
+                  >
+                    {imageEditor.mode === "list" ? (
+                      <InvestigationInnerPreviewCard
+                        item={{
+                          title: imageEditor.title || "조사 카드",
+                          titleEn: imageEditor.eyebrow || imageEditor.title || "INVESTIGATION",
+                          type: imageEditor.type === "group" ? "group" : "daily",
+                          effectiveOpened: true,
+                          corrosionGain: Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0),
+                        }}
+                        theme={theme}
+                        imageSrc={imageEditor.image}
+                        frame={imageEditor.frame || { scale: 1, x: 50, y: 50 }}
+                        version={imageEditor.version || Date.now()}
+                      />
+                    ) : (
+                      <InvestigationEntryPreviewCard
+                        item={{
+                          title: imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사"),
+                          type: imageEditor.type === "group" ? "group" : "daily",
+                          corrosionGain: Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0),
+                          participants: [],
+                          attempts: 0,
+                        }}
+                        type={imageEditor.type === "group" ? "group" : "daily"}
+                        theme={theme}
+                        imageSrc={imageEditor.image}
+                        frame={imageEditor.frame || { scale: 1, x: 50, y: 50 }}
+                        version={imageEditor.version || Date.now()}
+                        titleOverride={imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사")}
+                      />
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: theme?.textSoft || "#6b8aa4", textAlign: "center" }}>실제 카드와 같은 방향으로 보이도록 맞춰두었고, 이 카드 자체를 바로 드래그해서 위치를 조정할 수 있어요.</div>
+              </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <button type="button" className="ghost-button" onClick={() => setImageEditor(null)}>취소</button>

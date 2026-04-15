@@ -59,21 +59,6 @@ function safeReadJSON(key, fallback) {
   }
 }
 
-function stripHeavyDesignSections(source) {
-  const base = source && typeof source === "object" ? source : defaultDesign;
-  const nextSiteContent = { ...(base.siteContent || {}) };
-  delete nextSiteContent.maps;
-  return {
-    ...defaultDesign,
-    ...base,
-    theme: { ...(defaultDesign.theme || {}), ...(base.theme || {}) },
-    pages: { ...(defaultDesign.pages || {}), ...(base.pages || {}) },
-    siteContent: { ...(defaultDesign.siteContent || {}), ...nextSiteContent },
-    sharedShellElements: Array.isArray(base.sharedShellElements) ? base.sharedShellElements : (Array.isArray(defaultDesign.sharedShellElements) ? defaultDesign.sharedShellElements : []),
-    sharedShellOverrides: typeof base.sharedShellOverrides === "object" && base.sharedShellOverrides ? base.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {}),
-  };
-}
-
 function writeSessionJSON(key, value) {
   try {
     if (value === null || value === undefined || value === "") {
@@ -305,21 +290,19 @@ function App() {
   const [activeCharacter, setActiveCharacterState] = useState(readActiveCharacter());
   const [selectedInvestigationId, setSelectedInvestigationId] = useState(() => safeReadJSON("plc-investigation-id", null));
   const [selectedInvestigationSeed, setSelectedInvestigationSeed] = useState(() => safeReadJSON("plc-investigation-seed", null));
-  const cachedDesign = stripHeavyDesignSections(safeReadJSON(DESIGN_CACHE_KEY, null) || defaultDesign);
+  const cachedDesign = safeReadJSON(DESIGN_CACHE_KEY, null);
   const [designConfig, setDesignConfig] = useState(() => cachedDesign || defaultDesign);
-  const [designReady, setDesignReady] = useState(true);
+  const [designReady, setDesignReady] = useState(false);
   const [myUnread, setMyUnread] = useState(0);
   const [spectatorMode, setSpectatorMode] = useState(() => safeReadJSON("plc-spectator-mode", false));
   const [builderEditId, setBuilderEditId] = useState(() => safeReadJSON("plc-builder-edit-id", ""));
   const [audioOverride, setAudioOverride] = useState(null);
-  const [loginScreenKey, setLoginScreenKey] = useState(0);
   const [audioMuted, setAudioMuted] = useState(() => readStoredMuted());
   const [audioVolume, setAudioVolume] = useState(() => readStoredVolume());
   const audioRef = useRef(null);
   const audioPositionMapRef = useRef({});
   const activeAudioSourceRef = useRef("");
   const characterRefreshStampRef = useRef(0);
-  const characterRefreshInFlightRef = useRef(false);
   const presenceStampRef = useRef(0);
 
   const isAdmin = !!user?.isAdmin;
@@ -348,20 +331,16 @@ function App() {
   const refreshActiveCharacter = async (character = activeCharacter, options = {}) => {
     if (!character?.id || character.id === "admin") return;
     const now = Date.now();
-    const cooldown = options.force ? 0 : 12000;
-    if (!options.force && characterRefreshInFlightRef.current) return;
+    const cooldown = options.force ? 0 : 8000;
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
-    characterRefreshInFlightRef.current = true;
     try {
-      const res = await fetch(buildApiUrl(`/character-public/${character.id}`), { cache: "no-store" });
+      const res = await fetch(buildApiUrl(`/character-public/${character.id}`), {});
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);
     } catch {
       // ignore refresh errors
-    } finally {
-      characterRefreshInFlightRef.current = false;
     }
   };
 
@@ -467,7 +446,7 @@ function App() {
     let cancelled = false;
 
     const applyDesign = (nextDesign, { persist = false } = {}) => {
-      const next = stripHeavyDesignSections(nextDesign || defaultDesign);
+      const next = nextDesign || defaultDesign;
       if (cancelled) return;
       setDesignConfig(next);
       setDesignReady(true);
@@ -479,24 +458,14 @@ function App() {
     };
 
     const fetchDesign = () => {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 4500);
-      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store", signal: controller.signal })
+      setDesignReady(false);
+      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store" })
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
           const cached = safeReadJSON(DESIGN_CACHE_KEY, defaultDesign) || defaultDesign;
           applyDesign(cached, { persist: false });
-        })
-        .finally(() => {
-          window.clearTimeout(timeout);
         });
-      return () => {
-        window.clearTimeout(timeout);
-        try {
-          controller.abort();
-        } catch {}
-      };
     };
 
     const handleDesignUpdated = (event) => {
@@ -520,15 +489,12 @@ function App() {
       applyDesign(cached, { persist: false });
     };
 
-    const cancelFetch = fetchDesign();
+    fetchDesign();
 
     window.addEventListener("plc-design-updated", handleDesignUpdated);
     window.addEventListener("storage", handleStorage);
     return () => {
       cancelled = true;
-      try {
-        cancelFetch?.();
-      } catch {}
       window.removeEventListener("plc-design-updated", handleDesignUpdated);
       window.removeEventListener("storage", handleStorage);
     };
@@ -542,7 +508,8 @@ function App() {
   useEffect(() => {
     const handleCharacterUpdated = (event) => {
       const updated = event?.detail?.character;
-      if (updated && String(updated.id || "") === String(activeCharacter?.id || "")) {
+      const forceRefresh = !!event?.detail?.force;
+      if (!forceRefresh && updated && String(updated.id || "") === String(activeCharacter?.id || "")) {
         applyActiveCharacter(updated);
       } else {
         refreshActiveCharacter(activeCharacter, { force: true });
@@ -558,7 +525,7 @@ function App() {
       if (document.visibilityState === "visible") refreshActiveCharacter(activeCharacter);
     };
     refreshIfVisible();
-    const timer = setInterval(refreshIfVisible, 45000);
+    const timer = setInterval(refreshIfVisible, 30000);
     document.addEventListener("visibilitychange", refreshIfVisible);
     window.addEventListener("focus", refreshIfVisible);
     return () => {
@@ -607,8 +574,7 @@ function App() {
       const now = Date.now();
       if (!force && now - presenceStampRef.current < 12000) return;
       presenceStampRef.current = now;
-      ensureSocketConnected();
-      socket.emit("register", {
+      ensureSocketConnected().emit("register", {
         id: user.id,
         ownerId: activeCharacter?.ownerId || user.id,
         name: activeCharacter?.name || user.id,
@@ -746,9 +712,8 @@ function App() {
   };
 
   const logout = () => {
-    try { socket.emit("unregister"); } catch {}
+    socket.emit("unregister");
     ensureSocketDisconnected();
-    setLoginScreenKey((prev) => prev + 1);
     setUser(null);
     applyActiveCharacter(null);
     setSelectedInvestigationId(null);
@@ -801,7 +766,7 @@ function App() {
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.MY)} design={designConfig} theme={theme} pageKey="shop" />;
       break;
     case PAGE.MY:
-      content = !user ? <Login key={loginScreenKey} setUser={handleLogin} design={designConfig} theme={theme} /> : isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : activeCharacter ? <MyPage currentUser={activeCharacter} ownerUser={user} onUpdateUser={(character) => { applyActiveCharacter(character); reloadUnread(character); }} design={designConfig} theme={theme} /> : <CharacterSelect user={user} setCharacter={(character) => { applyActiveCharacter(character); reloadUnread(character); setActivePage(PAGE.MY); }} goBack={() => setActivePage(PAGE.HOME)} activeCharacter={activeCharacter} design={designConfig} theme={theme} />;
+      content = !user ? <Login setUser={handleLogin} design={designConfig} theme={theme} /> : isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : activeCharacter ? <MyPage currentUser={activeCharacter} ownerUser={user} onUpdateUser={(character) => { applyActiveCharacter(character); reloadUnread(character); }} design={designConfig} theme={theme} /> : <CharacterSelect user={user} setCharacter={(character) => { applyActiveCharacter(character); reloadUnread(character); setActivePage(PAGE.MY); }} goBack={() => setActivePage(PAGE.HOME)} activeCharacter={activeCharacter} design={designConfig} theme={theme} />;
       break;
     case PAGE.ADMIN:
       content = isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : null;
@@ -839,6 +804,10 @@ function App() {
     if (activePage === PAGE.INVESTIGATION) return "investigationOverlay";
     return activePage;
   })();
+
+  if (!designReady) {
+    return <div style={{ ...buildThemeVars(theme), minHeight: "100vh", background: theme?.bgMain || defaultDesign.theme?.bgMain || "#eef9ff" }} />;
+  }
 
   return (
     <div style={buildThemeVars(theme)}>

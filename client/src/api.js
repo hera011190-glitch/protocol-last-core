@@ -19,7 +19,16 @@ export function buildApiUrl(path) {
 }
 
 export async function apiFetch(path, options = {}) {
-  const res = await fetch(buildApiUrl(path), options);
+  const isGetLike = !options?.method || String(options.method || "GET").toUpperCase() === "GET"
+  const nextOptions = {
+    ...(options || {}),
+    cache: options?.cache || (isGetLike ? "no-store" : "no-cache"),
+    headers: {
+      ...(options?.headers || {}),
+      ...(isGetLike ? { "Cache-Control": "no-cache" } : {}),
+    },
+  };
+  const res = await fetch(buildApiUrl(path), nextOptions);
   return res;
 }
 
