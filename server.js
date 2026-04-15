@@ -2679,17 +2679,21 @@ app.post("/admin/investigationCardImage", (req, res) => {
     const nextListImageFrame = listImageFrame !== undefined ? normalizeInvestigationImageFrame(listImageFrame) : normalizeInvestigationImageFrame(item.listImageFrame || item.data?.listImageFrame);
     const nextEntryImageFrame = entryImageFrame !== undefined ? normalizeInvestigationImageFrame(entryImageFrame) : normalizeInvestigationImageFrame(item.entryImageFrame || item.data?.entryImageFrame || item.listImageFrame || item.data?.listImageFrame);
     const imageUpdatedAt = Date.now();
-    item.listImage = nextListImage;
-    item.entryImage = nextEntryImage;
-    item.listImageFrame = nextListImageFrame;
-    item.entryImageFrame = nextEntryImageFrame;
+    const finalListImage = item.type === "daily" ? (nextEntryImage || nextListImage) : nextListImage;
+    const finalEntryImage = item.type === "daily" ? (nextEntryImage || nextListImage) : nextEntryImage;
+    const finalListImageFrame = item.type === "daily" ? normalizeInvestigationImageFrame(nextEntryImageFrame || nextListImageFrame) : nextListImageFrame;
+    const finalEntryImageFrame = item.type === "daily" ? normalizeInvestigationImageFrame(nextEntryImageFrame || nextListImageFrame) : nextEntryImageFrame;
+    item.listImage = finalListImage;
+    item.entryImage = finalEntryImage;
+    item.listImageFrame = finalListImageFrame;
+    item.entryImageFrame = finalEntryImageFrame;
     item.imageUpdatedAt = imageUpdatedAt;
     item.data = {
       ...(item.data || {}),
-      listImage: nextListImage,
-      entryImage: nextEntryImage,
-      listImageFrame: nextListImageFrame,
-      entryImageFrame: nextEntryImageFrame,
+      listImage: finalListImage,
+      entryImage: finalEntryImage,
+      listImageFrame: finalListImageFrame,
+      entryImageFrame: finalEntryImageFrame,
       imageUpdatedAt,
     };
     if (item.originalTemplate) {

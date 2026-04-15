@@ -240,7 +240,6 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
   const [relationTargetId, setRelationTargetId] = useState("");
   const [relationName, setRelationName] = useState("");
   const [relationDescription, setRelationDescription] = useState("");
-  const [saveNotice, setSaveNotice] = useState("");
 
   const baseHpStat = getHpStatValue(currentUser?.stats?.hp);
   const effectiveHpStat = baseHpStat + Number(draftDelta.hp || 0);
@@ -627,9 +626,9 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
               <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: "16px" }}>
                 <div>
                   <div style={{ height: "220px", borderRadius: "22px", overflow: "hidden", background: "rgba(255,255,255,0.72)", position: "relative" }}>
-                    {currentUser.investigationImage ? (
+                    {currentUser.profileImage || currentUser.image || currentUser.investigationImage ? (
                       <img
-                        src={currentUser.investigationImage}
+                        src={currentUser.profileImage || currentUser.image || currentUser.investigationImage}
                         alt={currentUser.name}
                         style={{
                           width: "100%",
@@ -639,7 +638,7 @@ export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, t
                         }}
                       />
                     ) : (
-                      <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>SD 이미지</div>
+                      <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>프로필 이미지</div>
                     )}
                   </div>
                   <div style={{ marginTop: "12px", fontSize: "22px", fontWeight: 900 }}>Lv. {currentUser.level || 1}</div>

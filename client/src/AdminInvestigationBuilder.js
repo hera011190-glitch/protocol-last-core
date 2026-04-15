@@ -116,87 +116,94 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     setSelectedNodeId(nextNodes[0].id);
   };
 
-  const serialize = () => ({
-    id: builder.id,
-    title: builder.title,
-    type: builder.type,
-    backgroundImage: builder.backgroundImage,
-    listImage: builder.listImage,
-    bgmUrl: builder.bgmUrl,
-    bgmVolume: builder.bgmVolume,
-    entryCorrosion: Number(builder.entryCorrosion || 0),
-    endCorrosion: Number(builder.endCorrosion || 0),
-    data: {
-      start: builder.start,
+  const serialize = () => {
+    const safeId = String(builder.id || `custom-${Date.now()}`).trim();
+    const safeTitle = String(builder.title || "새 조사").trim() || "새 조사";
+    const safeStart = String(builder.start || builder.nodes?.[0]?.id || "start").trim() || "start";
+    return {
+      id: safeId,
+      title: safeTitle,
+      type: builder.type,
       backgroundImage: builder.backgroundImage,
       listImage: builder.listImage,
       bgmUrl: builder.bgmUrl,
       bgmVolume: builder.bgmVolume,
       entryCorrosion: Number(builder.entryCorrosion || 0),
       endCorrosion: Number(builder.endCorrosion || 0),
-      nodes: Object.fromEntries(builder.nodes.map((node) => [node.id, {
-        name: node.name || node.id,
-        log: node.log || "",
-        image: node.image || "",
-        investigations: (node.investigations || []).map((value) => String(value || "").trim()).filter(Boolean),
-        choices: (node.choices || []).map((choice) => ({ text: String(choice.text || "").trim(), target: String(choice.target || "").trim() })).filter((choice) => choice.text),
-        battle: node.battle ? {
-          ...node.battle,
-          hp: Number(node.battle.hp || 0),
-          maxHp: Number(node.battle.maxHp || node.battle.hp || 0),
-          atk: Number(node.battle.atk || 0),
-          def: Number(node.battle.def || 0),
-          agi: Number(node.battle.agi || 0),
-          aoe_chance: Number(node.battle.aoe_chance || 0),
-          finisher_chance: Number(node.battle.finisher_chance || 0),
-          rewardPoints: Number(node.battle.rewardPoints || 0),
-        } : null,
-        npcScene: node.npcScene ? {
-          ...node.npcScene,
-          profileImage: String(node.npcScene.profileImage || ""),
-          lines: (node.npcScene.lines || []).map((line) => ({
-            text: String(line.text || ""),
-            options: (line.options || []).map((option) => ({
-              text: String(option.text || ""),
-              nextIndex: option.nextIndex === "" ? undefined : Number(option.nextIndex),
-              rewardItem: String(option.rewardItem || ""),
-              rewardStatPoints: Number(option.rewardStatPoints || 0),
-              clue: option.clue || "",
+      data: {
+        start: safeStart,
+        backgroundImage: builder.backgroundImage,
+        listImage: builder.listImage,
+        bgmUrl: builder.bgmUrl,
+        bgmVolume: builder.bgmVolume,
+        entryCorrosion: Number(builder.entryCorrosion || 0),
+        endCorrosion: Number(builder.endCorrosion || 0),
+        nodes: Object.fromEntries(
+          builder.nodes.map((node) => [node.id, {
+            name: node.name || node.id,
+            log: node.log || "",
+            image: node.image || "",
+            investigations: (node.investigations || []).map((value) => String(value || "").trim()).filter(Boolean),
+            choices: (node.choices || []).map((choice) => ({ text: String(choice.text || "").trim(), target: String(choice.target || "").trim() })).filter((choice) => choice.text),
+            battle: node.battle ? {
+              ...node.battle,
+              hp: Number(node.battle.hp || 0),
+              maxHp: Number(node.battle.maxHp || node.battle.hp || 0),
+              atk: Number(node.battle.atk || 0),
+              def: Number(node.battle.def || 0),
+              agi: Number(node.battle.agi || 0),
+              aoe_chance: Number(node.battle.aoe_chance || 0),
+              finisher_chance: Number(node.battle.finisher_chance || 0),
+              rewardPoints: Number(node.battle.rewardPoints || 0),
+            } : null,
+            npcScene: node.npcScene ? {
+              ...node.npcScene,
+              profileImage: String(node.npcScene.profileImage || ""),
+              lines: (node.npcScene.lines || []).map((line) => ({
+                text: String(line.text || ""),
+                options: (line.options || []).map((option) => ({
+                  text: String(option.text || ""),
+                  nextIndex: option.nextIndex === "" ? undefined : Number(option.nextIndex),
+                  rewardItem: String(option.rewardItem || ""),
+                  rewardStatPoints: Number(option.rewardStatPoints || 0),
+                  clue: option.clue || "",
+                })),
+              })),
+            } : null,
+            clues: (node.clues || []).map((clue, index) => ({
+              id: clue.id || `clue-${node.id}-${index}`,
+              title: String(clue.title || ""),
+              text: String(clue.text || clue.description || ""),
+              description: String(clue.description || clue.text || ""),
+              image: String(clue.image || ""),
             })),
-          })),
-        } : null,
-        clues: (node.clues || []).map((clue, index) => ({
-          id: clue.id || `clue-${node.id}-${index}`,
-          title: String(clue.title || ""),
-          text: String(clue.text || clue.description || ""),
-          description: String(clue.description || clue.text || ""),
-          image: String(clue.image || ""),
-        })),
-        onEnterDamage: Number(node.onEnterDamage || 0),
-        onEnterMuteMinutes: Number(node.onEnterMuteMinutes || 0),
-        mapX: Number(node.mapX || 0),
-        mapY: Number(node.mapY || 0),
-        actionResults: Object.fromEntries(
-          Object.entries(node.actionResults || {}).map(([key, value]) => [key, {
-            ...value,
-            log: String(value?.log || ""),
-            points: Number(value?.points || 0),
-            item: String(value?.item || ""),
-            reward: String(value?.reward || ""),
-            clue: String(value?.clue || ""),
-            clueText: String(value?.clueText || ""),
-            clueImage: String(value?.clueImage || ""),
-            statPoints: Number(value?.statPoints || 0),
-            damage: Number(value?.damage || 0),
-            muteMinutes: Number(value?.muteMinutes || 0),
+            onEnterDamage: Number(node.onEnterDamage || 0),
+            onEnterMuteMinutes: Number(node.onEnterMuteMinutes || 0),
+            mapX: Number(node.mapX || 0),
+            mapY: Number(node.mapY || 0),
+            actionResults: Object.fromEntries(
+              Object.entries(node.actionResults || {}).map(([key, value]) => [key, {
+                ...value,
+                log: String(value?.log || ""),
+                points: Number(value?.points || 0),
+                item: String(value?.item || ""),
+                reward: String(value?.reward || ""),
+                clue: String(value?.clue || ""),
+                clueText: String(value?.clueText || ""),
+                clueImage: String(value?.clueImage || ""),
+                statPoints: Number(value?.statPoints || 0),
+                damage: Number(value?.damage || 0),
+                muteMinutes: Number(value?.muteMinutes || 0),
+              }])
+            ),
           }])
         ),
-      }]))
-    }
-  });
+      },
+    };
+  };
 
   const saveTemplate = async () => {
-    const payload = { id: builder.id, title: builder.title || "새 조사", type: builder.type, json: serialize() };
+    const payload = { id: serialize().id, title: serialize().title, type: builder.type, json: serialize() };
     const res = await apiFetch("/admin/customInvestigations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (!data.success) return alert(data.message || "저장 실패");

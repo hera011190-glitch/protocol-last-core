@@ -113,9 +113,20 @@ function buildFallbackParticipants(investigation) {
 
 function InvestigationPage({ investigationId, character, isAdmin, isSpectator = false, goBack, design, theme, pageKey = "investigationOverlay", previewData = null, previewChat = null, previewInventory = null }) {
   const previewMode = !!previewData;
-  const [investigation, setInvestigation] = useState(() => previewData || null);
-  const [currentNodeId, setCurrentNodeId] = useState(() => previewData?.currentNodeId || previewData?.data?.start || null);
-  const [logs, setLogs] = useState(() => ((Array.isArray(previewData?.sharedLogs) && previewData.sharedLogs.length > 0 ? previewData.sharedLogs : []).slice(-160)));
+  const investigationCacheKey = useMemo(() => `investigation-cache:${investigationId}:${character?.name || "guest"}`, [investigationId, character?.name]);
+  const readCachedInvestigation = useCallback(() => {
+    if (previewData || typeof window === "undefined") return previewData || null;
+    try {
+      const raw = window.localStorage.getItem(investigationCacheKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [previewData, investigationCacheKey]);
+  const cachedInvestigation = readCachedInvestigation();
+  const [investigation, setInvestigation] = useState(() => previewData || cachedInvestigation || null);
+  const [currentNodeId, setCurrentNodeId] = useState(() => previewData?.currentNodeId || cachedInvestigation?.currentNodeId || previewData?.data?.start || cachedInvestigation?.data?.start || null);
+  const [logs, setLogs] = useState(() => ((Array.isArray(previewData?.sharedLogs) && previewData.sharedLogs.length > 0 ? previewData.sharedLogs : Array.isArray(cachedInvestigation?.sharedLogs) ? cachedInvestigation.sharedLogs : []).slice(-160)));
   const [chat, setChat] = useState(() => ((Array.isArray(previewChat) ? previewChat : Array.isArray(previewData?.previewChat) ? previewData.previewChat : []).slice(-120)));
   const [input, setInput] = useState("");
   const [onlineAccounts, setOnlineAccounts] = useState([]);
@@ -199,6 +210,11 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     }
     setInvestigation(data);
     setCurrentNodeId(nodeId);
+    if (!previewMode && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(investigationCacheKey, JSON.stringify(data));
+      } catch {}
+    }
     setLogs(
       (Array.isArray(data.sharedLogs) && data.sharedLogs.length > 0
         ? data.sharedLogs
@@ -715,9 +731,9 @@ useEffect(() => {
         }) : prev);
       }
       if (data.currentNodeId) setCurrentNodeId(data.currentNodeId);
+      setActionPicker("");
       if (data.autoSubmitted) {
         setMyBattleAction("");
-        setActionPicker("");
         setEditingSavedAction(true);
       }
     } catch (err) {
@@ -733,7 +749,6 @@ useEffect(() => {
     if (battleInputLocked || battleActionSubmitting || !actionName) return;
     skipAutoActionSyncRef.current = true;
     setMyBattleAction(actionName);
-    setActionPicker("");
     saveMyBattleAction(actionName);
   };
 
@@ -2012,8 +2027,27 @@ const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://ww
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const safeName = String(name || "");
   const recent = Array.isArray(rounds)
-    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 3600)
+    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 2400)
     : [];
+
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const entry = recent[index];
+    const actor = String(entry?.actor || "");
+    const effect = String(entry?.effect || "");
+    const text = String(entry?.text || "");
+    const isActor = actor === safeName;
+
+    if (!isActor) continue;
+    if (effect === "damage") return { effect: "attack", entry };
+    if (["attack", "drain"].includes(effect)) return { effect: "attack", entry };
+    if (["guard", "shield"].includes(effect)) return { effect: "guard", entry };
+    if (["skill", "debuff"].includes(effect)) return { effect: "skill", entry };
+    if (effect === "item" && /회복/.test(text)) return { effect: "heal", entry };
+    if (effect === "item") return { effect: "item", entry };
+    if (effect === "heal") return { effect: "heal", entry };
+    if (effect === "evade") return { effect: "evade", entry };
+  }
+
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
     const actor = String(entry?.actor || "");
@@ -2026,12 +2060,7 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
     if (["damage", "hit", "defeat"].includes(effect) && isTarget) return { effect: "damage", entry };
     if (["attack", "drain"].includes(effect) && isTarget) return { effect: "damage", entry };
     if (["skill", "debuff"].includes(effect) && isTarget) return { effect: "damage", entry };
-    if (effect === "damage" && isActor) return { effect: "attack", entry };
-    if (["attack", "drain"].includes(effect) && isActor) return { effect: "attack", entry };
-    if (["guard", "shield"].includes(effect) && isActor) return { effect: "guard", entry };
-    if (["skill", "debuff"].includes(effect) && isActor) return { effect: "skill", entry };
     if (effect === "item" && /회복/.test(text) && (isActor || isTarget)) return { effect: "heal", entry };
-    if (effect === "item" && isActor) return { effect: "item", entry };
     if (effect === "heal" && (isActor || isTarget)) return { effect: "heal", entry };
     if (effect === "evade" && (isActor || isTarget)) return { effect: "evade", entry };
   }
@@ -2320,12 +2349,12 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
     badgeColor: getBattleEffectLabelColor(effect),
     wrapperStyle: {
       transform: `translate(${translateX.toFixed(2)}px, ${translateY.toFixed(2)}px) scale(${scale.toFixed(3)})`,
-      transition: persistentGuard ? "box-shadow 0.18s ease, opacity 0.18s ease" : "transform 0.02s linear, box-shadow 0.1s ease, opacity 0.1s ease",
+      transition: persistentGuard ? "box-shadow 0.2s ease, opacity 0.2s ease" : "transform 0.12s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease, opacity 0.16s ease",
       boxShadow: frameBoxShadow || "none",
     },
     imageStyle: {
       filter: glow,
-      transition: "filter 0.12s ease",
+      transition: "filter 0.18s ease",
     },
     overlayStyle,
     fxOuterStyle,

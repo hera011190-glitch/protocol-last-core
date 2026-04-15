@@ -385,14 +385,23 @@ function CharacterSprite({ character, quote, moving, onClick }) {
               maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
             }}
           />
-          <div
+          <img
+            src={spriteImage}
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+            decoding="async"
             style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
               position: "absolute",
               inset: 0,
-              background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) ${Math.max(0, tintStart - 8)}%, rgba(255,180,180,0.08) ${Math.max(0, tintMid - 2)}%, rgba(255,88,88,${(0.18 + tintStrength * 0.18).toFixed(3)}) ${Math.min(100, tintMid + 18)}%, rgba(205,0,0,${(0.42 + tintStrength * 0.22).toFixed(3)}) 100%)`,
+              opacity: Math.min(0.92, 0.16 + tintStrength * 0.82),
+              filter: `sepia(1) saturate(${(2.35 + tintStrength * 2.8).toFixed(2)}) hue-rotate(-36deg) brightness(${(0.86 + tintStrength * 0.06).toFixed(2)}) contrast(1.08)`,
               mixBlendMode: "screen",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.18) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.7) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.18) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.7) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
             }}
           />
         </div>
