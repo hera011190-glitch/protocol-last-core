@@ -12,3 +12,8 @@ export function ensureSocketConnected() {
   if (!socket.connected) socket.connect();
   return socket;
 }
+
+export function ensureSocketDisconnected() {
+  if (socket.connected) socket.disconnect();
+  return socket;
+}
