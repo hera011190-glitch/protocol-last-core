@@ -125,7 +125,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
   }, [previewData, investigationCacheKey]);
   const cachedInvestigation = readCachedInvestigation();
   const [investigation, setInvestigation] = useState(() => previewData || cachedInvestigation || null);
-  const [currentNodeId, setCurrentNodeId] = useState(() => previewData?.currentNodeId || cachedInvestigation?.currentNodeId || previewData?.data?.start || cachedInvestigation?.data?.start || null);
+  const [currentNodeId, setCurrentNodeId] = useState(() => previewData?.currentNodeId || cachedInvestigation?.currentNodeId || previewData?.data?.start || cachedInvestigation?.data?.start || Object.keys(previewData?.data?.nodes || {})[0] || Object.keys(cachedInvestigation?.data?.nodes || {})[0] || null);
   const [logs, setLogs] = useState(() => ((Array.isArray(previewData?.sharedLogs) && previewData.sharedLogs.length > 0 ? previewData.sharedLogs : Array.isArray(cachedInvestigation?.sharedLogs) ? cachedInvestigation.sharedLogs : []).slice(-160)));
   const [chat, setChat] = useState(() => ((Array.isArray(previewChat) ? previewChat : Array.isArray(previewData?.previewChat) ? previewData.previewChat : []).slice(-120)));
   const [input, setInput] = useState("");
@@ -184,7 +184,7 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
     if (data.type === "daily") setChat([]);
     const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
     handledBattleRoundKeyRef.current = hasRoundPlayback ? getBattleRoundKey(data) : "";
-    const nodeId = data.currentNodeId || data.data?.start;
+    const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || data?.ended) {
       playbackSourceRef.current = null;
       setPlaybackState(null);
@@ -255,6 +255,11 @@ function InvestigationPage({ investigationId, character, isAdmin, isSpectator = 
       const res = await apiFetch(`/investigationView/${investigationId}`);
       const data = await res.json();
       applyInvestigation(data);
+      if (!(data?.currentNodeId || data?.data?.start || Object.keys(data?.data?.nodes || {})[0])) {
+        window.setTimeout(() => {
+          loadInvestigation();
+        }, 220);
+      }
     } catch (err) {
       console.error("loadInvestigation error", err);
     }

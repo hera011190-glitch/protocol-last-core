@@ -661,140 +661,68 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                     {imageEditor.mode === "list" ? (
                       <div
                         style={{
-                          width: "100%",
-                          maxWidth: 340,
-                          justifySelf: "center",
-                          borderRadius: 24,
+                          ...card(theme, false),
+                          position: "relative",
                           overflow: "hidden",
-                          border: "1px solid rgba(255,255,255,0.14)",
-                          background: theme.bgPanel,
-                          boxShadow: "0 18px 46px rgba(0,0,0,0.34)",
-                          display: "grid",
+                          minHeight: 188,
+                          padding: 0,
+                          background: theme?.panelStrong || "#fff",
+                          width: "100%",
                         }}
                       >
-                        <div
-                          style={{
-                            position: "relative",
-                            aspectRatio: "6 / 5",
-                            minHeight: 206,
-                            background: "rgba(255,255,255,0.08)",
-                            overflow: "hidden",
-                          }}
-                        >
-                          {imageEditor.image ? (
-                            <img src={imageEditor.image} alt={imageEditor.title || "조사 카드"} style={cardImageStyleFromFrame(imageEditor.frame || { scale: 1, x: 50, y: 50 })} />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "rgba(255,255,255,0.55)", fontSize: 15 }}>이미지 없음</div>
-                          )}
-                          <div
-                            style={{
-                              position: "absolute",
-                              inset: 0,
-                              background: "linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0.02) 100%)",
-                              pointerEvents: "none",
-                            }}
-                          />
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: 16,
-                              left: 16,
-                              right: 16,
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 10,
-                              alignItems: "flex-start",
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontSize: 12, letterSpacing: 3, textTransform: "uppercase", color: "rgba(255,255,255,0.88)", fontWeight: 700 }}>
-                                {imageEditor.type === "group" ? "GROUP" : "DAILY"}
-                              </div>
-                              <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", marginTop: 4 }}>
-                                {imageEditor.type === "group" ? "단체조사" : "일일조사"}
-                              </div>
+                        <CardImageLayer src={imageEditor.image} alt={imageEditor.title || "조사 카드"} frame={imageEditor.frame || { scale: 1, x: 50, y: 50 }} version={imageEditor.version || Date.now()} />
+                        {imageEditor.image ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)" }} /> : null}
+                        <div style={{ position: "relative", zIndex: 1, padding: 20, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "stretch", minHeight: 188 }}>
+                          <div style={{ maxWidth: "70%" }}>
+                            <div className="section-eyebrow">{imageEditor.type === "group" ? "단체조사" : "일일조사"}</div>
+                            <h3 style={{ marginTop: 10, marginBottom: 8 }}>{imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사")}</h3>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                              <div style={chip("rgba(20,83,45,0.12)", "#166534")}>{imageEditor.type === "group" ? "대기 중" : "즉시 시작"}</div>
+                              <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>{imageEditor.type === "group" ? "참여 0명" : "남은 횟수 1회"}</div>
+                              <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}</div>
                             </div>
                           </div>
-                          <div
-                            style={{
-                              position: "absolute",
-                              left: 16,
-                              right: 16,
-                              bottom: 14,
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: 8,
-                              alignItems: "center",
-                              justifyContent: "flex-start",
-                            }}
-                          >
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.44)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>
-                              남은 횟수 {imageEditor.type === "group" ? "∞" : "1회"}
-                            </div>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.44)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>
-                              활성 ON
-                            </div>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.44)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>
-                              종료 시 침식 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}
-                            </div>
+                          <div style={{ display: "grid", gap: 8, alignContent: "start", justifyItems: "end" }}>
+                            <div style={chip("rgba(20,83,45,0.12)", "#166534")}>{imageEditor.type === "group" ? "대기중" : "일일"}</div>
+                            <button type="button" className="home-primary-button" disabled>{imageEditor.type === "group" ? "참여" : "시작"}</button>
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div
                         style={{
-                          width: "100%",
-                          borderRadius: 24,
+                          ...card(theme, false, true),
+                          textAlign: "left",
+                          minHeight: 260,
+                          position: "relative",
                           overflow: "hidden",
-                          background: theme.bgPanel,
-                          border: `1px solid ${theme.lineStrong || "rgba(255,255,255,0.12)"}`,
-                          boxShadow: "0 24px 54px rgba(0,0,0,0.36)",
+                          padding: 0,
+                          background: theme?.panelStrong || "#fff",
+                          width: "100%",
                         }}
                       >
-                        <div
-                          style={{
-                            position: "relative",
-                            minHeight: 246,
-                            background: "rgba(255,255,255,0.08)",
-                            overflow: "hidden",
-                          }}
-                        >
-                          {imageEditor.image ? (
-                            <img src={imageEditor.image} alt={imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사")} style={cardImageStyleFromFrame(imageEditor.frame || { scale: 1, x: 50, y: 50 })} />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "rgba(255,255,255,0.55)" }}>이미지 없음</div>
-                          )}
-                          <div
-                            style={{
-                              position: "absolute",
-                              inset: 0,
-                              background: "linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0.02) 100%)",
-                              pointerEvents: "none",
-                            }}
-                          />
-                          <div style={{ position: "absolute", left: 18, top: 18 }}>
-                            <div style={{ fontSize: 12, letterSpacing: 3, textTransform: "uppercase", color: "rgba(255,255,255,0.88)", fontWeight: 700 }}>
-                              {imageEditor.type === "group" ? "GROUP" : "DAILY"}
-                            </div>
-                            <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 4 }}>
-                              {imageEditor.type === "group" ? "단체조사" : "일일조사"}
-                            </div>
+                        <CardImageLayer src={imageEditor.image} alt={imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사")} frame={imageEditor.frame || { scale: 1, x: 50, y: 50 }} version={imageEditor.version || Date.now()} />
+                        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
+                        <div style={{ position: "relative", zIndex: 1, padding: 22, display: "flex", flexDirection: "column", gap: 12, minHeight: 260 }}>
+                          <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+                            <div className="section-eyebrow">{imageEditor.type === "group" ? "GROUP" : "DAILY"}</div>
+                            <span className="feature-label">{imageEditor.type === "group" ? "단체조사" : "일일조사"}</span>
+                            <h3 style={{ marginTop: 0, marginBottom: 0, color: "#17324a" }}>{imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사")}</h3>
                           </div>
-                          <div style={{ position: "absolute", left: 18, right: 18, bottom: 18 }}>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.44)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>
-                                남은 횟수 {imageEditor.type === "group" ? "∞" : "1회"}
-                              </div>
-                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.44)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>
-                                활성 ON
-                              </div>
-                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(0,0,0,0.44)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: 700, lineHeight: 1.2 }}>
-                                종료 시 침식 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 23, fontWeight: 900, color: "#fff", lineHeight: 1.18, textShadow: "0 4px 18px rgba(0,0,0,0.36)" }}>
-                              {imageEditor.title || (imageEditor.type === "group" ? "단체조사" : "일일조사")}
-                            </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "auto" }}>
+                            {imageEditor.type === "group" ? (
+                              <>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 0개</div>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>비활성 0개</div>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>완료 0개</div>
+                              </>
+                            ) : (
+                              <>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 1회</div>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 1개</div>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}</div>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

@@ -261,9 +261,16 @@ function matchesActiveCharacter(candidate, activeCharacter) {
   if (!candidate || !activeCharacter) return false;
   const activeAliases = new Set(getCharacterAliases(activeCharacter));
   if (getCharacterAliases(candidate).some((alias) => activeAliases.has(alias))) return true;
+  const activeId = normalizeKeyPart(activeCharacter?.id);
   const ownerKey = normalizeKeyPart(activeCharacter?.ownerId);
   const nameKey = normalizeKeyPart(activeCharacter?.name);
-  return !!ownerKey && !!nameKey && normalizeKeyPart(candidate?.ownerId) === ownerKey && normalizeKeyPart(candidate?.name) === nameKey;
+  const candidateId = normalizeKeyPart(candidate?.id);
+  const candidateOwner = normalizeKeyPart(candidate?.ownerId);
+  const candidateName = normalizeKeyPart(candidate?.name);
+  if (activeId && candidateId && activeId === candidateId) return true;
+  if (ownerKey && nameKey && candidateOwner === ownerKey && candidateName === nameKey) return true;
+  if (nameKey && candidateName && candidateName === nameKey) return true;
+  return false;
 }
 
 function stabilizeCharacterRows(rows, activeCharacter, maps) {
@@ -399,7 +406,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
               inset: 0,
               opacity: Math.min(0.92, 0.16 + tintStrength * 0.82),
               filter: `sepia(1) saturate(${(2.35 + tintStrength * 2.8).toFixed(2)}) hue-rotate(-36deg) brightness(${(0.86 + tintStrength * 0.06).toFixed(2)}) contrast(1.08)`,
-              mixBlendMode: "screen",
+              mixBlendMode: "multiply",
               WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
               maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
             }}
@@ -771,6 +778,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (activeCharacter && matchesActiveCharacter(character, activeCharacter)) {
         if (activeShown) return false;
         activeShown = true;
+      }
+      if (activeCharacter && !matchesActiveCharacter(character, activeCharacter)) {
+        const sameName = normalizeKeyPart(character?.name) && normalizeKeyPart(character?.name) === normalizeKeyPart(activeCharacter?.name);
+        const sameId = normalizeKeyPart(character?.id) && normalizeKeyPart(character?.id) === normalizeKeyPart(activeCharacter?.id);
+        if ((sameName || sameId) && activeShown) return false;
       }
       seen.add(key);
       return true;

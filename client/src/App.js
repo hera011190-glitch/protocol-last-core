@@ -292,7 +292,7 @@ function App() {
   const [selectedInvestigationSeed, setSelectedInvestigationSeed] = useState(() => safeReadJSON("plc-investigation-seed", null));
   const cachedDesign = safeReadJSON(DESIGN_CACHE_KEY, null);
   const [designConfig, setDesignConfig] = useState(() => cachedDesign || defaultDesign);
-  const [designReady, setDesignReady] = useState(false);
+  const [designReady, setDesignReady] = useState(true);
   const [myUnread, setMyUnread] = useState(0);
   const [spectatorMode, setSpectatorMode] = useState(() => safeReadJSON("plc-spectator-mode", false));
   const [builderEditId, setBuilderEditId] = useState(() => safeReadJSON("plc-builder-edit-id", ""));
@@ -458,8 +458,7 @@ function App() {
     };
 
     const fetchDesign = () => {
-      setDesignReady(false);
-      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store" })
+      fetch(buildApiUrl(`/designConfigPublic`), { cache: "default" })
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
@@ -805,12 +804,8 @@ function App() {
     return activePage;
   })();
 
-  if (!designReady) {
-    return <div style={{ ...buildThemeVars(theme), minHeight: "100vh", background: theme?.bgMain || defaultDesign.theme?.bgMain || "#eef9ff" }} />;
-  }
-
   return (
-    <div style={buildThemeVars(theme)}>
+    <div data-design-ready={designReady ? "1" : "0"} style={buildThemeVars(theme)}>
       <audio ref={audioRef} style={{ display: "none" }} playsInline />
       <AppShellFrame user={user} activePage={activePage} shellPageKey={shellPageKey} onNavigate={setActivePage} onLogout={logout} onLogin={() => setActivePage(PAGE.MY)} designConfig={designConfig} myUnread={myUnread}>
         {content}
