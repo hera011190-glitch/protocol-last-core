@@ -11,12 +11,22 @@ const app = express();
 const REQUEST_BODY_LIMIT = "100mb";
 const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
-const DATA_DIR = path.resolve(process.env.DATA_DIR || __dirname);
+const LEGACY_DATA_DIR = __dirname;
+const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, "..", "protocol-last-core-data"));
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 function resolveDataPath(filename) {
-  return path.join(DATA_DIR, filename);
+  const nextPath = path.join(DATA_DIR, filename);
+  const legacyPath = path.join(LEGACY_DATA_DIR, filename);
+  if (!fs.existsSync(nextPath) && fs.existsSync(legacyPath)) {
+    try {
+      fs.copyFileSync(legacyPath, nextPath);
+    } catch (error) {
+      console.error(`[data-migrate] ${filename} 복사 실패`, error.message);
+    }
+  }
+  return nextPath;
 }
 
 function resolveBundledPath(filename) {
