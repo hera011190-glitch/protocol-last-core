@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import socket, { ensureSocketConnected } from "./socket";
 import { apiFetch } from "./api";

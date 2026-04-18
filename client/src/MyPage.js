@@ -235,6 +235,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const [letter, setLetter] = useState("");
   const [draftDelta, setDraftDelta] = useState({ hp: 0, def: 0, atk: 0, agi: 0 });
   const [profileEdit, setProfileEdit] = useState({ name: "", age: "", bodyInfo: "", rank: "대원", oneLine: "", profile: "", image: "", mainImage: "", mainImageFrame: { x: 50, y: 26, scale: 1.06 }, investigationImage: "", profileBgm: "", profileBgmVolume: 1 });
+  const [saveNotice, setSaveNotice] = useState("");
   const profileTextareaRef = useRef(null);
   const [relationOpen, setRelationOpen] = useState(false);
   const [relationTargetId, setRelationTargetId] = useState("");
