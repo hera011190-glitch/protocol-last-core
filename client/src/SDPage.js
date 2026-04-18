@@ -461,7 +461,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     let cancelled = false;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5000);
-    fetch(buildApiUrl(`/designMapsPublic?t=${Date.now()}`), { cache: "no-store", signal: controller.signal })
+    fetch(buildApiUrl(`/designMapsPublic`), { cache: "default", signal: controller.signal })
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
         if (cancelled || !data || typeof data !== "object") return;

@@ -223,7 +223,7 @@ const PROFILE_FONT_OPTIONS = [
   { label: "궁서", value: `"Gungsuh", serif` },
 ];
 
-export default function MyPage({ currentUser, ownerUser, onUpdateUser, design, theme }) {
+export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser, design, theme }) {
   const [allMyCharacters, setAllMyCharacters] = useState([]);
   const [allCharacters, setAllCharacters] = useState([]);
   const [mailList, setMailList] = useState([]);

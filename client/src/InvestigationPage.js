@@ -111,7 +111,7 @@ function buildFallbackParticipants(investigation) {
   return Array.from(roster.values());
 }
 
-function InvestigationPage({ investigationId, character, isAdmin, isSpectator = false, goBack, design, theme, pageKey = "investigationOverlay", previewData = null, previewChat = null, previewInventory = null }) {
+function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectator = false, goBack, design, theme, pageKey = "investigationOverlay", previewData = null, previewChat = null, previewInventory = null }) {
   const previewMode = !!previewData;
   const investigationCacheKey = useMemo(() => `investigation-cache:${investigationId}:${character?.name || "guest"}`, [investigationId, character?.name]);
   const readCachedInvestigation = useCallback(() => {
@@ -908,7 +908,7 @@ useEffect(() => {
       setBattleReadyUntil(0);
       return;
     }
-    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 260));
+    setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 120));
   }, [battleActive, investigation?.battleTurn, currentNodeId]);
 
   const battleInputLocked = battlePlaybackLocked || (battleActive && nowTick < battleReadyUntil);
@@ -926,8 +926,7 @@ useEffect(() => {
 
   useEffect(() => {
     const rounds = Array.isArray(investigation?.lastBattleRound) ? investigation.lastBattleRound : [];
-    const replaySource = playbackSourceRef.current;
-    const canReplay = !!currentNode?.battle || !!replaySource?.battle;
+    const canReplay = !!currentNode?.battle || rounds.length > 0;
     if (!canReplay || rounds.length === 0) {
       playbackSourceRef.current = null;
       setStagedBattleLogs([]);
@@ -936,17 +935,7 @@ useEffect(() => {
       setBattlePlaybackLocked(false);
       const queuedState = queuedStateUpdateRef.current;
       queuedStateUpdateRef.current = null;
-      if (queuedState) {
-        const queuedRoundKey = getBattleRoundKey(queuedState);
-        if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) {
-          loadInvestigation();
-        } else {
-          applyInvestigation(queuedState);
-        }
-      } else if (postPlaybackRefreshRef.current) {
-        postPlaybackRefreshRef.current = false;
-        loadInvestigation();
-      }
+      if (queuedState) applyInvestigation(queuedState);
       return undefined;
     }
     const key = `${investigation?.battleTurn || 0}:${rounds.map((entry) => `${entry.phase || "normal"}:${entry.text || ""}`).join("|")}`;
@@ -955,83 +944,43 @@ useEffect(() => {
     setMyBattleAction("");
     setActionPicker("");
     setEditingSavedAction(true);
-    setStagedBattleLogs([]);
-    const initialBattle = replaySource?.battle
-      ? JSON.parse(JSON.stringify(replaySource.battle))
-      : (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
-    const initialParticipantStates = replaySource?.participantStates
-      ? JSON.parse(JSON.stringify(replaySource.participantStates))
-      : JSON.parse(JSON.stringify(investigation?.participantStates || {}));
-    setPlaybackState({
-      participantStates: initialParticipantStates,
-      battle: initialBattle,
-    });
-    battlePlaybackLockStartedRef.current = Date.now();
-    setBattlePlaybackLocked(true);
-    let delay = 0;
-    const timers = [];
+    playbackSourceRef.current = null;
     const visibleEntries = rounds.filter((entry) => entry?.text);
-    visibleEntries.forEach((entry, index) => {
-      const timing = getBattlePlaybackTimings(entry, index);
-      delay += timing.beforeLog;
-      timers.push(setTimeout(() => {
-        setStagedBattleLogs((prevLogs) => {
-          if (timing.isPhaseHeader) {
-            const prior = prevLogs.filter((log) => !isBattlePhaseHeader(log));
-            return [...prior, { ...entry, appearedAt: Date.now() }];
-          }
-          return [...prevLogs, { ...entry, appearedAt: Date.now() }];
-        });
-        requestAnimationFrame(() => {
-          if (logScrollRef.current && stickLogsToBottom) {
-            logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
-          }
-        });
-      }, delay));
-      if (entry?.snapshot && !timing.isPhaseHeader) {
-        timers.push(setTimeout(() => {
-          setPlaybackState((prevPlayback) => ({
-            participantStates: entry.snapshot.participantStates || prevPlayback?.participantStates || {},
-            battle: (prevPlayback?.battle || initialBattle)
-              ? {
-                  ...JSON.parse(JSON.stringify(prevPlayback?.battle || initialBattle || {})),
-                  hp: Number(entry.snapshot.battleHp ?? prevPlayback?.battle?.hp ?? initialBattle?.hp ?? 0),
-                  maxHp: Number(entry.snapshot.battleMaxHp ?? prevPlayback?.battle?.maxHp ?? initialBattle?.maxHp ?? initialBattle?.hp ?? 0),
-                }
-              : null,
-          }));
-        }, delay + timing.beforeSnapshot));
+    const now = Date.now();
+    const lastSnapshotEntry = [...visibleEntries].reverse().find((entry) => entry?.snapshot && !entry?.isPhaseHeader);
+    const finalParticipantStates = lastSnapshotEntry?.snapshot?.participantStates
+      ? JSON.parse(JSON.stringify(lastSnapshotEntry.snapshot.participantStates))
+      : JSON.parse(JSON.stringify(investigation?.participantStates || {}));
+    const finalBattle = lastSnapshotEntry?.snapshot
+      ? {
+          ...(JSON.parse(JSON.stringify(currentNode?.battle || {})) || {}),
+          hp: Number(lastSnapshotEntry.snapshot.battleHp ?? currentNode?.battle?.hp ?? 0),
+          maxHp: Number(lastSnapshotEntry.snapshot.battleMaxHp ?? currentNode?.battle?.maxHp ?? currentNode?.battle?.hp ?? 0),
+        }
+      : (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
+    setPlaybackState({ participantStates: finalParticipantStates, battle: finalBattle });
+    setStagedBattleLogs(visibleEntries.map((entry, index) => ({ ...entry, appearedAt: now + index * 90 })));
+    requestAnimationFrame(() => {
+      if (logScrollRef.current && stickLogsToBottom) {
+        logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
       }
-      delay += timing.totalAfterLog;
     });
-    const unlockDelay = Math.max(delay + 180, 820);
+    battlePlaybackLockStartedRef.current = now;
+    setBattlePlaybackLocked(true);
     const unlockTimer = setTimeout(() => {
       const queuedState = queuedStateUpdateRef.current;
+      queuedStateUpdateRef.current = null;
       setLogs((Array.isArray(investigation?.sharedLogs) ? investigation.sharedLogs : []).slice(-160));
-      playbackSourceRef.current = null;
       setPlaybackState(null);
-      battlePlaybackLockStartedRef.current = 0;
       setBattlePlaybackLocked(false);
-      setTimeout(() => setStagedBattleLogs([]), 120);
-      if (queuedState) {
-        queuedStateUpdateRef.current = null;
-        const queuedRoundKey = getBattleRoundKey(queuedState);
-        if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) {
-          loadInvestigation();
-        } else {
-          applyInvestigation(queuedState);
-        }
-      } else if (postPlaybackRefreshRef.current) {
-        postPlaybackRefreshRef.current = false;
-        loadInvestigation();
-      }
-    }, unlockDelay);
+      battlePlaybackLockStartedRef.current = 0;
+      setTimeout(() => setStagedBattleLogs([]), 90);
+      if (queuedState) applyInvestigation(queuedState);
+    }, 520);
     return () => {
-      timers.forEach((timer) => clearTimeout(timer));
       clearTimeout(unlockTimer);
     };
   }, [battleActive, investigation?.battleTurn, investigation?.lastBattleRound, investigation?.sharedLogs, investigation?.participantStates, currentNode?.battle]);
-
 
   useEffect(() => {
     if (!battlePlaybackLocked) return undefined;
