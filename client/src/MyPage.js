@@ -255,6 +255,16 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const exp = Number(currentUser?.exp || 0);
   const corrosion = Math.max(0, Math.min(100, Number(currentUser?.corrosion || 0)));
   const inventory = Array.isArray(currentUser?.items) ? currentUser.items : [];
+  const safeMyDesign = useMemo(() => ({
+    ...(design || {}),
+    pages: {
+      ...(design?.pages || {}),
+      my: {
+        ...(design?.pages?.my || {}),
+        elements: [],
+      },
+    },
+  }), [design]);
   const unreadCount = useMemo(() => mailList.filter((mail) => !mail.read).length, [mailList]);
   const pendingSpent = Object.values(draftDelta).reduce((sum, value) => sum + Number(value || 0), 0);
   const availableStatPoints = Math.max(0, Number(currentUser?.statPoints || 0) - pendingSpent);
