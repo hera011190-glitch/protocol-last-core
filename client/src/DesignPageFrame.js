@@ -73,7 +73,7 @@ function DesignPageFrame({
       <div
         style={{
           position: "relative",
-          zIndex: 20,
+          zIndex: 200,
           padding: "24px",
           minHeight,
           ...contentStyle,
