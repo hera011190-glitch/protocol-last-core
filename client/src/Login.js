@@ -1,27 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
-
-const LAST_AUTH_DELAY_KEY = "plc-last-auth-delay";
-
-async function probeServer(signal) {
-  try {
-    const res = await fetch(buildApiUrl(`/health?t=${Date.now()}`), { cache: "no-store", signal });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
+import { ensureSocketDisconnected } from "./socket";
 
 function Login({ setUser, design, theme }) {
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [mode, setMode] = useState("login");
   const [pending, setPending] = useState(false);
-  const requestRef = useRef(0);
-  const activeControllerRef = useRef(null);
-  const rescueTimerRef = useRef(null);
-  const mountedRef = useRef(true);
 
   const handlers = useMemo(
     () => ({
@@ -35,16 +21,6 @@ function Login({ setUser, design, theme }) {
     []
   );
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    try {
-      activeControllerRef.current?.abort();
-    } catch {}
-    try {
-      window.clearTimeout(rescueTimerRef.current);
-    } catch {}
-  }, []);
-
   const submit = async () => {
     if (pending) return;
     const nextId = id.trim();
@@ -56,89 +32,32 @@ function Login({ setUser, design, theme }) {
     }
 
     const url = mode === "login" ? buildApiUrl("/login") : buildApiUrl("/register");
-    const currentRequest = requestRef.current + 1;
-    requestRef.current = currentRequest;
+    ensureSocketDisconnected();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
 
     try {
-      activeControllerRef.current?.abort();
-    } catch {}
+      setPending(true);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: nextId,
+          pw: nextPw,
+          type: "owner",
+        }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
 
-    setPending(true);
-    try { window.clearTimeout(rescueTimerRef.current); } catch {}
-    rescueTimerRef.current = window.setTimeout(() => {
-      if (!mountedRef.current || requestRef.current !== currentRequest) return;
-      try { activeControllerRef.current?.abort(); } catch {}
-      setPending(false);
-      alert("로그인 응답이 오래 걸려 요청을 초기화했어요. 다시 한 번 눌러주세요.");
-    }, 11000);
-
-    const sendAuthRequest = async (attempt) => {
-      const controller = new AbortController();
-      activeControllerRef.current = controller;
-      const timeout = window.setTimeout(() => controller.abort(), attempt === 0 ? 6500 : 8500);
+      const raw = await res.text();
+      let data = {};
       try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: nextId,
-            pw: nextPw,
-            type: "owner",
-          }),
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        let data = {};
-        try {
-          data = await res.json();
-        } catch {
-          data = {};
-        }
-        return { res, data };
-      } finally {
-        window.clearTimeout(timeout);
-        if (activeControllerRef.current === controller) {
-          activeControllerRef.current = null;
-        }
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = {};
       }
-    };
 
-    try {
-      let result = null;
-      let lastError = null;
-      const hadRecentDelay = (() => {
-        try {
-          const raw = Number(sessionStorage.getItem(LAST_AUTH_DELAY_KEY) || 0);
-          return raw > 0 && Date.now() - raw < 15000;
-        } catch {
-          return false;
-        }
-      })();
-      if (hadRecentDelay) {
-        const probeController = new AbortController();
-        const probeTimer = window.setTimeout(() => probeController.abort(), 2200);
-        try {
-          await probeServer(probeController.signal);
-        } catch {}
-        window.clearTimeout(probeTimer);
-      }
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          result = await sendAuthRequest(attempt);
-          try { sessionStorage.removeItem(LAST_AUTH_DELAY_KEY); } catch {}
-          break;
-        } catch (error) {
-          lastError = error;
-          if (error?.name === "AbortError") {
-            try { sessionStorage.setItem(LAST_AUTH_DELAY_KEY, String(Date.now())); } catch {}
-          }
-          if (error?.name !== "AbortError") break;
-        }
-      }
-      if (!result) throw lastError || new Error("auth_request_failed");
-      if (!mountedRef.current || requestRef.current !== currentRequest) return;
-
-      const { res, data } = result;
       if (!res.ok) {
         alert(data.message || "서버 응답이 올바르지 않습니다. 다시 시도해주세요.");
         return;
@@ -161,16 +80,10 @@ function Login({ setUser, design, theme }) {
       }
     } catch (error) {
       console.error("login error", error);
-      if (!mountedRef.current || requestRef.current !== currentRequest) return;
-      if (error?.name === "AbortError") {
-        try { sessionStorage.setItem(LAST_AUTH_DELAY_KEY, String(Date.now())); } catch {}
-      }
-      alert(error?.name === "AbortError" ? "로그인 응답이 지연되고 있습니다. 서버가 잠깐 다시 시작 중이거나 바쁜 상태일 수 있어요. 잠시 후 다시 눌러주세요." : "서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
+      alert(error?.name === "AbortError" ? "로그인 응답이 지연되어 다시 시도해주세요." : "서버 연결에 실패했습니다. 서버가 켜져 있는지 확인해주세요.");
     } finally {
-      try { window.clearTimeout(rescueTimerRef.current); } catch {}
-      if (mountedRef.current && requestRef.current === currentRequest) {
-        setPending(false);
-      }
+      window.clearTimeout(timeout);
+      setPending(false);
     }
   };
 

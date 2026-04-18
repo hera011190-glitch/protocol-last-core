@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Login from "./Login";
 import HomePage from "./HomePage";
 import SDPage from "./SDPage";
@@ -173,6 +173,33 @@ function SpeakerButton({ muted, onToggle, position = "bottom-right" }) {
       </button>
     </div>
   );
+}
+
+
+class PageErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch() {}
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || null;
+    }
+    return this.props.children;
+  }
 }
 
 function NeedCharacterCard({ openMy, design, theme, pageKey = "my" }) {
@@ -756,7 +783,24 @@ function App() {
       break;
     case PAGE.INVESTIGATION:
       content = selectedInvestigationId && runtimeCharacter
-        ? <InvestigationPage investigationId={selectedInvestigationId} character={runtimeCharacter} isAdmin={isAdmin} isSpectator={spectatorMode} goBack={() => setActivePage(PAGE.INVESTIGATIONS)} design={designConfig} theme={theme} pageKey="investigationOverlay" />
+        ? (
+          <PageErrorBoundary
+            resetKey={`investigation:${selectedInvestigationId}:${runtimeCharacter?.name || ""}`}
+            fallback={
+              <DesignPageFrame design={designConfig} theme={theme} pageKey="investigationOverlay">
+                <div style={{ minHeight: "64vh", display: "grid", placeItems: "center", padding: 24 }}>
+                  <div style={{ width: "min(520px, 100%)", background: "rgba(15,23,42,0.86)", color: "#fff", borderRadius: 24, padding: 24, boxShadow: "0 18px 50px rgba(2,6,23,0.34)" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>조사 화면을 불러오는 중 문제가 생겼어.</div>
+                    <div style={{ opacity: 0.86, lineHeight: 1.6, marginBottom: 16 }}>이전 화면으로 돌아가서 다시 들어오면 바로 이어서 볼 수 있게 해뒀어.</div>
+                    <button type="button" className="home-primary-button" onClick={() => setActivePage(PAGE.INVESTIGATIONS)}>조사 목록으로 돌아가기</button>
+                  </div>
+                </div>
+              </DesignPageFrame>
+            }
+          >
+            <InvestigationPage investigationId={selectedInvestigationId} character={runtimeCharacter} isAdmin={isAdmin} isSpectator={spectatorMode} goBack={() => setActivePage(PAGE.INVESTIGATIONS)} design={designConfig} theme={theme} pageKey="investigationOverlay" />
+          </PageErrorBoundary>
+        )
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.INVESTIGATIONS)} design={designConfig} theme={theme} pageKey="investigations" />;
       break;
     case PAGE.SHOP:
@@ -765,7 +809,24 @@ function App() {
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.MY)} design={designConfig} theme={theme} pageKey="shop" />;
       break;
     case PAGE.MY:
-      content = !user ? <Login setUser={handleLogin} design={designConfig} theme={theme} /> : isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : activeCharacter ? <MyPage currentUser={activeCharacter} ownerUser={user} onUpdateUser={(character) => { applyActiveCharacter(character); reloadUnread(character); }} design={designConfig} theme={theme} /> : <CharacterSelect user={user} setCharacter={(character) => { applyActiveCharacter(character); reloadUnread(character); setActivePage(PAGE.MY); }} goBack={() => setActivePage(PAGE.HOME)} activeCharacter={activeCharacter} design={designConfig} theme={theme} />;
+      content = !user ? <Login setUser={handleLogin} design={designConfig} theme={theme} /> : isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : activeCharacter ? (
+        <PageErrorBoundary
+          resetKey={`my:${activeCharacter?.name || ""}:${user?.id || ""}`}
+          fallback={
+            <DesignPageFrame design={designConfig} theme={theme} pageKey="my">
+              <div style={{ minHeight: "64vh", display: "grid", placeItems: "center", padding: 24 }}>
+                <div style={{ width: "min(520px, 100%)", background: "rgba(255,255,255,0.92)", color: "#17324a", borderRadius: 24, padding: 24, boxShadow: "0 18px 50px rgba(15,23,42,0.16)" }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>MY 화면을 불러오는 중 문제가 생겼어.</div>
+                  <div style={{ opacity: 0.82, lineHeight: 1.6, marginBottom: 16 }}>캐릭터 선택 화면으로 돌아가면 바로 다시 들어올 수 있어.</div>
+                  <button type="button" className="home-primary-button" onClick={() => applyActiveCharacter(null)}>캐릭터 다시 선택하기</button>
+                </div>
+              </div>
+            </DesignPageFrame>
+          }
+        >
+          <MyPage currentUser={activeCharacter} ownerUser={user} onUpdateUser={(character) => { applyActiveCharacter(character); reloadUnread(character); }} design={designConfig} theme={theme} />
+        </PageErrorBoundary>
+      ) : <CharacterSelect user={user} setCharacter={(character) => { applyActiveCharacter(character); reloadUnread(character); setActivePage(PAGE.MY); }} goBack={() => setActivePage(PAGE.HOME)} activeCharacter={activeCharacter} design={designConfig} theme={theme} />;
       break;
     case PAGE.ADMIN:
       content = isAdmin ? <AdminPage goBack={() => setActivePage(PAGE.HOME)} goInvestigations={() => setActivePage(PAGE.ADMIN_INVESTIGATIONS)} goInvestigationBuilder={() => { setBuilderEditId(""); setActivePage(PAGE.ADMIN_INVESTIGATION_BUILDER); }} goShopManager={() => setActivePage(PAGE.ADMIN_SHOP)} goRelations={() => setActivePage(PAGE.ADMIN_RELATIONS)} goDesignEditor={() => setActivePage(PAGE.ADMIN_DESIGN)} goMapManager={() => setActivePage(PAGE.ADMIN_MAP)} /> : null;
