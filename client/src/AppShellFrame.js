@@ -94,7 +94,7 @@ export default function AppShellFrame({
           .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
           .map((element) => renderElement(element, shellHandlers, designConfig?.theme || defaultDesign.theme, "shell"))}
       </div>
-      <header className="app-topbar" style={{ gridTemplateColumns: "1fr auto" }}>
+      <header className="app-topbar" style={{ gridTemplateColumns: "1fr auto", position: "relative", zIndex: 260 }}>
         <nav className="app-nav" style={{ justifyContent: "flex-start" }}>
           {menuItems.map(([key, label]) => (
             <button key={key} type="button" onClick={() => handleNavigate(key)} className="ghost-button">
@@ -117,7 +117,7 @@ export default function AppShellFrame({
           </button>
         </div>
       </header>
-      <main className="app-content" style={{ paddingTop: 16 }}>{children}</main>
+      <main className="app-content" style={{ paddingTop: 16, position: "relative", zIndex: 240 }}>{children}</main>
     </div>
   );
 }
