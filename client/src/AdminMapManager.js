@@ -181,7 +181,7 @@ export default function AdminMapManager({ goBack }) {
   };
 
   const removeMap = (mapId) => {
-    if (!window.confirm("이 맵을 삭제할까?")) return;
+    if (!window.confirm("이 맵을 삭제하시겠습니까?")) return;
     patchCollection(selectedCollectionId, (collection) => ({
       ...collection,
       presets: (collection.presets || [])
@@ -233,7 +233,7 @@ export default function AdminMapManager({ goBack }) {
         body: JSON.stringify(nextDesign),
       });
       window.dispatchEvent(new CustomEvent("plc-design-updated"));
-      setMessage("현재 맵 탭을 적용했어.");
+      setMessage("현재 맵 탭을 적용했습니다.");
     } catch {
       setMessage("적용 실패");
     }
@@ -305,7 +305,7 @@ export default function AdminMapManager({ goBack }) {
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 18 }}>
         <div>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>맵 관리</h2>
-          <div style={{ color: "#5f8098", fontSize: 14 }}>실제 SD 화면처럼 보이는 미리보기에서 배경을 마우스로 바로 움직이고 휠로 확대/축소할 수 있게 했어.</div>
+          <div style={{ color: "#5f8098", fontSize: 14 }}>실제 SD 화면처럼 보이는 미리보기에서 배경을 마우스로 바로 움직이고, 휠로 확대/축소할 수 있습니다.</div>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button type="button" className="ghost-button" onClick={addCollection}>맵 탭 추가</button>
@@ -364,7 +364,7 @@ export default function AdminMapManager({ goBack }) {
               <div style={{ color: "#6a87a3", fontSize: 13 }}>{map.id}</div>
             </button>
           ))}
-          {!maps.length ? <div style={{ color: "#6a87a3", fontSize: 13 }}>먼저 맵을 하나 추가해줘.</div> : null}
+          {!maps.length ? <div style={{ color: "#6a87a3", fontSize: 13 }}>먼저 맵을 하나 추가해 주세요.</div> : null}
         </div>
 
         <div style={card({ display: "grid", gap: 18 })}>
@@ -372,7 +372,7 @@ export default function AdminMapManager({ goBack }) {
             <>
               <div>
                 <h3 style={{ marginTop: 0, marginBottom: 6 }}>맵 수정</h3>
-                <div style={{ color: "#5f8098", fontSize: 14 }}>배경 이미지 편집은 여기 미리보기에서 바로 맞추면 실제 SD 화면과 더 가깝게 보이게 했어.</div>
+                <div style={{ color: "#5f8098", fontSize: 14 }}>배경 이미지 편집은 이 미리보기에서 바로 맞추시면 실제 SD 화면과 더 가깝게 보입니다.</div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -423,7 +423,7 @@ export default function AdminMapManager({ goBack }) {
                 </div>
               </div>
 
-              <div style={{ color: "#5f8098", fontSize: 13, marginTop: -6 }}>미리보기에서 드래그하면 배경 위치가 바로 바뀌고, 마우스 휠로 확대/축소할 수 있어.</div>
+              <div style={{ color: "#5f8098", fontSize: 13, marginTop: -6 }}>미리보기에서 드래그하면 배경 위치가 바로 바뀌며, 마우스 휠로 확대/축소할 수 있습니다.</div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                 <label>위치 X<input type="number" value={Number(selectedMap.backgroundPositionX ?? 50)} onChange={(e) => updateMap(selectedMap.id, { backgroundPositionX: clampPercent(e.target.value) })} style={inputStyle} /></label>
@@ -444,7 +444,7 @@ export default function AdminMapManager({ goBack }) {
               </div>
             </>
           ) : (
-            <div style={{ color: "#4f7390" }}>왼쪽에서 맵을 선택해줘.</div>
+            <div style={{ color: "#4f7390" }}>왼쪽에서 맵을 선택해 주세요.</div>
           )}
         </div>
       </div>

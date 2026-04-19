@@ -28,19 +28,21 @@ function InfoCell({ label, value }) {
   );
 }
 
-function Meter({ label, value, percent, danger = false }) {
+function Meter({ label, value, percent, danger = false, fill, track }) {
+  const resolvedFill = fill || (danger ? "linear-gradient(90deg, #fda4af, #ef4444)" : "linear-gradient(90deg, #93c5fd, #38bdf8)");
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#5d7a95", marginBottom: "6px" }}>
         <span>{label}</span>
         <span>{value}</span>
       </div>
-      <div style={{ height: "12px", borderRadius: "999px", background: "rgba(255,255,255,0.76)", overflow: "hidden" }}>
+      <div style={{ height: "12px", borderRadius: "999px", background: track || "rgba(255,255,255,0.76)", overflow: "hidden", boxShadow: "inset 0 1px 2px rgba(15,23,42,0.08)" }}>
         <div
           style={{
             width: `${Math.max(0, Math.min(100, percent || 0))}%`,
             height: "100%",
-            background: danger ? "linear-gradient(90deg, #fda4af, #ef4444)" : "linear-gradient(90deg, #93c5fd, #38bdf8)",
+            background: resolvedFill,
+            boxShadow: "0 6px 16px rgba(15,23,42,0.12)",
           }}
         />
       </div>
@@ -48,22 +50,112 @@ function Meter({ label, value, percent, danger = false }) {
   );
 }
 
+function findItemMeta(catalog, item) {
+  return (Array.isArray(catalog) ? catalog : []).find((value) => value?.name === item || value?.id === item) || {};
+}
+
+function buildFallbackItemImage(label) {
+  const title = encodeURIComponent(String(label || "ITEM").slice(0, 10));
+  return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="%23dbeafe"/><stop offset="1" stop-color="%23bae6fd"/></linearGradient></defs><rect width="240" height="240" rx="34" fill="url(%23g)"/><circle cx="120" cy="92" r="38" fill="%23ffffff" fill-opacity="0.72"/><path d="M82 150c13-16 29-24 38-24s25 8 38 24" stroke="%230f172a" stroke-opacity="0.18" stroke-width="16" stroke-linecap="round"/><text x="120" y="206" text-anchor="middle" font-family="Pretendard,Noto Sans KR,sans-serif" font-size="26" font-weight="700" fill="%2316324a">${title}</text></svg>`;
+}
+
+function isUsableItem(meta) {
+  const useType = String(meta?.useType || "none");
+  return useType && useType !== "none" && useType !== "unusable";
+}
+
 function ItemUsePanel({ items, catalog, onUse, style = {} }) {
+  const entries = useMemo(
+    () => (Array.isArray(items) ? items : []).map((item, index) => {
+      const meta = findItemMeta(catalog, item);
+      return {
+        key: `${meta?.id || meta?.name || item}-${index}`,
+        item,
+        index,
+        meta,
+        displayName: meta?.name || item,
+        image: meta?.image || buildFallbackItemImage(meta?.name || item),
+      };
+    }),
+    [items, catalog]
+  );
+  const [selectedKey, setSelectedKey] = useState("");
+
+  useEffect(() => {
+    if (!entries.length) {
+      setSelectedKey("");
+      return;
+    }
+    if (!entries.some((entry) => entry.key === selectedKey)) {
+      setSelectedKey(entries[0].key);
+    }
+  }, [entries, selectedKey]);
+
+  const selected = entries.find((entry) => entry.key === selectedKey) || entries[0] || null;
+
   return (
-    <div style={card(style)}>
-      <h3 style={{ marginTop: 0 }}>보유 아이템</h3>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-        {items.length > 0
-          ? items.map((item, index) => {
-              const meta = catalog.find((v) => v.name === item || v.id === item) || {};
+    <div style={card({ padding: "20px 20px 18px", background: "linear-gradient(180deg, rgba(232,244,255,0.96), rgba(248,252,255,0.96))", border: "1px solid rgba(56,189,248,0.22)", ...style })}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
+        <h3 style={{ margin: 0 }}>보유 아이템</h3>
+        <div style={{ fontSize: 12, color: "#4f7390", fontWeight: 700 }}>이미지를 누르면 상세 정보를 확인하실 수 있습니다.</div>
+      </div>
+      {entries.length > 0 ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(116px, 1fr))", gap: "12px" }}>
+            {entries.map((entry) => {
+              const active = entry.key === selected?.key;
               return (
-                <button key={`${item}-${index}`} type="button" className="ghost-button" onClick={() => onUse(item, meta)}>
-                  {meta.name || item}
+                <button
+                  key={entry.key}
+                  type="button"
+                  onClick={() => setSelectedKey(entry.key)}
+                  style={{
+                    border: active ? "1px solid rgba(14,165,233,0.52)" : "1px solid rgba(98,176,220,0.2)",
+                    borderRadius: 20,
+                    padding: 10,
+                    background: active ? "linear-gradient(180deg, rgba(224,242,254,0.98), rgba(255,255,255,0.98))" : "rgba(255,255,255,0.92)",
+                    boxShadow: active ? "0 18px 30px rgba(14,165,233,0.14)" : "0 10px 22px rgba(73,132,170,0.08)",
+                    cursor: "pointer",
+                    display: "grid",
+                    gap: 8,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 16, overflow: "hidden", background: "linear-gradient(180deg, rgba(191,219,254,0.38), rgba(255,255,255,0.9))", display: "grid", placeItems: "center" }}>
+                    <img src={entry.image} alt={entry.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#16324a", lineHeight: 1.3, minHeight: 34 }}>{entry.displayName}</div>
                 </button>
               );
-            })
-          : <div style={{ color: "#6a87a3" }}>보유 아이템이 없습니다.</div>}
-      </div>
+            })}
+          </div>
+
+          {selected ? (
+            <div style={{ marginTop: 16, borderRadius: 22, padding: 16, background: "rgba(255,255,255,0.96)", border: "1px solid rgba(56,189,248,0.18)", display: "grid", gridTemplateColumns: "120px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
+              <div style={{ width: 120, height: 120, borderRadius: 20, overflow: "hidden", background: "linear-gradient(180deg, rgba(191,219,254,0.35), rgba(255,255,255,0.94))" }}>
+                <img src={selected.image} alt={selected.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "#5d7a95", marginBottom: 4 }}>아이템 이름</div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#16324a" }}>{selected.displayName}</div>
+                </div>
+                <div style={{ padding: "12px 14px", borderRadius: 16, background: "rgba(240,248,255,0.86)", color: "#35566f", lineHeight: 1.7, minHeight: 82 }}>
+                  {selected.meta?.description || "등록된 설명이 없습니다."}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ color: isUsableItem(selected.meta) ? "#0f766e" : "#6a87a3", fontWeight: 800 }}>
+                    {isUsableItem(selected.meta) ? "사용 가능한 아이템입니다." : "사용할 수 없는 아이템입니다."}
+                  </div>
+                  {isUsableItem(selected.meta) ? (
+                    <button type="button" className="home-primary-button" onClick={() => onUse(selected.item, selected.meta, selected.index)}>사용</button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : <div style={{ color: "#5d7a95" }}>보유 아이템이 없습니다.</div>}
     </div>
   );
 }
@@ -115,9 +207,24 @@ function QuoteEditor({ quotes, onSave, style = {} }) {
   useEffect(() => {
     setList(Array.isArray(quotes) && quotes.length ? quotes : [""]);
   }, [quotesKey]);
+
+  const savedQuotes = list.map((value) => String(value || "").trim()).filter(Boolean);
+
   return (
     <div style={card(style)}>
       <h3 style={{ marginTop: 0 }}>SD 대사</h3>
+      <div style={{ color: "#5d7a95", fontSize: 12, marginBottom: 10 }}>저장되어 있는 대사도 바로 보이고, 이곳에서 삭제하실 수 있습니다.</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {savedQuotes.length > 0 ? savedQuotes.map((quote, idx) => (
+          <div key={`${quote}-${idx}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 999, background: "rgba(224,242,254,0.9)", border: "1px solid rgba(56,189,248,0.2)", color: "#16324a", maxWidth: "100%" }}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{quote}</span>
+            <button type="button" className="ghost-button" onClick={() => setList((prev) => {
+              const next = prev.filter((_, i) => String(prev[i] || "").trim() !== quote || i !== prev.findIndex((value) => String(value || "").trim() === quote));
+              return next.length ? next : [""];
+            })}>삭제</button>
+          </div>
+        )) : <div style={{ color: "#6a87a3" }}>저장된 대사가 없습니다.</div>}
+      </div>
       <div style={{ display: "grid", gap: "10px" }}>
         {list.map((quote, idx) => (
           <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "8px" }}>
@@ -145,46 +252,66 @@ function QuoteEditor({ quotes, onSave, style = {} }) {
   );
 }
 
-
 function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {}, theme }) {
-  const safeFrame = normalizeProfileCardFrame(frame);
   const dragRef = useRef(null);
+  const safeFrame = normalizeProfileCardFrame(frame);
 
-  const startDrag = (event) => {
-    if (!image) return;
-    event.preventDefault();
-    dragRef.current = { x: event.clientX, y: event.clientY, frame: safeFrame };
-    const move = (moveEvent) => {
-      if (!dragRef.current) return;
-      const dx = moveEvent.clientX - dragRef.current.x;
-      const dy = moveEvent.clientY - dragRef.current.y;
-      onChange({
-        ...dragRef.current.frame,
-        x: dragRef.current.frame.x + dx * 0.45,
-        y: dragRef.current.frame.y + dy * 0.26,
-      });
+  const clampFrame = (next) => ({
+    x: Math.max(-1200, Math.min(1200, Number(next.x ?? safeFrame.x))),
+    y: Math.max(-1200, Math.min(1200, Number(next.y ?? safeFrame.y))),
+    scale: Math.max(0.45, Math.min(11.5, Number(next.scale ?? safeFrame.scale))),
+  });
+
+  const handlePointerDown = (event) => {
+    if (!onChange || !image) return;
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      frameX: safeFrame.x,
+      frameY: safeFrame.y,
+      scale: safeFrame.scale,
     };
-    const up = () => {
-      dragRef.current = null;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!dragRef.current || !onChange) return;
+    const dx = event.clientX - dragRef.current.startX;
+    const dy = event.clientY - dragRef.current.startY;
+    onChange(clampFrame({
+      x: dragRef.current.frameX + dx,
+      y: dragRef.current.frameY + dy,
+      scale: dragRef.current.scale,
+    }));
+  };
+
+  const stopDrag = (event) => {
+    dragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{ fontWeight: 800, color: "#16324a" }}>프로필 카드 미리보기</div>
-      <div onPointerDown={startDrag} style={{ width: "100%", maxWidth: 232, minHeight: 336, cursor: image ? "grab" : "default", margin: "0 auto", display: "grid", alignItems: "stretch" }}>
-        <ProfileCard theme={theme} character={{ name: previewCharacter?.name || "미리보기", rank: previewCharacter?.rank || "대원", oneLine: previewCharacter?.oneLine || "카드 미리보기", mainImage: image, mainImageFrame: safeFrame }} />
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDrag}
+        onPointerCancel={stopDrag}
+        style={{ width: 160, maxWidth: "100%", touchAction: "none", cursor: onChange && image ? "grab" : "default", userSelect: "none", margin: "0 auto" }}
+      >
+        <ProfileCard
+          character={{ name: previewCharacter?.name || "미리보기", rank: previewCharacter?.rank || "대원", oneLine: previewCharacter?.oneLine || "카드 미리보기", mainImage: image, mainImageFrame: safeFrame }}
+          theme={{ line: "rgba(98,176,220,0.18)", shadow: "0 18px 38px rgba(73,132,170,0.16)" }}
+          width="100%"
+        />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <label>가로 위치<input type="range" min="20" max="80" step="1" value={safeFrame.x} onChange={(e) => onChange({ ...safeFrame, x: Number(e.target.value) })} /></label>
-        <label>세로 위치<input type="range" min="0" max="60" step="1" value={safeFrame.y} onChange={(e) => onChange({ ...safeFrame, y: Number(e.target.value) })} /></label>
+        <label>가로 위치<input type="range" min="-1200" max="1200" step="1" value={safeFrame.x} onChange={(e) => onChange(clampFrame({ ...safeFrame, x: Number(e.target.value) }))} /></label>
+        <label>세로 위치<input type="range" min="-1200" max="1200" step="1" value={safeFrame.y} onChange={(e) => onChange(clampFrame({ ...safeFrame, y: Number(e.target.value) }))} /></label>
       </div>
-      <label>크기<input type="range" min="0.7" max="1.5" step="0.01" value={safeFrame.scale} onChange={(e) => onChange({ ...safeFrame, scale: Number(e.target.value) })} /></label>
-      <div style={{ color: "#6a87a3", fontSize: 12 }}>이미지를 드래그해서 위치를 맞추거나 슬라이더로 조정할 수 있습니다.</div>
+      <label>크기<input type="range" min="0.45" max="11.5" step="0.01" value={safeFrame.scale} onChange={(e) => onChange(clampFrame({ ...safeFrame, scale: Number(e.target.value) }))} /></label>
+      <div style={{ color: "#6a87a3", fontSize: 12 }}>운영 화면 카드 미리보기와 동일한 방식으로 드래그와 확대를 적용합니다.</div>
     </div>
   );
 }
@@ -494,9 +621,9 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     alert("관계 신청을 보냈습니다.");
   };
 
-  const useItem = async (itemName, meta) => {
+  const useItem = async (itemName, meta, itemIndex = -1) => {
     const nextItems = [...inventory];
-    const index = nextItems.findIndex((v) => v === itemName || v === meta.id);
+    const index = itemIndex >= 0 ? itemIndex : nextItems.findIndex((v) => v === itemName || v === meta.id);
     if (index < 0) return;
     const patch = { items: nextItems.filter((_, i) => i !== index) };
     const stats = { ...(currentUser.stats || {}) };
@@ -519,13 +646,23 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
       }
       patch.skills = skills;
     } else if (useType === "statBoost") {
-      if (statTarget === "hp") stats.hp = getHpStatValue(stats.hp) + useValue;
+      const prevMaxHp = getMaxHpFromStat(stats.hp);
+      if (statTarget === "hp") {
+        stats.hp = getHpStatValue(stats.hp) + useValue;
+        const nextMaxHp = getMaxHpFromStat(stats.hp);
+        const currentValue = Number(currentUser.currentHp || prevMaxHp);
+        patch.currentHp = Math.min(nextMaxHp, currentValue + Math.max(0, nextMaxHp - prevMaxHp));
+      }
       if (statTarget === "def") stats.def = Number(stats.def || 0) + useValue;
       if (statTarget === "atk") stats.atk = Number(stats.atk || 0) + useValue;
       if (statTarget === "agi") stats.agi = Number(stats.agi || 0) + useValue;
       patch.stats = stats;
     } else if (useType === "hp") {
+      const prevMaxHp = getMaxHpFromStat(stats.hp);
       stats.hp = getHpStatValue(stats.hp) + useValue;
+      const nextMaxHp = getMaxHpFromStat(stats.hp);
+      const currentValue = Number(currentUser.currentHp || prevMaxHp);
+      patch.currentHp = Math.min(nextMaxHp, currentValue + Math.max(0, nextMaxHp - prevMaxHp));
       patch.stats = stats;
     } else if (useType === "atk" || useType === "def" || useType === "agi") {
       stats[useType] = Number(stats[useType] || 0) + useValue;
@@ -585,8 +722,10 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
       atk: effectiveStats.atk,
       agi: effectiveStats.agi,
     };
+    const currentMaxHp = getMaxHpFromStat(currentUser?.stats?.hp);
     const nextMaxHp = getMaxHpFromStat(nextStats.hp);
-    const nextCurrentHp = Math.min(nextMaxHp, Number(currentUser.currentHp || nextMaxHp));
+    const hpIncrease = Math.max(0, nextMaxHp - currentMaxHp);
+    const nextCurrentHp = Math.min(nextMaxHp, Number(currentUser.currentHp || currentMaxHp) + hpIncrease);
     const data = await saveCharacterPatch({
       stats: nextStats,
       statPoints: availableStatPoints,
@@ -628,7 +767,22 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     <DesignPageFrame design={design} pageKey="my" handlers={{}} theme={theme} minHeight="100vh">
       <div style={{ color: theme?.textMain || "#13324b" }}>
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
-          <button type="button" className="ghost-button" onClick={() => { loadAllCharacters(); setRelationOpen(true); }}>관계신청</button>
+          <button
+            type="button"
+            onClick={() => { loadAllCharacters(); setRelationOpen(true); }}
+            style={{
+              padding: "10px 18px",
+              borderRadius: 999,
+              border: "1px solid rgba(14,165,233,0.26)",
+              background: "linear-gradient(135deg, rgba(56,189,248,0.98), rgba(37,99,235,0.98))",
+              color: "#ffffff",
+              fontWeight: 900,
+              boxShadow: "0 14px 24px rgba(37,99,235,0.18)",
+              cursor: "pointer",
+            }}
+          >
+            관계신청
+          </button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "18px", marginBottom: "18px" }}>
           <div style={card()}>
@@ -653,9 +807,9 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                     )}
                   </div>
                   <div style={{ marginTop: "12px", fontSize: "22px", fontWeight: 900 }}>Lv. {currentUser.level || 1}</div>
-                  <Meter label="HP" value={`${currentHp} / ${previewMaxHp}`} percent={(currentHp / Math.max(previewMaxHp, 1)) * 100} />
-                  <Meter label="경험치" value={`${exp} / ${expLimit}`} percent={(exp / expLimit) * 100} />
-                  <Meter label="침식률" value={`${corrosion}%`} percent={corrosion} danger />
+                  <Meter label="HP" value={`${currentHp} / ${previewMaxHp}`} percent={(currentHp / Math.max(previewMaxHp, 1)) * 100} fill="linear-gradient(90deg, #4ade80, #16a34a)" track="rgba(220,252,231,0.92)" />
+                  <Meter label="경험치" value={`${exp} / ${expLimit}`} percent={(exp / expLimit) * 100} fill="linear-gradient(90deg, #fbbf24, #f59e0b)" track="rgba(254,249,195,0.94)" />
+                  <Meter label="침식률" value={`${corrosion}%`} percent={corrosion} fill="linear-gradient(90deg, #fb7185, #e11d48)" track="rgba(255,228,230,0.94)" danger />
                 </div>
                 <div style={{ display: "grid", gap: "12px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>

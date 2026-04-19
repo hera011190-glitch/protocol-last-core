@@ -16,16 +16,22 @@ export function toLightCharacter(character) {
     skills: Array.isArray(character.skills) ? character.skills : [],
     items: Array.isArray(character.items) ? character.items : [],
     image: character.image || "",
+    profileImage: character.profileImage || character.image || "",
     mainImage: character.mainImage || "",
+    cardImage: character.cardImage || character.mainImage || character.profileImage || character.image || "",
     investigationImage: character.investigationImage || "",
+    spriteImage: character.spriteImage || character.investigationImage || character.mainImage || character.profileImage || character.image || "",
     age: character.age || "",
     bodyInfo: character.bodyInfo || "",
     rank: character.rank || "대원",
     oneLine: character.oneLine || "",
+    mainImageFrame: character.mainImageFrame || undefined,
     sdQuotes: Array.isArray(character.sdQuotes) ? character.sdQuotes : [],
     dailyAttemptsLeft: character.dailyAttemptsLeft ?? 1,
     gambleCountLeft: character.gambleCountLeft ?? 3,
     currentMap: character.currentMap || "sector-01",
+    updatedAt: character.updatedAt || character.assetVersion || 0,
+    assetVersion: character.assetVersion || character.updatedAt || 0,
   };
 }
 

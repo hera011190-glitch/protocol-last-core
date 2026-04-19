@@ -7,7 +7,7 @@ async function safeJsonResponse(res) {
   try {
     return raw ? JSON.parse(raw) : null;
   } catch {
-    throw new Error(raw && raw.trim().startsWith("<!DOCTYPE") ? "서버가 JSON 대신 HTML을 돌려줬어. 서버 라우트를 확인해줘." : "응답을 읽을 수 없어.");
+    throw new Error(raw && raw.trim().startsWith("<!DOCTYPE") ? "서버가 JSON 대신 HTML을 반환했습니다. 서버 라우트를 확인해 주세요." : "응답을 읽을 수 없습니다.");
   }
 }
 
@@ -68,7 +68,7 @@ export default function AdminShopManager({ goBack }) {
     } catch (error) {
       setItems([]);
       setShopConfig({ blackjackDealerImage: "", ebeasts: [] });
-      setMessage(error?.message || "상점 설정을 불러오지 못했어.");
+      setMessage(error?.message || "상점 설정을 불러오지 못했습니다.");
     }
   };
 
@@ -118,7 +118,7 @@ export default function AdminShopManager({ goBack }) {
   }, [selected]);
 
   const save = async () => {
-    if (!String(form.name || "").trim()) return setMessage("아이템 이름을 입력해줘.");
+    if (!String(form.name || "").trim()) return setMessage("아이템 이름을 입력해 주세요.");
     const payload = {
       ...(selected || {}),
       ...form,
@@ -162,7 +162,7 @@ export default function AdminShopManager({ goBack }) {
     const data = await res.json();
     if (!data.success) return setMessage(data.message || "상점 설정 저장 실패");
     setShopConfig(data.shopConfig || nextConfig);
-    setMessage("상점 설정을 저장했어.");
+    setMessage("상점 설정을 저장했습니다.");
   };
 
   const toggleHidden = async (item) => {
@@ -173,7 +173,7 @@ export default function AdminShopManager({ goBack }) {
     });
     const data = await res.json();
     if (!data.success) return setMessage(data.message || "상태 변경 실패");
-    setMessage(item.hidden ? "상점에 등록했어." : "상점에서 숨겼어.");
+    setMessage(item.hidden ? "상점에 등록했습니다." : "상점에서 숨겼습니다.");
     load();
   };
 
@@ -254,7 +254,7 @@ export default function AdminShopManager({ goBack }) {
               </div>
             </div>
           ))}
-          {filteredItems.length === 0 ? <div style={{ ...card(), color: "#5d7a95" }}>표시할 아이템이 없어.</div> : null}
+          {filteredItems.length === 0 ? <div style={{ ...card(), color: "#5d7a95" }}>표시할 아이템이 없습니다.</div> : null}
         </div>
 
         <div style={card({ display: "grid", gap: 10, alignContent: "start" })}>
@@ -319,7 +319,7 @@ export default function AdminShopManager({ goBack }) {
                 <label>쿨타임(턴)<input type="number" value={form.cooldownTurns} onChange={(e) => setForm({ ...form, cooldownTurns: e.target.value })} style={inputStyle} /></label>
               </div>
               <div style={{ color: "#5d7a95", fontSize: 13, lineHeight: 1.7, marginTop: -4 }}>
-                효과 값은 공격력/치유량/버프 크기처럼 실제 전투에서 쓰이는 수치야. 쿨타임 1턴은 유저 턴 + 적 턴 한 번이 지난 뒤 다시 사용할 수 있어.
+                효과 값은 공격력/치유량/버프 크기처럼 실제 전투에서 사용되는 수치입니다. 쿨타임 1턴은 유저 턴과 적 턴이 한 번 지난 뒤 다시 사용할 수 있습니다.
               </div>
             </>
           ) : null}

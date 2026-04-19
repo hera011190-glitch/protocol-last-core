@@ -492,9 +492,9 @@ function PreviewShell({ pageKey, design, theme, canvasWidth = 1440, canvasHeight
   const shellRef = useRef(null);
   const previewOwner = useMemo(() => ({ id: "", name: "운영자", isAdmin: true }), []);
   const previewChat = useMemo(() => ([
-    { id: "chat-1", name: "테스트 러너", message: "왼쪽 복도 쪽을 먼저 확인할게.", image: "", time: "" },
-    { id: "chat-2", name: "지원 러너", message: "응급 붕대는 내가 들고 있을게.", image: "", time: "" },
-    { id: "chat-3", name: "테스트 러너", message: "전투 로그 연출도 여기서 바로 볼 수 있어.", image: "", time: "" },
+    { id: "chat-1", name: "테스트 러너", message: "왼쪽 복도 쪽을 먼저 확인하겠습니다.", image: "", time: "" },
+    { id: "chat-2", name: "지원 러너", message: "응급 붕대는 제가 들고 있겠습니다.", image: "", time: "" },
+    { id: "chat-3", name: "테스트 러너", message: "전투 로그 연출도 여기서 바로 볼 수 있습니다.", image: "", time: "" },
   ]), []);
 
   const previewCharacter = useMemo(() => ({
@@ -506,8 +506,8 @@ function PreviewShell({ pageKey, design, theme, canvasWidth = 1440, canvasHeight
     rank: "대원",
     oneLine: "미리보기용 한마디입니다.",
     profile: `<프로필>
-이 화면은 실제 페이지 컴포넌트를 그대로 미리보기에 올린 상태야.
-<size=22>크기 태그</size>와 [b]굵은 글씨[/b]도 같이 확인할 수 있어.`,
+이 화면은 실제 페이지 컴포넌트를 그대로 미리보기에 올린 상태입니다.
+<size=22>크기 태그</size>와 [b]굵은 글씨[/b]도 함께 확인하실 수 있습니다.`,
     image: "",
     mainImage: "",
     investigationImage: "",
@@ -519,7 +519,7 @@ function PreviewShell({ pageKey, design, theme, canvasWidth = 1440, canvasHeight
     skills: ["격발", "응급처치", "보호막"],
     relations: [
       { title: "후관명", target: "상대 캐릭터", description: "관계 설명이 여기에 표시됩니다." },
-      { title: "추가 후관", target: "다른 상대", description: "관계 카드 스타일도 바로 클릭해서 조절할 수 있어." },
+      { title: "추가 후관", target: "다른 상대", description: "관계 카드 스타일도 바로 클릭해서 조절할 수 있습니다." },
     ],
     stats: { hp: 5, atk: 3, def: 2, agi: 4 },
   }), []);
@@ -583,7 +583,7 @@ function PreviewShell({ pageKey, design, theme, canvasWidth = 1440, canvasHeight
     ],
     sharedLogs: [
       { id: "log-1", text: "조사가 시작되었다.", time: "" },
-      { id: "log-2", text: "아군 행동 로그는 적군 행동 로그와 분리되어 표시된다.", time: "" },
+      { id: "log-2", text: "아군 행동 로그는 적군 행동 로그와 분리되어 표시됩니다.", time: "" },
       { id: "log-3", text: "현재 전투 연출 미리보기 화면이다.", time: "" },
     ],
     foundItems: ["응급 붕대", "지도 조각"],
@@ -1345,20 +1345,20 @@ export default function ThemeEditor({ goBack }) {
             {shellElements.map((el) => <button key={`shell-${el.id}`} type="button" className={selected?.kind === "element" && selected.scope === "shell" && selected.element.id === el.id ? "home-primary-button" : "ghost-button"} onClick={() => setSelectedTarget({ kind: "element", id: el.id, scope: "shell" })}>{prettyElementTypeLabel(el.type)} · {el.id}</button>)}
             {pageElements.length ? <div style={{ fontSize: 12, fontWeight: 800, color: "#476885", marginTop: shellElements.length ? 4 : 0 }}>페이지 내부</div> : null}
             {pageElements.map((el) => <button key={`page-${el.id}`} type="button" className={selected?.kind === "element" && selected.scope === "page" && selected.element.id === el.id ? "home-primary-button" : "ghost-button"} onClick={() => setSelectedTarget({ kind: "element", id: el.id, scope: "page" })}>{prettyElementTypeLabel(el.type)} · {el.id}</button>)}
-            {!shellElements.length && !pageElements.length ? <div style={{ color: "#6a87a3", fontSize: 13 }}>추가한 요소가 아직 없어.</div> : null}
+            {!shellElements.length && !pageElements.length ? <div style={{ color: "#6a87a3", fontSize: 13 }}>추가한 요소가 아직 없습니다.</div> : null}
           </div>
 
           <div className="section-eyebrow" style={{ marginTop: 10 }}>실제 화면에서 편집 중인 요소</div>
           <div style={{ display: "grid", gap: 8, maxHeight: 240, overflow: "auto" }}>
             {editedShellEntries.map((selector) => <button key={`shell-${selector}`} type="button" className={selected?.kind === "dom" && selected.scope === "shell" && selected.selector === selector ? "home-primary-button" : "ghost-button"} onClick={() => setSelectedTarget({ kind: "dom", scope: "shell", selector, label: `상단/공통 · ${selector}` })}>상단/공통 · {selector}</button>)}
             {editedDomEntries.map((selector) => <button key={`dom-${selector}`} type="button" className={selected?.kind === "dom" && selected.scope === "page" && selected.selector === selector ? "home-primary-button" : "ghost-button"} onClick={() => setSelectedTarget({ kind: "dom", scope: "page", selector, label: `페이지 · ${selector}` })}>페이지 · {selector}</button>)}
-            {!editedShellEntries.length && !editedDomEntries.length ? <div style={{ color: "#6a87a3", fontSize: 13 }}>가운데 실제 화면을 눌러서 선택해줘.</div> : null}
+            {!editedShellEntries.length && !editedDomEntries.length ? <div style={{ color: "#6a87a3", fontSize: 13 }}>가운데 실제 화면을 눌러서 선택해 주세요.</div> : null}
           </div>
         </section>
 
         <section style={panelStyle}>
           <div className="section-eyebrow">전체 미리보기</div>
-          <div style={{ color: "#62839a", fontSize: 13, marginTop: -4 }}>실제 페이지 컴포넌트를 그대로 렌더하고 있어. 드래그 중에는 선택한 요소만 움직이고, 미리보기 내부 클릭은 실제 기능을 실행하지 않아.</div>
+          <div style={{ color: "#62839a", fontSize: 13, marginTop: -4 }}>실제 페이지 컴포넌트를 그대로 렌더하고 있습니다. 드래그 중에는 선택한 요소만 움직이며, 미리보기 내부 클릭은 실제 기능을 실행하지 않습니다.</div>
           <div ref={previewViewportRef} style={{ overflow: "auto", borderRadius: 26, border: "1px solid rgba(98,176,220,0.18)", background: "linear-gradient(180deg, rgba(255,255,255,0.88), rgba(236,248,255,0.88))", padding: 18, maxHeight: 860, position: "relative" }}>
             <div style={{ width: previewCanvasWidth, transform: `scale(${previewScale})`, transformOrigin: "top left", height: previewContentHeight * previewScale, position: "relative" }}>
               <div ref={previewRootRef} onPointerDownCapture={handlePreviewClickCapture} onClickCapture={(event) => { event.preventDefault(); event.stopPropagation(); }} onDoubleClickCapture={(event) => { event.preventDefault(); event.stopPropagation(); }} onSubmitCapture={(event) => { event.preventDefault(); event.stopPropagation(); }} style={{ width: previewCanvasWidth, minHeight: previewCanvasHeight, position: "relative", cursor: dragging || resizing ? "grabbing" : "crosshair" }}>
@@ -1432,13 +1432,13 @@ export default function ThemeEditor({ goBack }) {
 
         <section style={panelStyle}>
           <div className="section-eyebrow">선택 요소 편집</div>
-          {!selected ? <div style={{ color: "#6a87a3" }}>가운데 미리보기에서 요소를 클릭해줘.</div> : null}
+          {!selected ? <div style={{ color: "#6a87a3" }}>가운데 미리보기에서 요소를 클릭해 주세요.</div> : null}
 
           {selected?.kind === "element" ? (
             <>
               <div style={{ padding: 12, borderRadius: 16, background: "rgba(125,211,252,0.10)", color: "#28506d", lineHeight: 1.6 }}>
                 <div style={{ fontWeight: 900, marginBottom: 4 }}>{selected.scope === "shell" ? "상단 / 공통 요소" : "페이지 내부 요소"}</div>
-                <div style={{ fontSize: 12, color: "#62839a" }}>X/Y 값은 음수도 가능하고, 상단/공통으로 옮기면 미리보기 바깥 영역까지 배치할 수 있어.</div>
+                <div style={{ fontSize: 12, color: "#62839a" }}>X/Y 값은 음수도 가능하며, 상단/공통으로 옮기면 미리보기 바깥 영역까지 배치할 수 있습니다.</div>
               </div>
               {selectField("배치 영역", selected.scope, (value) => {
                 const nextScope = value || "page";

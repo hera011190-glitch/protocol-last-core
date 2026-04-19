@@ -36,19 +36,19 @@ export default function AdminRelations({ goBack }) {
       });
       const data = await res.json();
       if (!data.success) {
-        setMessage(data.message || "처리에 실패했어.");
+        setMessage(data.message || "처리에 실패했습니다.");
         return;
       }
       setMessage(decision === "approved" ? "관계 승인 완료" : "관계 거절 완료");
       loadAll();
     } catch (err) {
       console.error(err);
-      setMessage("관계 처리 중 오류가 발생했어.");
+      setMessage("관계 처리 중 오류가 발생했습니다.");
     }
   };
 
   const removeRelation = async (item) => {
-    const ok = window.confirm(`${item.characterName || item.character} ↔ ${item.otherCharacterName || item.otherCharacter} 관계를 삭제할까?`);
+    const ok = window.confirm(`${item.characterName || item.character} ↔ ${item.otherCharacterName || item.otherCharacter} 관계를 삭제하시겠습니까?`);
     if (!ok) return;
     try {
       const res = await fetch("http://localhost:3001/admin/relations/delete", {
@@ -58,14 +58,14 @@ export default function AdminRelations({ goBack }) {
       });
       const data = await res.json();
       if (!data.success) {
-        setMessage(data.message || "관계 삭제에 실패했어.");
+        setMessage(data.message || "관계 삭제에 실패했습니다.");
         return;
       }
-      setMessage("관계를 삭제했어.");
+      setMessage("관계를 삭제했습니다.");
       loadAll();
     } catch (err) {
       console.error(err);
-      setMessage("관계 삭제 중 오류가 발생했어.");
+      setMessage("관계 삭제 중 오류가 발생했습니다.");
     }
   };
 
@@ -76,7 +76,7 @@ export default function AdminRelations({ goBack }) {
           <div className="section-eyebrow" style={{ color: "#5c6d7e" }}>RELATION ADMIN</div>
           <h2 style={{ marginTop: "10px", marginBottom: "8px", color: "#243746" }}>관계 승인 관리</h2>
           <div style={{ color: "#334b5f" }}>
-            관계 신청은 승인/거절하고, 이미 등록된 관계는 운영에서만 삭제할 수 있어.
+            관계 신청은 승인 또는 거절할 수 있으며, 이미 등록된 관계는 운영에서만 삭제할 수 있습니다.
           </div>
         </div>
         <button type="button" className="ghost-button" onClick={goBack}>뒤로가기</button>
@@ -115,7 +115,7 @@ export default function AdminRelations({ goBack }) {
               </button>
             </div>
           </div>
-        )) : <div style={{ color: "#41586b" }}>현재 대기 중인 관계 신청이 없어.</div>}
+        )) : <div style={{ color: "#41586b" }}>현재 대기 중인 관계 신청이 없습니다.</div>}
       </section>
 
       <section style={{ display: "grid", gap: 14 }}>
@@ -142,7 +142,7 @@ export default function AdminRelations({ goBack }) {
               </button>
             </div>
           </div>
-        )) : <div style={{ color: "#41586b" }}>현재 등록된 관계가 없어.</div>}
+        )) : <div style={{ color: "#41586b" }}>현재 등록된 관계가 없습니다.</div>}
       </section>
     </div>
   );

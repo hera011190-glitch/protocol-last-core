@@ -481,7 +481,7 @@ const investigationDefinitions = [
       nodes: {
         entrance: {
           name: "현관",
-          log: "대저택의 현관에 도착했다.",
+          log: "대저택의 현관에 도착했습니다.",
           investigations: ["현관문 조사", "바닥 조사"],
           battle: null,
           npc: ["관리인 메모"],
@@ -492,13 +492,13 @@ const investigationDefinitions = [
             { text: "부엌으로 이동", target: "kitchen" },
           ],
           actionResults: {
-            "현관문 조사": { log: "문틀에 긁힌 흔적이 있다. 누군가 급히 안으로 들어간 것 같다.", points: 5, item: "문틀 파편", reward: "현관 단서 확보" },
-            "바닥 조사": { log: "바닥에서 젖은 발자국을 발견했다. 큰 방 쪽으로 이어진다.", points: 4, npc: "관리인의 이동 흔적" },
+            "현관문 조사": { log: "문틀에 긁힌 흔적이 있습니다. 누군가 급히 안으로 들어간 것 같습니다.", points: 5, item: "문틀 파편", reward: "현관 단서 확보" },
+            "바닥 조사": { log: "바닥에서 젖은 발자국을 발견했습니다. 큰 방 쪽으로 이어집니다.", points: 4, npc: "관리인의 이동 흔적" },
           },
         },
         bigRoom: {
           name: "큰 방",
-          log: "넓은 큰 방이다. 먼지가 가득하다.",
+          log: "넓은 큰 방입니다. 먼지가 가득합니다.",
           investigations: ["책장 조사", "벽난로 조사"],
           battle: null,
           npc: ["초상화 속 인물"],
@@ -509,13 +509,13 @@ const investigationDefinitions = [
             { text: "작은 방으로 이동", target: "smallRoom" },
           ],
           actionResults: {
-            "책장 조사": { log: "숨겨진 기록철을 발견했다. 실종자 명단 일부가 찢겨 있다.", points: 8, item: "찢긴 기록철", reward: "실종자 단서" },
+            "책장 조사": { log: "숨겨진 기록철을 발견했습니다. 실종자 명단 일부가 찢겨 있습니다.", points: 8, item: "찢긴 기록철", reward: "실종자 단서" },
             "벽난로 조사": { log: "벽난로 뒤쪽에서 오래된 열쇠 하나가 발견되었다.", points: 6, item: "녹슨 열쇠" },
           },
         },
         kitchen: {
           name: "부엌",
-          log: "부엌 안쪽에서 수상한 기척이 느껴진다.",
+          log: "부엌 안쪽에서 수상한 기척이 느껴집니다.",
           investigations: ["식탁 조사", "찬장 조사"],
           battle: { name: "오염체 잔존체", hp: 36, maxHp: 36, atk: 7, def: 3, aoe_chance: 0.25, rewardPoints: 12, rewardItem: "오염핵 파편" },
           npc: ["부엌 종업원 기록"],
@@ -523,13 +523,13 @@ const investigationDefinitions = [
           mapY: 64,
           choices: [{ text: "현관으로 돌아간다", target: "entrance" }],
           actionResults: {
-            "식탁 조사": { log: "식탁 밑에서 부서진 약병과 응급 붕대를 찾았다.", points: 4, item: "응급 붕대" },
-            "찬장 조사": { log: "찬장 속 장부에서 최근 이상 징후를 적은 메모를 발견했다.", points: 7, npc: "종업원의 메모" },
+            "식탁 조사": { log: "식탁 밑에서 부서진 약병과 응급 붕대를 찾았습니다.", points: 4, item: "응급 붕대" },
+            "찬장 조사": { log: "찬장 속 장부에서 최근 이상 징후를 적은 메모를 발견했습니다.", points: 7, npc: "종업원의 메모" },
           },
         },
         smallRoom: {
           name: "작은 방",
-          log: "작은 방이다. 누군가 머문 흔적이 있다.",
+          log: "작은 방입니다. 누군가 머문 흔적이 있습니다.",
           investigations: ["침대 조사", "창문 조사"],
           battle: null,
           npc: ["실종자의 흔적"],
@@ -537,8 +537,8 @@ const investigationDefinitions = [
           mapY: 36,
           choices: [{ text: "큰 방으로 돌아간다", target: "bigRoom" }],
           actionResults: {
-            "침대 조사": { log: "침대 아래에서 사진 한 장을 발견했다. 대저택 주인과 관리인의 사진이다.", points: 5, item: "낡은 사진", reward: "인물 관계 단서" },
-            "창문 조사": { log: "창문 밖으로 정원으로 향하는 흔적을 발견했다.", points: 3 },
+            "침대 조사": { log: "침대 아래에서 사진 한 장을 발견했습니다. 대저택 주인과 관리인의 사진입니다.", points: 5, item: "낡은 사진", reward: "인물 관계 단서" },
+            "창문 조사": { log: "창문 밖으로 정원으로 향하는 흔적을 발견했습니다.", points: 3 },
           },
         },
       },
@@ -553,7 +553,7 @@ const investigationDefinitions = [
       nodes: {
         hall: {
           name: "로비",
-          log: "폐병원 로비에 들어섰다.",
+          log: "폐병원 로비에 들어섰습니다.",
           investigations: ["접수대 조사", "안내판 조사"],
           battle: null,
           npc: ["야간근무 기록"],
@@ -564,13 +564,13 @@ const investigationDefinitions = [
             { text: "지하 통로로 이동", target: "basement" },
           ],
           actionResults: {
-            "접수대 조사": { log: "접수대 서랍에서 잠긴 약품 보관함 키를 찾았다.", points: 4, item: "약품 보관함 키" },
-            "안내판 조사": { log: "안내판에서 환자 이송 경로를 확인했다.", points: 2 },
+            "접수대 조사": { log: "접수대 서랍에서 잠긴 약품 보관함 키를 찾았습니다.", points: 4, item: "약품 보관함 키" },
+            "안내판 조사": { log: "안내판에서 환자 이송 경로를 확인했습니다.", points: 2 },
           },
         },
         ward: {
           name: "진료실",
-          log: "낡은 진료기구와 차가운 침대가 보인다.",
+          log: "낡은 진료기구와 차가운 침대가 보입니다.",
           investigations: ["캐비닛 조사", "침대 조사"],
           battle: null,
           npc: ["담당 의사의 메모"],
@@ -578,13 +578,13 @@ const investigationDefinitions = [
           mapY: 34,
           choices: [{ text: "로비로 돌아간다", target: "hall" }],
           actionResults: {
-            "캐비닛 조사": { log: "캐비닛 안에서 소독약과 사용기록을 발견했다.", points: 5, item: "소독약" },
-            "침대 조사": { log: "침대 밑에 숨겨진 환자 메모가 있다. 지하를 경계하라는 글이 적혀 있다.", points: 6, reward: "지하 경고 확보" },
+            "캐비닛 조사": { log: "캐비닛 안에서 소독약과 사용기록을 발견했습니다.", points: 5, item: "소독약" },
+            "침대 조사": { log: "침대 밑에 숨겨진 환자 메모가 있습니다. 지하를 경계하라는 글이 적혀 있습니다.", points: 6, reward: "지하 경고 확보" },
           },
         },
         basement: {
           name: "지하 통로",
-          log: "축축한 냄새가 감도는 지하 통로다.",
+          log: "축축한 냄새가 감도는 지하 통로입니다.",
           investigations: ["배관 조사", "보관함 조사"],
           battle: { name: "배회 오염체", hp: 28, maxHp: 28, atk: 6, def: 2, aoe_chance: 0.2, rewardPoints: 10, rewardItem: "손상된 출입카드" },
           npc: ["지하 격리실 표식"],
@@ -592,8 +592,8 @@ const investigationDefinitions = [
           mapY: 66,
           choices: [{ text: "로비로 돌아간다", target: "hall" }],
           actionResults: {
-            "배관 조사": { log: "배관 사이에서 수상한 액체 샘플을 확보했다.", points: 4, item: "수상한 샘플" },
-            "보관함 조사": { log: "보관함 안에서 지하 격리실의 출입 기록을 찾았다.", points: 6, reward: "격리실 출입 기록" },
+            "배관 조사": { log: "배관 사이에서 수상한 액체 샘플을 확보했습니다.", points: 4, item: "수상한 샘플" },
+            "보관함 조사": { log: "보관함 안에서 지하 격리실의 출입 기록을 찾았습니다.", points: 6, reward: "격리실 출입 기록" },
           },
         },
       },
@@ -1042,7 +1042,7 @@ function queueRewardAssignment(item, reward) {
     const char = receiver ? (charactersDB.find((c) => String(c.id) === String(receiver.id)) || charactersDB.find((c) => c.name === receiver.name)) : null;
     if (char) {
       applyRewardToCharacter(char, reward);
-      addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았다.`);
+      addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았습니다.`);
       item.pendingReward = null;
       item.pendingRewardQueue = [];
       emitParticipantsUpdated();
@@ -1075,7 +1075,7 @@ function applyNodeEntryEffects(item, node) {
       if (!state || Number(state.hp || 0) <= 0) return;
       state.hp = Math.max(0, Number(state.hp || 0) - Number(node.onEnterDamage || 0));
     });
-    addSharedLog(item, `[진입 효과] ${node.name}에서 피해 ${Number(node.onEnterDamage || 0)}를 받았다.`);
+    addSharedLog(item, `[진입 효과] ${node.name}에서 피해 ${Number(node.onEnterDamage || 0)}를 받았습니다.`);
   }
   if (Number(node?.onEnterMuteMinutes || 0) > 0) {
     const until = Date.now() + Number(node.onEnterMuteMinutes || 0) * 60 * 1000;
@@ -1092,15 +1092,15 @@ function applyNodeEntryEffects(item, node) {
     if (!Array.isArray(item.foundNPCs)) item.foundNPCs = [];
     if (node.npcScene.name && !item.foundNPCs.includes(node.npcScene.name)) item.foundNPCs.push(node.npcScene.name);
     setEventBanner(item, `${node.npcScene.name || "NPC"} 등장`, "normal", 2200);
-    addSharedLog(item, `[NPC 조우] ${node.npcScene.name || "NPC"}와 대화를 시작한다.`);
+    addSharedLog(item, `[NPC 조우] ${node.npcScene.name || "NPC"}와 대화를 시작합니다.`);
     const firstNpcLine = Array.isArray(node.npcScene.lines) ? node.npcScene.lines[0] : null;
     if (firstNpcLine?.text) addSharedLog(item, `[NPC] ${node.npcScene.name || "NPC"}: ${firstNpcLine.text}`);
   }
 }
 
 function applyActionRewards(item, result, locationName) {
-  if (!result) return { changed: false, text: `[${locationName}] 특별한 성과는 없었다.` };
-  const textParts = [result.log || `[${locationName}] ${locationName}에서 단서를 조사했다.`];
+  if (!result) return { changed: false, text: `[${locationName}] 특별한 성과는 없었습니다.` };
+  const textParts = [result.log || `[${locationName}] ${locationName}에서 단서를 조사했습니다.`];
   let changed = false;
 
   if (typeof result.points === "number") {
@@ -1109,13 +1109,13 @@ function applyActionRewards(item, result, locationName) {
 
   if (result.item) {
     queueRewardAssignment(item, { type: "item", label: result.item, value: result.item });
-    textParts.push(item?.type === "daily" ? `${result.item}을(를) 얻었다!` : `${result.item}을(를) 얻었다! 누가 가질까?`);
+    textParts.push(item?.type === "daily" ? `${result.item}을(를) 획득했습니다!` : `${result.item}을(를) 획득했습니다. 누구에게 지급하시겠습니까?`);
     changed = true;
   }
 
   if (typeof result.statPoints === "number" && result.statPoints > 0) {
     queueRewardAssignment(item, { type: "statPoints", label: `스탯 포인트 +${result.statPoints}`, value: Number(result.statPoints) });
-    textParts.push(item?.type === "daily" ? `스탯 포인트 +${result.statPoints}!` : `스탯 포인트 +${result.statPoints}! 누가 가질까?`);
+    textParts.push(item?.type === "daily" ? `스탯 포인트 +${result.statPoints}!` : `스탯 포인트 +${result.statPoints}! 누구에게 지급하시겠습니까?`);
     changed = true;
   }
 
@@ -1207,12 +1207,12 @@ function getUsableHealItem(item) {
 
 function consumeBattleItem(item, state) {
   const usable = getUsableHealItem(item);
-  if (!usable) return { text: `${state.name}은(는) 사용할 수 있는 전투용 아이템이 없었다.`, changed: false };
+  if (!usable) return { text: `${state.name}은(는) 사용할 수 있는 전투용 아이템이 없었습니다.`, changed: false };
   const heal = usable === "응급 붕대" ? 18 : 24;
   state.hp = Math.min(state.maxHp, state.hp + heal);
   const idx = item.foundItems.indexOf(usable);
   if (idx >= 0) item.foundItems.splice(idx, 1);
-  return { text: `${state.name}은(는) ${usable}를 사용해 HP ${heal} 회복했다.`, changed: true };
+  return { text: `${state.name}은(는) ${usable}를 사용해 HP ${heal} 회복했습니다.`, changed: true };
 }
 
 function addBuff(state, type, duration, value) {
@@ -1300,12 +1300,12 @@ function resolveFlee(item) {
     const backNodeId = getPreviousRouteNodeId(item);
     const backNode = item.data.nodes[backNodeId];
     item.currentNodeId = backNodeId;
-    setEventBanner(item, "도주했다", "normal", 2200);
-    item.sharedLog = `[${node.name}] 우리는 E-Beast에게서 도주했다. ${backNode?.name || "이전 구역"}으로 후퇴한다.`;
+    setEventBanner(item, "도주했습니다", "normal", 2200);
+    item.sharedLog = `[${node.name}] 우리는 E-Beast에게서 도주했습니다. ${backNode?.name || "이전 구역"}으로 후퇴합니다.`;
     item.sharedLogs.push(createLogEntry(item.sharedLog));
     item.routeHistory.push({ nodeId: backNodeId, name: backNode?.name || "이전 구역", time: new Date().toISOString() });
     item.pendingBattleActions = {};
-    item.lastBattleRound = [{ text: "파티가 도주에 성공했다." }];
+    item.lastBattleRound = [{ text: "파티가 도주에 성공했습니다." }];
     emitInvestigationState(item.id);
     return { success: true };
   }
@@ -1315,9 +1315,9 @@ function resolveFlee(item) {
     state.status = state.hp <= 0 ? "행동불능" : "후퇴 실패";
   });
   setEventBanner(item, "도주 실패", "danger", 2200);
-  item.sharedLog = `[${node.name}] 도주에 실패했다. 적의 추격으로 피해를 입었다.`;
+  item.sharedLog = `[${node.name}] 도주에 실패했습니다. 적의 추격으로 피해를 입었습니다.`;
   item.sharedLogs.push(createLogEntry(item.sharedLog));
-  item.lastBattleRound = [{ text: "도주 실패. 적의 추격을 받았다." }];
+  item.lastBattleRound = [{ text: "도주에 실패했습니다. 적의 추격을 받았습니다." }];
   if (allParticipantsDown(item)) {
     finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
   }
@@ -1382,7 +1382,7 @@ function applyBattleTurn(item, actions) {
       state.defending = true;
       addBuff(state, "guardUp", 1, 2);
       state.status = "방어 태세";
-      roundLogs.push(createBattleLogEntry(`${actor.name}은(는) 방어 태세를 취했다.`, "allies", { actor: actor.name, effect: "guard", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+      roundLogs.push(createBattleLogEntry(`${actor.name}은(는) 방어 태세를 취했습니다.`, "allies", { actor: actor.name, effect: "guard", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
       return;
     }
 
@@ -1398,14 +1398,14 @@ function applyBattleTurn(item, actions) {
       if (!state.skillCooldowns || typeof state.skillCooldowns !== "object") state.skillCooldowns = {};
       const cooldownLeft = Number(state.skillCooldowns[parsed.payload] || 0);
       if (cooldownLeft > 0) {
-        roundLogs.push({ text: `${actor.name}은(는) ${spec.label}을 아직 사용할 수 없다. (${cooldownLeft}턴 남음)`, phase: "allies" });
+        roundLogs.push({ text: `${actor.name}은(는) ${spec.label}을 아직 사용할 수 없습니다. (${cooldownLeft}턴 남음)`, phase: "allies" });
         return;
       }
       if (Number(spec.cooldownTurns || 0) > 0) state.skillCooldowns[parsed.payload] = Number(spec.cooldownTurns || 0) + 1;
       if (spec.mode === "buff") {
         addBuff(state, "atkUp", 2, spec.buff || 3);
         state.status = "공격 강화";
-        roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}을 사용해 힘을 끌어올렸다.`, "allies", { actor: actor.name, effect: "skill", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+        roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}을 사용해 힘을 끌어올렸습니다.`, "allies", { actor: actor.name, effect: "skill", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
         return;
       }
       if (spec.mode === "heal") {
@@ -1418,17 +1418,17 @@ function applyBattleTurn(item, actions) {
       if (spec.mode === "shield") {
         addBuff(state, "guardUp", 2, spec.shield || 6);
         state.status = "방어 강화";
-        roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}로 방어막을 두른다.`, "allies", { actor: actor.name, effect: "shield", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+        roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}로 방어막을 둘렀습니다.`, "allies", { actor: actor.name, effect: "shield", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
         return;
       }
       if (spec.mode === "debuff") {
         addBuff(battle, "atkDown", 2, -(Math.abs(Number(spec.power || 2))));
         state.status = "약화 부여";
-        roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}로 ${battle.name}을 약화시켰다.`, "allies", { actor: actor.name, effect: "debuff", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+        roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}로 ${battle.name}을 약화시켰습니다.`, "allies", { actor: actor.name, effect: "debuff", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
         return;
       }
       if (rollEvasion(Number(state.agi || 0), Number(battle.agi || 0))) {
-        roundLogs.push(createBattleLogEntry(`${battle.name}가 ${actor.name}의 ${spec.label}을(를) 피해냈다!`, "allies", { actor: actor.name, target: battle.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+        roundLogs.push(createBattleLogEntry(`${battle.name}가 ${actor.name}의 ${spec.label}을(를) 피해냈습니다!`, "allies", { actor: actor.name, target: battle.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
         return;
       }
       let damage = Math.max(3, Number(state.atk || 0) + atkBuff + Number(spec.power || 8) - Math.floor((Number(battle.def || 0) + getBuffValue(battle, "atkDown")) / 2));
@@ -1443,12 +1443,12 @@ function applyBattleTurn(item, actions) {
         roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${damage}데미지${crit ? " / 치명타" : ""}`, "allies", { actor: actor.name, target: battle.name, effect: "skill", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
       }
       state.status = spec.label;
-      if (battle.hp <= 0) roundLogs.push(createBattleLogEntry(`${battle.name}가 쓰러졌다.`, "allies", { target: battle.name, effect: "defeat", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+      if (battle.hp <= 0) roundLogs.push(createBattleLogEntry(`${battle.name}가 쓰러졌습니다.`, "allies", { target: battle.name, effect: "defeat", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
       return;
     }
 
     if (rollEvasion(Number(state.agi || 0), Number(battle.agi || 0))) {
-      roundLogs.push(createBattleLogEntry(`${battle.name}가 ${actor.name}의 공격을 피해냈다!`, "allies", { actor: actor.name, target: battle.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+      roundLogs.push(createBattleLogEntry(`${battle.name}가 ${actor.name}의 공격을 피해냈습니다!`, "allies", { actor: actor.name, target: battle.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
       state.status = "회피당함";
       return;
     }
@@ -1459,7 +1459,7 @@ function applyBattleTurn(item, actions) {
     state.status = crit ? "치명타" : "공격";
     battle.hp = Math.max(0, Number(battle.hp || 0) - damage);
     roundLogs.push(createBattleLogEntry(`${actor.name}의 ${crit ? "치명타!" : "공격!"} ${damage}데미지`, "allies", { actor: actor.name, target: battle.name, effect: "attack", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
-    if (battle.hp <= 0) roundLogs.push(createBattleLogEntry(`${battle.name}가 쓰러졌다.`, "allies", { target: battle.name, effect: "defeat", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+    if (battle.hp <= 0) roundLogs.push(createBattleLogEntry(`${battle.name}가 쓰러졌습니다.`, "allies", { target: battle.name, effect: "defeat", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
   });
 
 
@@ -1476,7 +1476,7 @@ function applyBattleTurn(item, actions) {
     }
     item.rewards.push(`${battle.name} 제압`);
     setEventBanner(item, "승리", "success", 2600);
-    const victoryText = `[${node.name}] ${battle.name}를 제압했다.${battle.rewardItem ? ` ${battle.rewardItem} 획득` : ""}`;
+    const victoryText = `[${node.name}] ${battle.name}를 제압했습니다.${battle.rewardItem ? ` ${battle.rewardItem} 획득` : ""}`;
     item.sharedLog = victoryText;
     persistRoundLogsToShared(roundLogs);
     item.sharedLogs.push(createLogEntry(victoryText));
@@ -1514,7 +1514,7 @@ function applyBattleTurn(item, actions) {
         const defendBonus = state.defending ? 3 : 0;
         const guardBuff = getBuffValue(state, "guardUp");
         if (rollEvasion(Number(battle.agi || 0), Number(state.agi || 0))) {
-          roundLogs.push(createBattleLogEntry(`${state.name}이(가) ${battle.name}의 필살기를 피했다!`, "enemy", { actor: battle.name, target: state.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+          roundLogs.push(createBattleLogEntry(`${state.name}이(가) ${battle.name}의 필살기를 피했습니다!`, "enemy", { actor: battle.name, target: state.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
           state.defending = false;
           return;
         }
@@ -1529,7 +1529,7 @@ function applyBattleTurn(item, actions) {
       const defendBonus = target.defending ? 4 : 0;
       const guardBuff = getBuffValue(target, "guardUp");
       if (rollEvasion(Number(battle.agi || 0), Number(target.agi || 0))) {
-        roundLogs.push(createBattleLogEntry(`${target.name}이(가) ${battle.name}의 필살기를 피했다!`, "enemy", { actor: battle.name, target: target.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+        roundLogs.push(createBattleLogEntry(`${target.name}이(가) ${battle.name}의 필살기를 피했습니다!`, "enemy", { actor: battle.name, target: target.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
       } else {
         const damage = Math.max(4, Number(battle.atk || 0) + enemyAtkPenalty + 8 - Math.floor((Number(target.def || 0) + defendBonus + guardBuff) / 2));
         target.hp = Math.max(0, Number(target.hp || 0) - damage);
@@ -1543,7 +1543,7 @@ function applyBattleTurn(item, actions) {
       const defendBonus = state.defending ? 3 : 0;
       const guardBuff = getBuffValue(state, "guardUp");
       if (rollEvasion(Number(battle.agi || 0), Number(state.agi || 0))) {
-        roundLogs.push(createBattleLogEntry(`${state.name}이(가) ${battle.name}의 전체 공격을 피했다!`, "enemy", { actor: battle.name, target: state.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+        roundLogs.push(createBattleLogEntry(`${state.name}이(가) ${battle.name}의 전체 공격을 피했습니다!`, "enemy", { actor: battle.name, target: state.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
         state.defending = false;
         return;
       }
@@ -1558,7 +1558,7 @@ function applyBattleTurn(item, actions) {
     const defendBonus = target.defending ? 4 : 0;
     const guardBuff = getBuffValue(target, "guardUp");
     if (rollEvasion(Number(battle.agi || 0), Number(target.agi || 0))) {
-      roundLogs.push(createBattleLogEntry(`${target.name}이(가) ${battle.name}의 공격을 피했다!`, "enemy", { actor: battle.name, target: target.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+      roundLogs.push(createBattleLogEntry(`${target.name}이(가) ${battle.name}의 공격을 피했습니다!`, "enemy", { actor: battle.name, target: target.name, effect: "evade", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
     } else {
       const damage = Math.max(1, Number(battle.atk || 0) + enemyAtkPenalty + 2 - Math.floor((Number(target.def || 0) + defendBonus + guardBuff) / 2));
       target.hp = Math.max(0, Number(target.hp || 0) - damage);
@@ -1587,7 +1587,7 @@ function applyBattleTurn(item, actions) {
     roundLogs.push(createBattleLogEntry("[상태 변화]", "allies", { isPhaseHeader: true }));
     endTurnChanges.forEach((change) => {
       const label = change.type === "atkUp" ? "공격 강화" : change.type === "guardUp" ? "방어 강화" : change.type === "atkDown" ? "약화" : change.type;
-      roundLogs.push(createBattleLogEntry(`${change.owner}의 ${label} 효과가 정리되었다.`, "allies", { actor: change.owner, effect: change.type === "guardUp" ? "shield" : change.type === "atkUp" ? "buff" : "debuff", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
+      roundLogs.push(createBattleLogEntry(`${change.owner}의 ${label} 효과가 정리되었습니다.`, "allies", { actor: change.owner, effect: change.type === "guardUp" ? "shield" : change.type === "atkUp" ? "buff" : "debuff", snapshot: { participantStates: cloneParticipantStates(item.participantStates), battleHp: Number(battle.hp || 0), battleMaxHp: Number(battle.maxHp || 0) } }));
     });
   }
 
@@ -1668,7 +1668,7 @@ app.post("/register", (req, res) => {
   const type = req.body?.type || "owner";
 
   if (!nextId || !nextPw) {
-    return res.json({ success: false, message: "아이디와 비밀번호를 입력해줘." });
+    return res.json({ success: false, message: "아이디와 비밀번호를 입력해 주세요." });
   }
   if (nextId === "PLC") return res.json({ success: false, message: "이 아이디는 사용할 수 없습니다." });
   const exists = usersDB.find((u) => String(u.id || "").toLowerCase() === nextId.toLowerCase() );
@@ -1682,13 +1682,13 @@ app.post("/login", (req, res) => {
   const nextId = String(req.body?.id || "").trim();
   const nextPw = String(req.body?.pw || "").trim();
   if (!nextId || !nextPw) {
-    return res.json({ success: false, message: "아이디와 비밀번호를 입력해줘." });
+    return res.json({ success: false, message: "아이디와 비밀번호를 입력해 주세요." });
   }
   if (nextId === "PLC" && nextPw === "1119") {
     return res.json({ success: true, user: { id: "PLC", pw: "1119", type: "owner", isAdmin: true } });
   }
   const user = usersDB.find((u) => String(u.id || "").toLowerCase() === nextId.toLowerCase() && String(u.pw || "") === nextPw);
-  if (!user) return res.json({ success: false, message: "아이디 또는 비밀번호가 맞지 않아." });
+  if (!user) return res.json({ success: false, message: "아이디 또는 비밀번호가 맞지 않습니다." });
   res.json({ success: true, user: { ...user, isAdmin: false } });
 });
 
@@ -1952,10 +1952,10 @@ app.post("/investigationChat", (req, res) => {
   const { investigationId, message } = req.body;
   if (!investigationId || !message) return res.json({ success: false, message: "채팅 정보가 부족합니다." });
   const item = investigationsDB.find((v) => v.id === investigationId);
-  if (item?.type === "daily") return res.json({ success: false, message: "일일조사에서는 채팅을 사용할 수 없어." });
+  if (item?.type === "daily") return res.json({ success: false, message: "일일조사에서는 채팅을 사용할 수 없습니다." });
   const state = item?.participantStates?.[message?.name || ""];
   if (!message?.isAdminNotice && state?.mutedUntil && Number(state.mutedUntil) > Date.now()) {
-    return res.json({ success: false, message: "현재 채팅할 수 없는 상태야." });
+    return res.json({ success: false, message: "현재 채팅할 수 없는 상태입니다." });
   }
   const safeMessage = {
     ...message,
@@ -1987,7 +1987,7 @@ app.post("/startDailyInvestigation", (req, res) => {
     const item = investigationsDB.find((v) => v.id === id);
     if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
     if (item.type !== "daily") return res.json({ success: false, message: "일일조사가 아닙니다." });
-    if (!getEffectiveOpened(item)) return res.json({ success: false, message: "현재 이 일일조사는 비활성화 상태야." });
+    if (!getEffectiveOpened(item)) return res.json({ success: false, message: "현재 이 일일조사는 비활성화 상태입니다." });
     if (!character?.id && !character?.name) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
 
     const sourceCharacter =
@@ -2010,14 +2010,14 @@ app.post("/startDailyInvestigation", (req, res) => {
         return res.json({ success: true, started: true, resumed: true, investigationId: item.id, character: sourceCharacter });
       }
       if (item.dailyOwnerKey && item.dailyOwnerKey !== ownerKey) {
-        return res.json({ success: false, message: "다른 캐릭터가 진행 중인 일일조사야." });
+        return res.json({ success: false, message: "다른 캐릭터가 진행 중인 일일조사입니다." });
       }
       resetInvestigationProgress(item);
       syncInvestigationRoster(item);
     }
 
     const remain = Number(sourceCharacter.dailyAttemptsLeft ?? 1);
-    if (remain <= 0) return res.json({ success: false, message: "남은 일일조사 횟수가 없어." });
+    if (remain <= 0) return res.json({ success: false, message: "남은 일일조사 횟수가 없습니다." });
 
     sourceCharacter.dailyAttemptsLeft = remain - 1;
     applyCharacterCorrosion(sourceCharacter, item.entryCorrosion || item.data?.entryCorrosion || 0);
@@ -2054,9 +2054,9 @@ app.post("/participateInvestigation", (req, res) => {
   const { id, character } = req.body;
   const inv = investigationsDB.find((i) => i.id === id);
   if (!inv) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
-  if (!getEffectiveOpened(inv)) return res.json({ success: false, message: "현재 이 조사는 개방 시간이 아니야." });
+  if (!getEffectiveOpened(inv)) return res.json({ success: false, message: "현재 이 조사는 개방 시간이 아닙니다." });
   if (inv.type === "daily") {
-    return res.json({ success: false, message: "일일조사는 참여가 아니라 바로 시작해야 해." });
+    return res.json({ success: false, message: "일일조사는 참여가 아니라 바로 시작해야 합니다." });
   }
   ensureRuntimeState(inv);
   const sourceCharacter =
@@ -2116,14 +2116,14 @@ app.post("/startInvestigation", (req, res) => {
     const item = investigationsDB.find((v) => v.id === id);
     if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
     if (!getEffectiveOpened(item)) {
-      return res.json({ success: false, message: "현재 이 조사는 시작할 수 있는 개방 시간이 아니야." });
+      return res.json({ success: false, message: "현재 이 조사는 시작할 수 있는 개방 시간이 아닙니다." });
     }
     ensureRuntimeState(item);
     if (item.started && !item.ended) {
       return res.json({ success: true, started: true, investigationId: item.id, leaders: item.leaders || [] });
     }
     if (!Array.isArray(item.participants) || item.participants.length <= 0) {
-      return res.json({ success: false, message: "참여 인원이 있어야 조사를 시작할 수 있어." });
+      return res.json({ success: false, message: "참여 인원이 있어야 조사를 시작할 수 있습니다." });
     }
     if ((!Array.isArray(item.leaders) || item.leaders.length <= 0) && item.participants[0]?.name) {
       item.leaders = [item.participants[0].name];
@@ -2181,13 +2181,13 @@ app.post("/moveInvestigation", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
-  if (item.pendingReward) return res.json({ success: false, message: "보상 배분이 끝나야 다음 진행을 할 수 있어." });
-  if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 이동할 수 있어." });
+  if (item.pendingReward) return res.json({ success: false, message: "보상 배분이 끝나야 다음 진행을 할 수 있습니다." });
+  if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 이동할 수 있습니다." });
   const currentNode = item.data?.nodes?.[item.currentNodeId];
-  if (currentNode?.battle) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없어." });
+  if (currentNode?.battle) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없습니다." });
   const nextNode = item.data?.nodes?.[targetNodeId];
   if (!nextNode) return res.json({ success: false, message: "이동할 위치가 없습니다." });
-  if (!canMoveBetweenNodes(item, item.currentNodeId, targetNodeId)) return res.json({ success: false, message: "현재 위치에서 연결되지 않은 구역이야." });
+  if (!canMoveBetweenNodes(item, item.currentNodeId, targetNodeId)) return res.json({ success: false, message: "현재 위치에서 연결되지 않은 구역입니다." });
 
   item.currentNodeId = targetNodeId;
   addSharedLog(item, `[이동] ${nextNode.name} - ${nextNode.log || ""}`);
@@ -2217,10 +2217,10 @@ app.post("/investigationAction", (req, res) => {
 
   ensureRuntimeState(item);
   if (item.pendingReward) {
-    return res.json({ success: false, message: "보상 배분이 끝나야 다음 행동을 할 수 있어." });
+    return res.json({ success: false, message: "보상 배분이 끝나야 다음 행동을 할 수 있습니다." });
   }
   if (item.activeNpcScene?.lines?.length) {
-    return res.json({ success: false, message: "NPC 대화가 끝나야 행동할 수 있어." });
+    return res.json({ success: false, message: "NPC 대화가 끝나야 행동할 수 있습니다." });
   }
   const currentNode = item.data?.nodes?.[item.currentNodeId];
   const locationName = currentNode?.name || "알 수 없는 장소";
@@ -2328,7 +2328,7 @@ app.post("/assignInvestigationReward", (req, res) => {
   if (item.type === "group" && !isAdmin) {
     const leaderNames = Array.isArray(item.leaders) ? item.leaders.map((name) => String(name || "")) : [];
     if (!leaderNames.includes(String(actorName || ""))) {
-      return res.json({ success: false, message: "단체조사 보상 배분은 리더만 할 수 있어." });
+      return res.json({ success: false, message: "단체조사 보상 배분은 리더만 할 수 있습니다." });
     }
   }
 
@@ -2342,7 +2342,7 @@ app.post("/assignInvestigationReward", (req, res) => {
   const reward = item.pendingReward;
   applyRewardToCharacter(char, reward)
 
-  addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았다.`);
+  addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았습니다.`);
   item.pendingReward = null;
   item.pendingRewardQueue = [];
   emitInvestigationState(investigationId);
@@ -2375,7 +2375,7 @@ app.post("/advanceNpcScene", (req, res) => {
   const rawOptions = Array.isArray(current.options) ? current.options.filter(Boolean) : [];
   const visibleOptions = rawOptions.filter((option) => String(option?.text || "").trim());
   if (visibleOptions.length > 0) {
-    return res.json({ success: false, message: "선택지를 골라야 해." });
+    return res.json({ success: false, message: "선택지를 골라야 합니다." });
   }
   if (rawOptions.length > 0) {
     if (current?.text) addSharedLog(item, `[NPC] ${npcName}: ${current.text}`);
@@ -2431,7 +2431,7 @@ app.post("/reassignInvestigationLeader", (req, res) => {
   if (!participant) return res.json({ success: false, message: "지정할 리더를 찾을 수 없습니다." });
   const state = item.participantStates?.[leaderName];
   if (state && Number(state.hp || 0) <= 0) {
-    return res.json({ success: false, message: "HP가 0인 캐릭터는 리더가 될 수 없어." });
+    return res.json({ success: false, message: "HP가 0인 캐릭터는 리더가 될 수 없습니다." });
   }
   item.leaders = [leaderName];
   addSharedLog(item, `[리더 변경] ${leaderName}이(가) 새 리더가 되었다.`);
@@ -2445,7 +2445,7 @@ app.post("/confirmInvestigationExit", (req, res) => {
   const { investigationId, characterName } = req.body || {};
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
-  if (!item.ended) return res.json({ success: false, message: "아직 종료된 조사가 아니야." });
+  if (!item.ended) return res.json({ success: false, message: "아직 종료된 조사가 아닙니다." });
   if (!characterName) return res.json({ success: false, message: "캐릭터 이름이 필요해." });
 
   if (!Array.isArray(item.endConfirmations)) item.endConfirmations = [];
@@ -2972,13 +2972,13 @@ function buildPublicInvestigationState(item) {
 
 app.get("/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
-  if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했어." });
+  if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했습니다." });
   res.json({ success: true, character: attachRelationsToCharacter(character) });
 });
 
 app.get("/character-public/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
-  if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했어." });
+  if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했습니다." });
   res.json({ success: true, character: buildPublicCharacter(character) });
 });
 
@@ -3024,7 +3024,7 @@ app.get("/admin/relations", (req, res) => {
 app.post("/admin/relations/delete", (req, res) => {
   const { characterId, otherCharacterId } = req.body || {};
   if (!characterId || !otherCharacterId) {
-    return res.json({ success: false, message: "삭제할 관계 정보를 찾지 못했어." });
+    return res.json({ success: false, message: "삭제할 관계 정보를 찾지 못했습니다." });
   }
 
   const before = relationsDB.length;
@@ -3052,7 +3052,7 @@ app.get("/relationRequests/byCharacter/:characterId", (req, res) => {
 app.post("/relationRequests", (req, res) => {
   const body = req.body || {};
   if (!body.fromCharacterId || !body.toCharacterId || !body.fromCharacter || !body.toCharacter) {
-    return res.json({ success: false, message: "관계 신청 정보가 부족해." });
+    return res.json({ success: false, message: "관계 신청 정보가 부족합니다." });
   }
 
   const duplicated = relationRequestsDB.find((item) =>
@@ -3062,7 +3062,7 @@ app.post("/relationRequests", (req, res) => {
   );
 
   if (duplicated) {
-    return res.json({ success: false, message: "이미 같은 대상에게 신청을 보냈어." });
+    return res.json({ success: false, message: "이미 같은 대상에게 신청을 보냈습니다." });
   }
 
   const sameDirectionRelation = relationsDB.find((item) =>
@@ -3072,7 +3072,7 @@ app.post("/relationRequests", (req, res) => {
   );
 
   if (sameDirectionRelation) {
-    return res.json({ success: false, message: "이미 이 방향의 관계가 등록되어 있어." });
+    return res.json({ success: false, message: "이미 이 방향의 관계가 등록되어 있습니다." });
   }
 
   const request = {
@@ -3097,11 +3097,11 @@ app.post("/admin/relationRequests/decision", (req, res) => {
   const target = relationRequestsDB.find((item) => item.id === requestId);
 
   if (!target) {
-    return res.json({ success: false, message: "관계 신청을 찾지 못했어." });
+    return res.json({ success: false, message: "관계 신청을 찾지 못했습니다." });
   }
 
   if (!["approved", "rejected"].includes(decision)) {
-    return res.json({ success: false, message: "올바르지 않은 처리 값이야." });
+    return res.json({ success: false, message: "올바르지 않은 처리 값입니다." });
   }
 
   target.status = decision;
@@ -3318,7 +3318,7 @@ app.post("/mails/send", (req, res) => {
   const { fromCharacterId, toCharacterId, title, body, coins, items } = req.body || {};
   const fromChar = charactersDB.find((char) => String(char.id) === String(fromCharacterId));
   const toChar = charactersDB.find((char) => String(char.id) === String(toCharacterId));
-  if (!fromChar || !toChar) return res.json({ success: false, message: "캐릭터를 찾을 수 없어." });
+  if (!fromChar || !toChar) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
   mailsDB.push({
     id: `mail-${Date.now()}-${Math.random()}`,
     fromCharacterId,
@@ -3338,17 +3338,17 @@ app.post("/mails/send", (req, res) => {
 });
 app.post("/mails/:id/read", (req, res) => {
   const target = mailsDB.find((mail) => String(mail.id) === String(req.params.id));
-  if (!target) return res.json({ success: false, message: "우편을 찾지 못했어." });
+  if (!target) return res.json({ success: false, message: "우편을 찾지 못했습니다." });
   target.read = true;
   writeJsonFileSafe(mailsPath, mailsDB);
   res.json({ success: true });
 });
 app.post("/mails/:id/receive", (req, res) => {
   const target = mailsDB.find((mail) => String(mail.id) === String(req.params.id));
-  if (!target) return res.json({ success: false, message: "우편을 찾지 못했어." });
-  if (target.received) return res.json({ success: false, message: "이미 받은 우편이야." });
+  if (!target) return res.json({ success: false, message: "우편을 찾지 못했습니다." });
+  if (target.received) return res.json({ success: false, message: "이미 받은 우편입니다." });
   const char = charactersDB.find((item) => String(item.id) === String(target.toCharacterId));
-  if (!char) return res.json({ success: false, message: "캐릭터를 찾지 못했어." });
+  if (!char) return res.json({ success: false, message: "캐릭터를 찾지 못했습니다." });
   char.coins = Number(char.coins || 0) + Number(target.coins || 0);
   char.items = [...(Array.isArray(char.items) ? char.items : []), ...(Array.isArray(target.items) ? target.items : [])];
   target.received = true;
@@ -3361,7 +3361,7 @@ app.post("/mails/:id/receive", (req, res) => {
 app.post("/deleteInvestigation", (req, res) => {
   const { id } = req.body || {};
   const index = investigationsDB.findIndex((v) => v.id === id);
-  if (index < 0) return res.json({ success: false, message: "조사를 찾지 못했어." });
+  if (index < 0) return res.json({ success: false, message: "조사를 찾지 못했습니다." });
   investigationsDB.splice(index, 1);
   delete roomChats[id];
   emitParticipantsUpdated();
@@ -3371,17 +3371,17 @@ app.post("/deleteInvestigation", (req, res) => {
 app.post("/endInvestigationOnly", (req, res) => {
   const { id, endedBy } = req.body || {};
   const item = investigationsDB.find((v) => v.id === id);
-  if (!item) return res.json({ success: false, message: "조사를 찾지 못했어." });
+  if (!item) return res.json({ success: false, message: "조사를 찾지 못했습니다." });
   const safeEndedBy = String(endedBy || "운영자");
   const isLeader = safeEndedBy !== "운영자" && Array.isArray(item.leaders) && item.leaders.includes(safeEndedBy);
   if (safeEndedBy !== "운영자" && !isLeader) {
-    return res.json({ success: false, message: "리더 또는 운영자만 조사를 종료할 수 있어." });
+    return res.json({ success: false, message: "리더 또는 운영자만 조사를 종료할 수 있습니다." });
   }
   item.ended = true;
   item.started = false;
   item.endedAt = new Date().toISOString();
   item.endedReason = safeEndedBy === "운영자" ? "운영자 종료" : "조사 종료";
-  item.resultSummary = safeEndedBy === "운영자" ? "운영자가 조사를 종료했어." : `${safeEndedBy}이(가) 조사를 종료했어.`;
+  item.resultSummary = safeEndedBy === "운영자" ? "운영자가 조사를 종료했습니다." : `${safeEndedBy}이(가) 조사를 종료했습니다.`;
   item.sharedLog = item.resultSummary;
   item.sharedLogs.push(createLogEntry(item.resultSummary));
   applyInvestigationEndCorrosion(item);

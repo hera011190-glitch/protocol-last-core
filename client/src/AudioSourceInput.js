@@ -98,7 +98,7 @@ export default function AudioSourceInput({
             <input ref={fileRef} type="file" accept="audio/*" onChange={handleFileChange} style={{ display: "none" }} />
           </label>
           <div style={{ color: "#5d7a95", fontSize: 12, lineHeight: 1.6 }}>
-            {helperText || "mp3, ogg, wav 같은 오디오 파일을 넣을 수 있어."}
+            {helperText || "mp3, ogg, wav 같은 오디오 파일을 넣을 수 있습니다."}
           </div>
         </div>
         <div style={{ display: "grid", gap: 6 }}>
