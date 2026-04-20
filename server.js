@@ -2984,7 +2984,17 @@ function buildPublicCharacter(character) {
   if (!character) return character;
   const detailed = attachRelationsToCharacter(character);
   const version = detailed.assetVersion || detailed.updatedAt || character.assetVersion || character.updatedAt || "";
-  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
+  const mapped = mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
+  const summary = buildPublicCharacterSummary(character) || {};
+  return {
+    ...mapped,
+    image: summary.image || mapped.image || "",
+    profileImage: summary.profileImage || mapped.profileImage || mapped.image || "",
+    mainImage: summary.mainImage || mapped.mainImage || mapped.image || "",
+    cardImage: summary.cardImage || mapped.cardImage || summary.mainImage || summary.profileImage || mapped.mainImage || mapped.image || "",
+    investigationImage: summary.investigationImage || mapped.investigationImage || summary.mainImage || summary.profileImage || mapped.mainImage || mapped.image || "",
+    spriteImage: summary.spriteImage || mapped.spriteImage || summary.investigationImage || summary.mainImage || summary.profileImage || mapped.investigationImage || mapped.mainImage || mapped.image || "",
+  };
 }
 
 function buildPublicDesignShellConfig(config) {

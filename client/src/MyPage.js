@@ -377,6 +377,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const [letter, setLetter] = useState("");
   const [draftDelta, setDraftDelta] = useState({ hp: 0, def: 0, atk: 0, agi: 0 });
   const [profileEdit, setProfileEdit] = useState({ name: "", age: "", bodyInfo: "", rank: "대원", oneLine: "", profile: "", image: "", mainImage: "", mainImageFrame: { x: 50, y: 26, scale: 1.06 }, investigationImage: "", profileBgm: "", profileBgmVolume: 1 });
+  const [liveQuotePool, setLiveQuotePool] = useState([]);
   const [saveNotice, setSaveNotice] = useState("");
   const profileTextareaRef = useRef(null);
   const [relationOpen, setRelationOpen] = useState(false);
@@ -484,6 +485,37 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   useEffect(() => {
     loadMail();
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser?.id) {
+      setLiveQuotePool([]);
+      return undefined;
+    }
+    fetch(buildApiUrl(`/character-public/${currentUser.id}?t=${Date.now()}`), { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const character = data?.character || {};
+        const nextQuotes = Array.from(new Set([
+          ...(Array.isArray(character?.sdQuotes) ? character.sdQuotes : []),
+          ...(Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []),
+          String(character?.oneLine || "").trim(),
+          String(currentUser?.oneLine || "").trim(),
+        ].map((value) => String(value || "").trim()).filter(Boolean)));
+        setLiveQuotePool(nextQuotes);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLiveQuotePool(Array.from(new Set([
+          ...(Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []),
+          String(currentUser?.oneLine || "").trim(),
+        ].map((value) => String(value || "").trim()).filter(Boolean))));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, currentUser?.sdQuotes, currentUser?.oneLine]);
 
   useEffect(() => {
     if (!saveNotice) return undefined;
@@ -982,7 +1014,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
           <div style={{ display: "grid", gap: 12, alignSelf: "stretch", gridTemplateRows: "minmax(220px, auto) minmax(0, 1fr)" }}>
             <QuoteEditor
               quotes={Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []}
-              extraQuotes={[currentUser?.oneLine || ""]}
+              extraQuotes={[currentUser?.oneLine || "", profileEdit.oneLine || "", ...liveQuotePool]}
               style={{ minHeight: 200, height: "100%" }}
               onSave={async (next) => {
                 const data = await saveCharacterPatch({ sdQuotes: next });
