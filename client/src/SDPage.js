@@ -388,6 +388,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
               inset: 0,
               opacity: Math.min(0.95, 0.12 + tintStrength * 1.05),
               filter: `sepia(1) saturate(${(2.2 + tintStrength * 3.2).toFixed(2)}) hue-rotate(-40deg) brightness(${(0.8 + tintStrength * 0.08).toFixed(2)}) contrast(1.1)`,
+              mixBlendMode: "multiply",
               WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
               maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
             }}
@@ -727,13 +728,42 @@ export default function SDPage({ activeCharacter, design, theme }) {
   }, [activeCharacter, maps]);
 
   useEffect(() => {
+    if (!maps.length) return undefined;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const incoming = await fetchCharactersWithFallback();
+        if (cancelled) return;
+        setCharacters((prev) => {
+          const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
+          const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
+          const next = stabilizeCharacterRows(mergeCharacterStates(prev, sourceRows, maps), activeCharacter, maps);
+          if (next.length > 0) {
+            writeCachedSdCharacters(next);
+            persistCharacterPositions(next);
+          }
+          return next.length > 0 || prev.length === 0 ? next : prev;
+        });
+      } catch {}
+    };
+    const timer = setInterval(refresh, 3500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [maps, activeCharacter]);
+
+  useEffect(() => {
     const handleCharacterUpdated = async (event) => {
       const updated = event?.detail?.character;
       if (updated?.id || updated?.name) {
         const updatedKey = getCharacterKey(updated);
         setCharacters((prev) => {
           const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps);
-          if (next.length > 0) writeCachedSdCharacters(next);
+          if (next.length > 0) {
+            writeCachedSdCharacters(next);
+            persistCharacterPositions(next);
+          }
           return next;
         });
         return;
@@ -744,7 +774,10 @@ export default function SDPage({ activeCharacter, design, theme }) {
           const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
           const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
           const next = stabilizeCharacterRows(mergeCharacterStates(prev, sourceRows, maps), activeCharacter, maps);
-          if (next.length > 0) writeCachedSdCharacters(next);
+          if (next.length > 0) {
+            writeCachedSdCharacters(next);
+            persistCharacterPositions(next);
+          }
           return next.length > 0 || prev.length === 0 ? next : prev;
         });
       } catch {}
@@ -775,7 +808,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const targetMapId = String(currentMap?.id || "");
     const seen = new Set();
     let activeShown = false;
-    return characters.filter((character) => {
+    const filtered = characters.filter((character) => {
       if (String(character?.currentMap || "") !== targetMapId) return false;
       const key = getCharacterKey(character);
       if (!key || seen.has(key)) return false;
@@ -791,7 +824,25 @@ export default function SDPage({ activeCharacter, design, theme }) {
       seen.add(key);
       return true;
     });
-  }, [characters, currentMap, activeCharacter]);
+
+    if (activeCharacter && !activeShown && targetMapId) {
+      const saved = findStateByAliases(readSavedPositions(), activeCharacter) || null;
+      const fallbackActive = buildCharacterState({
+        ...activeCharacter,
+        currentMap: targetMapId,
+        x: typeof saved?.x === "number" ? saved.x : 50,
+        y: typeof saved?.y === "number" ? saved.y : 56,
+        dx: typeof saved?.dx === "number" ? saved.dx : 0,
+        dy: typeof saved?.dy === "number" ? saved.dy : 0,
+        spriteImage: activeCharacter?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || "",
+      }, saved || activeCharacter, maps, 0);
+      if (String(fallbackActive?.currentMap || "") === targetMapId && getSpriteImage(fallbackActive)) {
+        filtered.push(fallbackActive);
+      }
+    }
+
+    return filtered;
+  }, [characters, currentMap, activeCharacter, maps]);
   const availableDirs = currentMap?.neighbors || {};
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
@@ -799,10 +850,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
     const activeKey = getCharacterKey(activeCharacter);
-    setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.72, dy: spawn.dy * 0.72, waitMs: 1700, moveCooldownMs: rand(4600, 7600) } : character), activeCharacter, maps));
+    setCharacters((prev) => {
+      const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.72, dy: spawn.dy * 0.72, waitMs: 1700, moveCooldownMs: rand(4600, 7600) } : character), activeCharacter, maps);
+      if (next.length > 0) {
+        writeCachedSdCharacters(next);
+        persistCharacterPositions(next);
+      }
+      return next;
+    });
     if (activeCharacter?.id) {
       fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y } } }));
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y, spriteImage: activeCharacter?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || "", investigationImage: activeCharacter?.investigationImage || "", mainImage: activeCharacter?.mainImage || "", image: activeCharacter?.image || "" } } }));
     }
   };
 
