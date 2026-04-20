@@ -1104,7 +1104,7 @@ useEffect(() => {
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || "확인 처리에 실패했습니다.");
+      alert(data.message || "확인 처리에 실패했어.");
       return;
     }
     goBack();
@@ -1272,7 +1272,7 @@ useEffect(() => {
 
                           </div>
                           <div style={{ marginTop: "6px", color: "#9fb0c7", fontSize: "13px" }}>
-                            HP {hp}/{maxHp} / ATK {state.atk || participant.stats?.atk || 0} / DEF {state.def || participant.stats?.def || 0} / AGI {state.agi || participant.stats?.agi || 0}
+                            HP {hp}/{maxHp} / ATK {state.atk || participant.stats?.atk || 0} / DEF {state.def || participant.stats?.def || 0} / DEX {state.agi || participant.stats?.agi || 0}
                           </div>
                           <div style={miniBarTrackStyle}><div style={{ ...miniBarFillStyle, width: `${hpPercent}%` }} /></div>
                           {state.status ? <div style={{ marginTop: 6, fontSize: 11, color: "#94a3b8" }}>{state.status}</div> : null}
@@ -1428,7 +1428,7 @@ useEffect(() => {
               <div style={{ color: "#fde68a", fontWeight: 800 }}>{formatPendingRewardLabel(pendingReward)} 획득 대기</div>
               <div style={{ marginTop: 8, color: "#9fb0c7", lineHeight: 1.7 }}>
                 조사 참여 캐릭터 중 한 명을 골라 보상을 배분하세요. 배분이 끝나야 다음 진행으로 넘어갈 수 있습니다.
-                {!isDaily && !isAdmin && !isLeader ? " 현재는 리더만 배분할 수 있습니다." : ""}
+                {!isDaily && !isAdmin && !isLeader ? " 현재는 리더만 배분할 수 있어." : ""}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, marginTop: 18 }}>
                 {participants.map((participant) => {
@@ -1590,7 +1590,7 @@ useEffect(() => {
                         investigationButtons.map((label) => (
                           <button key={label} type="button" onClick={() => runInvestigationButton(label)} disabled={explorationLocked} style={{ ...actionButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{label}</button>
                         ))
-                      ) : <div style={{ color: "#cbd5e1", fontSize: 13 }}>이 위치에서 가능한 조사가 없습니다.</div>}
+                      ) : <div style={{ color: "#cbd5e1", fontSize: 13 }}>이 위치에서 가능한 조사가 없어.</div>}
                     </div>
                   </div>
                 ) : (
@@ -1607,7 +1607,7 @@ useEffect(() => {
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("공격") ? "is-tab-active" : ""}`} onClick={() => chooseBattleAction("공격")} disabled={battleInputLocked}>공격</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("방어") ? "is-tab-active" : ""}`} onClick={() => chooseBattleAction("방어")} disabled={battleInputLocked}>방어</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("아이템") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; setActionPicker("item"); }} disabled={battleInputLocked} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
-                          <button type="button" className={`ghost-button ${myBattleAction.startsWith("스킬") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; if (!battleSkillOptions.length) { alert("보유한 스킬이 없습니다."); return; } setActionPicker("skill"); }} disabled={battleInputLocked || battleSkillOptions.length === 0}>스킬</button>
+                          <button type="button" className={`ghost-button ${myBattleAction.startsWith("스킬") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; if (!battleSkillOptions.length) { alert("보유한 스킬이 없어."); return; } setActionPicker("skill"); }} disabled={battleInputLocked || battleSkillOptions.length === 0}>스킬</button>
                           {canControl ? <button type="button" onClick={fleeFromBattle} style={runButtonStyle} disabled={battleInputLocked}>파티 도주</button> : null}
                         </div>
                       ) : (
@@ -1843,7 +1843,7 @@ function getUniqueRouteSteps(routeHistory) {
 function InvestigationMapCanvas({ investigation, participants = [], leaders = [] }) {
   const nodes = investigation?.data?.nodes || {};
   const entries = Object.entries(nodes);
-  if (!entries.length) return <div style={{ color: "#9fb0c7" }}>표시할 지도가 없습니다.</div>;
+  if (!entries.length) return <div style={{ color: "#9fb0c7" }}>표시할 지도가 없어.</div>;
 
   const uniqueSteps = getUniqueRouteSteps(investigation.routeHistory);
   const visitOrder = Object.fromEntries(uniqueSteps.map((entry, index) => [entry.nodeId, index + 1]));
@@ -2368,7 +2368,7 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>
         <div style={topChipStyle}>ATK {battle.atk || 0}</div>
         <div style={topChipStyle}>DEF {battle.def || 0}</div>
-        <div style={topChipStyle}>AGI {battle.agi || 0}</div>
+        <div style={topChipStyle}>DEX {battle.agi || 0}</div>
       </div>
       {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 12, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
     </div>
@@ -2383,7 +2383,7 @@ function BattleMonsterStats({ node }) {
       <div style={topChipStyle}>HP {battle.hp}/{battle.maxHp || battle.hp}</div>
       <div style={topChipStyle}>ATK {battle.atk || 0}</div>
       <div style={topChipStyle}>DEF {battle.def || 0}</div>
-      <div style={topChipStyle}>AGI {battle.agi || 0}</div>
+      <div style={topChipStyle}>DEX {battle.agi || 0}</div>
       <div style={topChipStyle}>전체 {Math.round(Number(battle.aoe_chance || 0) * 100)}%</div>
       <div style={topChipStyle}>필살기 {Math.round(Number(battle.finisher_chance || 0) * 100)}%</div>
     </div>

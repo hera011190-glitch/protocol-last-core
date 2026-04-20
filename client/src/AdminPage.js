@@ -565,7 +565,7 @@ export default function AdminPage({
                 <label>ATK<input value={edit.atk} onChange={(e) => setEdit({ ...edit, atk: e.target.value })} style={inputStyle} /></label>
                 <label>HP<input value={edit.hp} onChange={(e) => setEdit({ ...edit, hp: e.target.value })} style={inputStyle} /></label>
                 <label>DEF<input value={edit.def} onChange={(e) => setEdit({ ...edit, def: e.target.value })} style={inputStyle} /></label>
-                <label>AGI<input value={edit.agi} onChange={(e) => setEdit({ ...edit, agi: e.target.value })} style={inputStyle} /></label>
+                <label>DEX<input value={edit.agi} onChange={(e) => setEdit({ ...edit, agi: e.target.value })} style={inputStyle} /></label>
               </div>
             </div>
           </div>

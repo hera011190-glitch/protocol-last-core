@@ -59,6 +59,15 @@ function buildFallbackItemImage(label) {
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="%23dbeafe"/><stop offset="1" stop-color="%23bae6fd"/></linearGradient></defs><rect width="240" height="240" rx="34" fill="url(%23g)"/><circle cx="120" cy="92" r="38" fill="%23ffffff" fill-opacity="0.72"/><path d="M82 150c13-16 29-24 38-24s25 8 38 24" stroke="%230f172a" stroke-opacity="0.18" stroke-width="16" stroke-linecap="round"/><text x="120" y="206" text-anchor="middle" font-family="Pretendard,Noto Sans KR,sans-serif" font-size="26" font-weight="700" fill="%2316324a">${title}</text></svg>`;
 }
 
+
+function withImageVersion(src, version) {
+  if (!src) return "";
+  const value = String(src || "");
+  if (value.startsWith("data:image/")) return value;
+  const joiner = value.includes("?") ? "&" : "?";
+  return `${value}${joiner}cb=${encodeURIComponent(String(version || Date.now()))}`;
+}
+
 function isUsableItem(meta) {
   const useType = String(meta?.useType || "none");
   return useType && useType !== "none" && useType !== "unusable";
@@ -110,21 +119,22 @@ function ItemUsePanel({ items, catalog, onUse, style = {} }) {
                   type="button"
                   onClick={() => setSelectedKey(entry.key)}
                   style={{
-                    border: active ? "1px solid rgba(14,165,233,0.52)" : "1px solid rgba(98,176,220,0.2)",
-                    borderRadius: 20,
-                    padding: 10,
-                    background: active ? "linear-gradient(180deg, rgba(224,242,254,0.98), rgba(255,255,255,0.98))" : "rgba(255,255,255,0.92)",
-                    boxShadow: active ? "0 18px 30px rgba(14,165,233,0.14)" : "0 10px 22px rgba(73,132,170,0.08)",
+                    border: "none",
+                    borderRadius: 0,
+                    padding: 0,
+                    background: "transparent",
+                    boxShadow: "none",
                     cursor: "pointer",
                     display: "grid",
                     gap: 8,
                     textAlign: "center",
+                    transform: active ? "translateY(-2px)" : "none",
                   }}
                 >
-                  <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 16, overflow: "hidden", background: "linear-gradient(180deg, rgba(191,219,254,0.38), rgba(255,255,255,0.9))", display: "grid", placeItems: "center" }}>
-                    <img src={entry.image} alt={entry.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <div style={{ width: "100%", aspectRatio: "1 / 1", overflow: "hidden", display: "grid", placeItems: "center", borderRadius: 0 }}>
+                    <img src={entry.image} alt={entry.displayName} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12, outline: active ? "2px solid rgba(14,165,233,0.85)" : "none", outlineOffset: active ? 2 : 0 }} />
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#16324a", lineHeight: 1.3, minHeight: 34 }}>{entry.displayName}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: active ? "#0f5f93" : "#16324a", lineHeight: 1.3, minHeight: 34 }}>{entry.displayName}</div>
                 </button>
               );
             })}
@@ -213,8 +223,7 @@ function QuoteEditor({ quotes, onSave, style = {} }) {
   return (
     <div style={card(style)}>
       <h3 style={{ marginTop: 0 }}>SD 대사</h3>
-      <div style={{ color: "#5d7a95", fontSize: 12, marginBottom: 10 }}>저장되어 있는 대사도 바로 보이고, 이곳에서 삭제하실 수 있습니다.</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {savedQuotes.length > 0 ? savedQuotes.map((quote, idx) => (
           <div key={`${quote}-${idx}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 999, background: "rgba(224,242,254,0.9)", border: "1px solid rgba(56,189,248,0.2)", color: "#16324a", maxWidth: "100%" }}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{quote}</span>
@@ -760,7 +769,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     { key: "hp", label: "HP", value: effectiveStats.hp },
     { key: "def", label: "DEF", value: effectiveStats.def },
     { key: "atk", label: "ATK", value: effectiveStats.atk },
-    { key: "agi", label: "AGI", value: effectiveStats.agi },
+    { key: "agi", label: "DEX", value: effectiveStats.agi },
   ];
 
   return (
@@ -793,7 +802,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                   <div style={{ height: "220px", borderRadius: "22px", overflow: "hidden", background: "rgba(255,255,255,0.72)", position: "relative" }}>
                     {currentUser.profileImage || currentUser.image || currentUser.investigationImage ? (
                       <img
-                        src={currentUser.profileImage || currentUser.image || currentUser.investigationImage}
+                        src={withImageVersion(currentUser.profileImage || currentUser.image || currentUser.investigationImage, currentUser.assetVersion || currentUser.updatedAt)}
                         alt={currentUser.name}
                         style={{
                           width: "100%",
@@ -931,9 +940,9 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>이미지</div>
                 <div style={{ display: "grid", gridTemplateColumns: "156px minmax(0, 1fr)", gap: "12px", alignItems: "start" }}>
                   <div style={{ display: "grid", gap: 8 }}>
-                    <ImageDropInput label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEdit((prev) => ({ ...prev, image: value }))} previewHeight={112} compact />
-                    <ImageDropInput label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, investigationImage: value }))} previewHeight={112} previewFit="contain" compact />
-                    <ImageDropInput label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={112} previewFit="contain" compact />
+                    <ImageDropInput key={`profile-${profileEdit.image?.length || 0}-${currentUser?.assetVersion || 0}`} label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEdit((prev) => ({ ...prev, image: value }))} previewHeight={112} compact />
+                    <ImageDropInput key={`sd-${profileEdit.investigationImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, investigationImage: value }))} previewHeight={112} previewFit="contain" compact />
+                    <ImageDropInput key={`main-${profileEdit.mainImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={112} previewFit="contain" compact />
                     <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact helperText="프로필 화면에 들어가면 이 BGM이 자동으로 재생돼." />
                   </div>
                   <div style={{ display: "grid", gap: 10, justifyItems: "stretch", width: "100%", overflow: "hidden", margin: "0 auto" }}>

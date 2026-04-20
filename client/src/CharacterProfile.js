@@ -227,7 +227,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
               <StatCell label="HP" value={hpStat} />
               <StatCell label="ATK" value={stats.atk ?? 0} />
               <StatCell label="DEF" value={stats.def ?? 0} />
-              <StatCell label="AGI" value={stats.agi ?? 0} />
+              <StatCell label="DEX" value={stats.agi ?? 0} />
             </div>
 
             <div style={{ padding: "18px 20px", borderRadius: 24, background: "rgba(255,255,255,0.72)", display: "grid", gap: 8 }}>

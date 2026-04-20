@@ -451,7 +451,7 @@ function InvestigationLobby({
                                 <div style={{ width: `${hpPercent}%`, height: "100%", background: dead ? "linear-gradient(90deg, #fca5a5, #ef4444)" : "linear-gradient(90deg, #93c5fd, #22d3ee)" }} />
                               </div>
                               <div style={{ marginTop: "6px", color: "#9fb0c7", fontSize: "13px" }}>
-                                ATK {state.atk || p.stats?.atk || 0} / DEF {state.def || p.stats?.def || 0} / AGI {state.agi || p.stats?.agi || 0}
+                                ATK {state.atk || p.stats?.atk || 0} / DEF {state.def || p.stats?.def || 0} / DEX {state.agi || p.stats?.agi || 0}
                               </div>
                             </div>
                           </div>

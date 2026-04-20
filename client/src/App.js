@@ -371,7 +371,7 @@ function App() {
     }
   };
 
-  const runtimeCharacter = activeCharacter || (isAdmin ? { id: "admin", name: "운영자", ownerId: "admin" } : null);
+  const runtimeCharacter = user ? (activeCharacter || (isAdmin ? { id: "admin", name: "운영자", ownerId: "admin" } : null)) : null;
 
   const enterInvestigation = async (item, options = {}) => {
     if (!item) return;
@@ -790,7 +790,7 @@ function App() {
               <DesignPageFrame design={designConfig} theme={theme} pageKey="investigationOverlay">
                 <div style={{ minHeight: "64vh", display: "grid", placeItems: "center", padding: 24 }}>
                   <div style={{ width: "min(520px, 100%)", background: "rgba(15,23,42,0.86)", color: "#fff", borderRadius: 24, padding: 24, boxShadow: "0 18px 50px rgba(2,6,23,0.34)" }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>조사 화면을 불러오는 중 문제가 발생했습니다.</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>조사 화면을 불러오는 중 문제가 생겼어.</div>
                     <div style={{ opacity: 0.86, lineHeight: 1.6, marginBottom: 16 }}>이전 화면으로 돌아가서 다시 들어오면 바로 이어서 볼 수 있게 해뒀어.</div>
                     <button type="button" className="home-primary-button" onClick={() => setActivePage(PAGE.INVESTIGATIONS)}>조사 목록으로 돌아가기</button>
                   </div>
@@ -816,8 +816,8 @@ function App() {
             <DesignPageFrame design={designConfig} theme={theme} pageKey="my">
               <div style={{ minHeight: "64vh", display: "grid", placeItems: "center", padding: 24 }}>
                 <div style={{ width: "min(520px, 100%)", background: "rgba(255,255,255,0.92)", color: "#17324a", borderRadius: 24, padding: 24, boxShadow: "0 18px 50px rgba(15,23,42,0.16)" }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>MY 화면을 불러오는 중 문제가 발생했습니다.</div>
-                  <div style={{ opacity: 0.82, lineHeight: 1.6, marginBottom: 16 }}>캐릭터 선택 화면으로 돌아가시면 바로 다시 들어오실 수 있습니다.</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>MY 화면을 불러오는 중 문제가 생겼어.</div>
+                  <div style={{ opacity: 0.82, lineHeight: 1.6, marginBottom: 16 }}>캐릭터 선택 화면으로 돌아가면 바로 다시 들어올 수 있어.</div>
                   <button type="button" className="home-primary-button" onClick={() => applyActiveCharacter(null)}>캐릭터 다시 선택하기</button>
                 </div>
               </div>

@@ -207,7 +207,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const res = await apiFetch("/admin/customInvestigations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json();
     if (!data.success) return alert(data.message || "저장 실패");
-    setMessage("저장되었습니다.");
+    setMessage("저장됐습니다.");
     loadSaved();
   };
 
@@ -215,7 +215,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const res = await apiFetch("/admin/publishInvestigation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serialize()) });
     const data = await res.json();
     if (!data.success) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
-    setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영되었습니다.");
+    setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영됐습니다.");
     loadSaved();
   };
 
@@ -474,7 +474,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             <div><div className="section-eyebrow">선택 노드</div><h3 style={{ margin: "8px 0 0 0" }}>{selectedNode.id}</h3></div>
             <button type="button" className="ghost-button" onClick={() => removeNode(selectedNode.id)}>노드 삭제</button>
           </div>
-          <div style={{ color: "#6a87a3", fontSize: 13, lineHeight: 1.7 }}>노드 ID는 내부 식별용이며, 구역 이름은 실제 화면 표시용입니다. 진입 로그는 이 구역에 들어왔을 때 바로 보이는 설명 문장입니다.</div>
+          <div style={{ color: "#6a87a3", fontSize: 13, lineHeight: 1.7 }}>노드 id는 내부 식별용, 구역 이름은 실제 화면 표시용이야. 진입 로그는 이 구역에 들어왔을 때 바로 보이는 설명 문장이야.</div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>노드 id (내부 식별용)</div><input value={selectedNode.id} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, id: e.target.value }))} placeholder="노드 id" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>구역 이름 (실제 표시 이름)</div><input value={selectedNode.name} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, name: e.target.value }))} placeholder="구역 이름" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>진입 로그 (이 구역에 들어오면 보이는 설명)</div><textarea value={selectedNode.log} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, log: e.target.value }))} placeholder="진입 로그" style={textareaStyle} /></div>
@@ -504,7 +504,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           </div>
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>이동 연결</div>
-          <div style={{ color: "#6a87a3", fontSize: 13 }}>버튼 텍스트는 플레이어가 누르는 이동 버튼 이름이며, 이동 대상은 해당 버튼을 눌렀을 때 도착할 구역입니다.</div>
+          <div style={{ color: "#6a87a3", fontSize: 13 }}>버튼 텍스트는 플레이어가 누르는 이동 버튼 이름이고, 이동 대상은 그 버튼을 눌렀을 때 도착할 구역이야.</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="ghost-button" onClick={() => addDirectionChoice("상")}>상 추가</button>
             <button type="button" className="ghost-button" onClick={() => addDirectionChoice("좌")}>좌 추가</button>
@@ -525,7 +525,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           </div>)}
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>조사 버튼</div>
-          <div style={{ color: "#6a87a3", fontSize: 13 }}>조사 버튼은 이 구역에서 실행할 상호작용입니다. 결과 로그는 실행 직후 표시되는 문장이며, 아이템/단서/포인트는 보상으로 지급됩니다.</div>
+          <div style={{ color: "#6a87a3", fontSize: 13 }}>조사 버튼은 이 구역에서 실행할 상호작용이야. 결과 로그는 실행 직후 뜨는 문장이고, 아이템/단서/포인트는 보상으로 지급돼.</div>
           {(selectedNode.investigations || []).map((label, idx) => <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 8, alignItems: "end" }}>
             <div style={{ display: "grid", gap: 6 }}>
               <div style={fieldLabelStyle}>조사 버튼 이름</div>
@@ -671,7 +671,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           </div>
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>전투</div>
-          <div style={{ color: "#6a87a3", fontSize: 13 }}>전체공격 확률은 모든 아군을 공격할 확률이며, 필살기 확률은 강한 특수 공격이 발동할 확률입니다. 보상 아이템은 전투 승리 후 지급되는 아이템입니다.</div>
+          <div style={{ color: "#6a87a3", fontSize: 13 }}>전체공격 확률은 모든 아군을 때릴 확률, 필살기 확률은 강한 특수 공격 확률이야. 보상 아이템은 전투 승리 후 지급될 아이템이야.</div>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!selectedNode.battle} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: e.target.checked ? { name: "새 E-Beast", hp: 40, maxHp: 40, atk: 8, def: 3, agi: 6, aoe_chance: 0.3, finisher_chance: 0.05, finisherType: "single", rewardPoints: 10, rewardItem: "", image: "" } : null }))} />전투 사용</label>
           {selectedNode.battle ? <div style={{ display: "grid", gap: 8 }}>
             <div style={{ display: "grid", gap: 6 }}>
@@ -682,7 +682,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
               <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>체력(HP)</div><input type="number" value={selectedNode.battle.hp || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, hp: Number(e.target.value || 0), maxHp: Number(e.target.value || 0) } }))} placeholder="HP" style={inputStyle} /></div>
               <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>공격력(ATK)</div><input type="number" value={selectedNode.battle.atk || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, atk: Number(e.target.value || 0) } }))} placeholder="ATK" style={inputStyle} /></div>
               <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>방어력(DEF)</div><input type="number" value={selectedNode.battle.def || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, def: Number(e.target.value || 0) } }))} placeholder="DEF" style={inputStyle} /></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>민첩(AGI)</div><input type="number" value={selectedNode.battle.agi || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, agi: Number(e.target.value || 0) } }))} placeholder="AGI" style={inputStyle} /></div>
+              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>민첩(DEX)</div><input type="number" value={selectedNode.battle.agi || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, agi: Number(e.target.value || 0) } }))} placeholder="DEX" style={inputStyle} /></div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
               <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전체공격 확률</div><input type="number" step="0.05" value={selectedNode.battle.aoe_chance || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, aoe_chance: Number(e.target.value || 0) } }))} placeholder="전체공격 확률" style={inputStyle} /></div>

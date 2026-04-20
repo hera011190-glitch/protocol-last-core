@@ -199,6 +199,30 @@ function TextPanel({ title, body, onEdit, editable, minHeight = 220 }) {
   );
 }
 
+function openGoogleDoc(url) {
+  const target = String(url || "").trim();
+  if (!target) {
+    alert("구글 문서 링크가 아직 등록되지 않았습니다.");
+    return;
+  }
+  window.open(target, "_blank", "noopener,noreferrer");
+}
+
+function LinkPanel({ title, body, url, buttonText, onEdit, editable, minHeight = 220 }) {
+  return (
+    <div style={cardStyle(minHeight)}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+        <h3 style={{ margin: 0 }}>{title}</h3>
+        {editable ? <button type="button" className="ghost-button" onClick={onEdit}>수정</button> : null}
+      </div>
+      <div style={{ color: "#4f7390", whiteSpace: "pre-wrap", lineHeight: 1.8 }}>{body}</div>
+      <div>
+        <button type="button" className="home-primary-button" onClick={() => openGoogleDoc(url)}>{buttonText || `${title} 열기`}</button>
+      </div>
+    </div>
+  );
+}
+
 function SchedulePanel({ title, items, onEdit, editable, minHeight }) {
   const mapped = mapScheduleItems(items);
   return (
@@ -304,6 +328,8 @@ export default function HomePage({ user, activeCharacter, openMy, goCharacters, 
 
   const notice = content.noticeCard || content.leftCard1 || { title: "공지사항", body: "" };
   const world = content.worldCard || content.leftCard2 || { title: "세계관", body: "" };
+  const noticeUrl = notice?.googleDocUrl || notice?.docUrl || notice?.url || notice?.link || "";
+  const worldUrl = world?.googleDocUrl || world?.docUrl || world?.url || world?.link || "";
   const homeNotice = content.homepageNotice || { title: "홈페이지 공지", items: [] };
   const schedule = content.schedule || { title: "일정표", items: [] };
 
@@ -373,16 +399,20 @@ export default function HomePage({ user, activeCharacter, openMy, goCharacters, 
       <div style={{ padding: "26px", color: theme?.textMain || "#13324b" }}>
         <div style={{ display: "grid", gridTemplateColumns: "320px minmax(0, 1fr) 320px", gap: "22px", alignItems: "start" }}>
           <div style={{ display: "grid", gap: "22px" }}>
-            <TextPanel
+            <LinkPanel
               title={notice?.title || "공지사항"}
               body={notice?.body || notice?.summary || ""}
+              url={noticeUrl}
+              buttonText={notice?.buttonText || "공지사항 열기"}
               minHeight={noticeHeight}
               editable={editable}
               onEdit={() => openEditor("notice")}
             />
-            <TextPanel
+            <LinkPanel
               title={world?.title || "세계관"}
               body={world?.body || world?.summary || ""}
+              url={worldUrl}
+              buttonText={world?.buttonText || "세계관 열기"}
               minHeight={worldHeight}
               editable={editable}
               onEdit={() => openEditor("world")}
