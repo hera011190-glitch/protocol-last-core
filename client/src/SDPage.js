@@ -371,48 +371,20 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             inset: 0,
             zIndex: 2,
             pointerEvents: "none",
-            opacity: tintReveal > 0 ? 1 : 0,
+            opacity: tintReveal > 0 ? Math.min(0.94, 0.12 + tintStrength * 0.88) : 0,
             transition: "opacity 0.28s ease",
+            background: `linear-gradient(180deg, rgba(160, 30, 30, 0) 0%, rgba(160, 30, 30, 0) ${Math.max(0, tintStart - 8)}%, rgba(176, 24, 24, 0.22) ${Math.max(0, tintMid - 2)}%, rgba(170, 14, 14, 0.62) ${Math.min(100, tintMid + 16)}%, rgba(145, 0, 0, 0.92) 100%)`,
+            mixBlendMode: "multiply",
+            WebkitMaskImage: `url(${spriteImage})`,
+            maskImage: `url(${spriteImage})`,
+            WebkitMaskRepeat: "no-repeat",
+            maskRepeat: "no-repeat",
+            WebkitMaskPosition: "center",
+            maskPosition: "center",
+            WebkitMaskSize: "contain",
+            maskSize: "contain",
           }}
-        >
-          <img
-            src={spriteImage}
-            alt=""
-            loading="eager"
-            decoding="async"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              position: "absolute",
-              inset: 0,
-              opacity: Math.min(0.95, 0.12 + tintStrength * 1.05),
-              filter: `sepia(1) saturate(${(2.2 + tintStrength * 3.2).toFixed(2)}) hue-rotate(-40deg) brightness(${(0.8 + tintStrength * 0.08).toFixed(2)}) contrast(1.1)`,
-              mixBlendMode: "multiply",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
-            }}
-          />
-          <img
-            src={spriteImage}
-            alt=""
-            aria-hidden="true"
-            loading="eager"
-            decoding="async"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              position: "absolute",
-              inset: 0,
-              opacity: Math.min(0.92, 0.16 + tintStrength * 0.82),
-              filter: `sepia(1) saturate(${(2.35 + tintStrength * 2.8).toFixed(2)}) hue-rotate(-36deg) brightness(${(0.86 + tintStrength * 0.06).toFixed(2)}) contrast(1.08)`,
-              mixBlendMode: "multiply",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
-            }}
-          />
-        </div>
+        />
       </div>
     </div>
   );
@@ -759,7 +731,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (updated?.id || updated?.name) {
         const updatedKey = getCharacterKey(updated);
         setCharacters((prev) => {
-          const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps);
+          const baseRows = dedupeCharacters(prev);
+          const nextRows = matchesActiveCharacter(updated, activeCharacter)
+            ? [
+                ...baseRows.filter((character) => !matchesActiveCharacter(character, updated)),
+                buildCharacterState({
+                  ...(baseRows.find((character) => matchesActiveCharacter(character, updated)) || activeCharacter || {}),
+                  ...updated,
+                }, baseRows.find((character) => matchesActiveCharacter(character, updated)) || activeCharacter || updated, maps, 0),
+              ]
+            : baseRows.map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character);
+          const next = stabilizeCharacterRows(nextRows, activeCharacter, maps);
           if (next.length > 0) {
             writeCachedSdCharacters(next);
             persistCharacterPositions(next);
@@ -808,7 +790,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const targetMapId = String(currentMap?.id || "");
     const seen = new Set();
     let activeShown = false;
-    const filtered = characters.filter((character) => {
+    return characters.filter((character) => {
       if (String(character?.currentMap || "") !== targetMapId) return false;
       const key = getCharacterKey(character);
       if (!key || seen.has(key)) return false;
@@ -824,25 +806,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       seen.add(key);
       return true;
     });
-
-    if (activeCharacter && !activeShown && targetMapId) {
-      const saved = findStateByAliases(readSavedPositions(), activeCharacter) || null;
-      const fallbackActive = buildCharacterState({
-        ...activeCharacter,
-        currentMap: targetMapId,
-        x: typeof saved?.x === "number" ? saved.x : 50,
-        y: typeof saved?.y === "number" ? saved.y : 56,
-        dx: typeof saved?.dx === "number" ? saved.dx : 0,
-        dy: typeof saved?.dy === "number" ? saved.dy : 0,
-        spriteImage: activeCharacter?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || "",
-      }, saved || activeCharacter, maps, 0);
-      if (String(fallbackActive?.currentMap || "") === targetMapId && getSpriteImage(fallbackActive)) {
-        filtered.push(fallbackActive);
-      }
-    }
-
-    return filtered;
-  }, [characters, currentMap, activeCharacter, maps]);
+  }, [characters, currentMap, activeCharacter]);
   const availableDirs = currentMap?.neighbors || {};
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
@@ -851,7 +815,21 @@ export default function SDPage({ activeCharacter, design, theme }) {
     setActiveMapId(nextId);
     const activeKey = getCharacterKey(activeCharacter);
     setCharacters((prev) => {
-      const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, currentMap: nextId, x: spawn.x, y: spawn.y, dx: spawn.dx * 0.72, dy: spawn.dy * 0.72, waitMs: 1700, moveCooldownMs: rand(4600, 7600) } : character), activeCharacter, maps);
+      const baseRows = dedupeCharacters(prev).filter((character) => !matchesActiveCharacter(character, activeCharacter));
+      const activeSeed = dedupeCharacters(prev).find((character) => matchesActiveCharacter(character, activeCharacter)) || activeCharacter || {};
+      const movedActive = buildCharacterState({
+        ...activeSeed,
+        ...activeCharacter,
+        currentMap: nextId,
+        x: spawn.x,
+        y: spawn.y,
+        dx: spawn.dx * 0.72,
+        dy: spawn.dy * 0.72,
+        waitMs: 1700,
+        moveCooldownMs: rand(4600, 7600),
+        spriteImage: activeCharacter?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || activeSeed?.spriteImage || "",
+      }, activeSeed || activeCharacter, maps, 0);
+      const next = stabilizeCharacterRows([...baseRows, movedActive], { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y }, maps);
       if (next.length > 0) {
         writeCachedSdCharacters(next);
         persistCharacterPositions(next);
