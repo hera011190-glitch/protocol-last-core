@@ -90,14 +90,36 @@ function EditorModal({ type, draft, setDraft, onSave, onClose }) {
           </label>
 
           {type === "text" ? (
-            <label style={labelStyle}>
-              내용
-              <textarea
-                value={draft.body || ""}
-                onChange={(e) => setField("body", e.target.value)}
-                style={{ ...inputStyle, minHeight: 260, resize: "vertical" }}
-              />
-            </label>
+            <div style={{ display: "grid", gap: 14 }}>
+              <label style={labelStyle}>
+                내용
+                <textarea
+                  value={draft.body || ""}
+                  onChange={(e) => setField("body", e.target.value)}
+                  style={{ ...inputStyle, minHeight: 220, resize: "vertical" }}
+                />
+              </label>
+
+              <label style={labelStyle}>
+                구글 문서 링크
+                <input
+                  value={draft.googleDocUrl || draft.docUrl || draft.url || draft.link || ""}
+                  onChange={(e) => setField("googleDocUrl", e.target.value)}
+                  placeholder="https://docs.google.com/..."
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={labelStyle}>
+                버튼 문구
+                <input
+                  value={draft.buttonText || ""}
+                  onChange={(e) => setField("buttonText", e.target.value)}
+                  placeholder="열기"
+                  style={inputStyle}
+                />
+              </label>
+            </div>
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               {items.map((item, index) => (
@@ -208,17 +230,48 @@ function openGoogleDoc(url) {
   window.open(target, "_blank", "noopener,noreferrer");
 }
 
-function LinkPanel({ title, body, url, buttonText, onEdit, editable, minHeight = 220 }) {
-  return (
-    <div style={cardStyle(minHeight)}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <h3 style={{ margin: 0 }}>{title}</h3>
+function DocButtonsSection({ notice, world, editable, onEditNotice, onEditWorld }) {
+  const itemStyle = {
+    borderRadius: 18,
+    background: "rgba(255,255,255,0.84)",
+    border: "1px solid rgba(98,176,220,0.18)",
+    padding: 14,
+    display: "grid",
+    gap: 10,
+  };
+
+  const smallButtonStyle = {
+    width: "100%",
+    border: "none",
+    borderRadius: 14,
+    padding: "12px 14px",
+    background: "linear-gradient(135deg, rgba(127,219,255,0.95), rgba(29,157,255,0.95))",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    font: "inherit",
+  };
+
+  const renderItem = (item, fallbackTitle, onEdit) => (
+    <div style={itemStyle}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontWeight: 900, color: "#16324a" }}>{item?.title || fallbackTitle}</div>
         {editable ? <button type="button" className="ghost-button" onClick={onEdit}>수정</button> : null}
       </div>
-      <div style={{ color: "#4f7390", whiteSpace: "pre-wrap", lineHeight: 1.8 }}>{body}</div>
-      <div>
-        <button type="button" className="home-primary-button" onClick={() => openGoogleDoc(url)}>{buttonText || `${title} 열기`}</button>
-      </div>
+      <button
+        type="button"
+        style={smallButtonStyle}
+        onClick={() => openGoogleDoc(item?.googleDocUrl || item?.docUrl || item?.url || item?.link || "")}
+      >
+        {item?.buttonText || `${item?.title || fallbackTitle} 열기`}
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      {renderItem(notice, "공지사항", onEditNotice)}
+      {renderItem(world, "세계관", onEditWorld)}
     </div>
   );
 }
@@ -388,8 +441,6 @@ export default function HomePage({ user, activeCharacter, openMy, goCharacters, 
     }
   };
 
-  const noticeHeight = Number(layout?.noticeCard?.h) || 220;
-  const worldHeight = Number(layout?.worldCard?.h) || 220;
   const homeNoticeHeight = Number(layout?.homepageNotice?.h) || 320;
   const scheduleHeight = Number(layout?.schedule?.h) || 720;
   const characterHeight = Number(layout?.characterBox?.h) || 720;
@@ -399,23 +450,12 @@ export default function HomePage({ user, activeCharacter, openMy, goCharacters, 
       <div style={{ padding: "26px", color: theme?.textMain || "#13324b" }}>
         <div style={{ display: "grid", gridTemplateColumns: "320px minmax(0, 1fr) 320px", gap: "22px", alignItems: "start" }}>
           <div style={{ display: "grid", gap: "22px" }}>
-            <LinkPanel
-              title={notice?.title || "공지사항"}
-              body={notice?.body || notice?.summary || ""}
-              url={noticeUrl}
-              buttonText={notice?.buttonText || "공지사항 열기"}
-              minHeight={noticeHeight}
+            <DocButtonsSection
+              notice={{ ...(notice || {}), googleDocUrl: noticeUrl }}
+              world={{ ...(world || {}), googleDocUrl: worldUrl }}
               editable={editable}
-              onEdit={() => openEditor("notice")}
-            />
-            <LinkPanel
-              title={world?.title || "세계관"}
-              body={world?.body || world?.summary || ""}
-              url={worldUrl}
-              buttonText={world?.buttonText || "세계관 열기"}
-              minHeight={worldHeight}
-              editable={editable}
-              onEdit={() => openEditor("world")}
+              onEditNotice={() => openEditor("notice")}
+              onEditWorld={() => openEditor("world")}
             />
             <NoticeCards
               title={homeNotice?.title || "홈페이지 공지"}
