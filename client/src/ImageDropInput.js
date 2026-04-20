@@ -27,17 +27,30 @@ export default function ImageDropInput({
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const openPicker = () => inputRef.current?.click();
+  const readIdRef = useRef(0);
+
+  const openPicker = () => {
+    if (inputRef.current) inputRef.current.value = "";
+    inputRef.current?.click();
+  };
 
   const readFile = (file) => {
     if (!file) return;
     const reader = new FileReader();
+    const readId = Date.now() + Math.random();
+    readIdRef.current = readId;
     setLoading(true);
     reader.onload = () => {
+      if (readIdRef.current !== readId) return;
       setLoading(false);
       onChange?.(String(reader.result || ""));
+      if (inputRef.current) inputRef.current.value = "";
     };
-    reader.onerror = () => setLoading(false);
+    reader.onerror = () => {
+      if (readIdRef.current !== readId) return;
+      setLoading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    };
     reader.readAsDataURL(file);
   };
 
@@ -55,7 +68,10 @@ export default function ImageDropInput({
         type="file"
         accept="image/*"
         style={hiddenInputStyle}
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          handleFiles(e.target.files);
+          e.target.value = "";
+        }}
       />
       <div
         role="button"

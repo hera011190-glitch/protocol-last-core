@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import DesignPageFrame from "./DesignPageFrame";
 import ImageDropInput from "./ImageDropInput";
@@ -377,13 +377,19 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const [letter, setLetter] = useState("");
   const [draftDelta, setDraftDelta] = useState({ hp: 0, def: 0, atk: 0, agi: 0 });
   const [profileEdit, setProfileEdit] = useState({ name: "", age: "", bodyInfo: "", rank: "대원", oneLine: "", profile: "", image: "", mainImage: "", mainImageFrame: { x: 50, y: 26, scale: 1.06 }, investigationImage: "", profileBgm: "", profileBgmVolume: 1 });
-  const [liveQuotePool, setLiveQuotePool] = useState([]);
   const [saveNotice, setSaveNotice] = useState("");
   const profileTextareaRef = useRef(null);
   const [relationOpen, setRelationOpen] = useState(false);
   const [relationTargetId, setRelationTargetId] = useState("");
   const [relationName, setRelationName] = useState("");
   const [relationDescription, setRelationDescription] = useState("");
+  const profileEditDirtyRef = useRef(false);
+  const lastProfileSyncRef = useRef("");
+
+  const setProfileEditDraft = useCallback((updater) => {
+    profileEditDirtyRef.current = true;
+    setProfileEdit((prev) => (typeof updater === "function" ? updater(prev) : updater));
+  }, []);
 
   const baseHpStat = getHpStatValue(currentUser?.stats?.hp);
   const effectiveHpStat = baseHpStat + Number(draftDelta.hp || 0);
@@ -487,37 +493,6 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   }, [currentUser?.id]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!currentUser?.id) {
-      setLiveQuotePool([]);
-      return undefined;
-    }
-    fetch(buildApiUrl(`/character-public/${currentUser.id}?t=${Date.now()}`), { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (cancelled) return;
-        const character = data?.character || {};
-        const nextQuotes = Array.from(new Set([
-          ...(Array.isArray(character?.sdQuotes) ? character.sdQuotes : []),
-          ...(Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []),
-          String(character?.oneLine || "").trim(),
-          String(currentUser?.oneLine || "").trim(),
-        ].map((value) => String(value || "").trim()).filter(Boolean)));
-        setLiveQuotePool(nextQuotes);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLiveQuotePool(Array.from(new Set([
-          ...(Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []),
-          String(currentUser?.oneLine || "").trim(),
-        ].map((value) => String(value || "").trim()).filter(Boolean))));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser?.id, currentUser?.sdQuotes, currentUser?.oneLine]);
-
-  useEffect(() => {
     if (!saveNotice) return undefined;
     const timer = window.setTimeout(() => setSaveNotice(""), 2200);
     return () => window.clearTimeout(timer);
@@ -528,6 +503,11 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   }, [currentUser?.id, currentUser?.stats?.hp, currentUser?.stats?.def, currentUser?.stats?.atk, currentUser?.stats?.agi, currentUser?.statPoints]);
 
   useEffect(() => {
+    const incomingId = String(currentUser?.id || "");
+    const characterChanged = incomingId !== String(lastProfileSyncRef.current || "");
+    if (profileEditDirtyRef.current && !characterChanged) return;
+    lastProfileSyncRef.current = incomingId;
+    profileEditDirtyRef.current = false;
     setProfileEdit({
       name: currentUser?.name || "",
       age: currentUser?.age || "",
@@ -547,7 +527,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const readEditImage = (file, key) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onloadend = () => setProfileEdit((prev) => ({ ...prev, [key]: reader.result }));
+    reader.onloadend = () => setProfileEditDraft((prev) => ({ ...prev, [key]: reader.result }));
     reader.readAsDataURL(file);
   };
 
@@ -561,7 +541,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     const title = selected || "제목";
     const replacement = `<${title}>\n`;
     const next = `${raw.slice(0, start)}${replacement}${raw.slice(end)}`;
-    setProfileEdit((prev) => ({ ...prev, profile: next }));
+    setProfileEditDraft((prev) => ({ ...prev, profile: next }));
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.selectionStart = textarea.selectionEnd = start + replacement.length;
@@ -574,7 +554,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     const start = textarea?.selectionStart ?? raw.length;
     const block = `${raw && !raw.endsWith("\n") ? "\n\n" : ""}<제목>\n내용`;
     const next = `${raw.slice(0, start)}${block}${raw.slice(start)}`;
-    setProfileEdit((prev) => ({ ...prev, profile: next }));
+    setProfileEditDraft((prev) => ({ ...prev, profile: next }));
     requestAnimationFrame(() => {
       if (!textarea) return;
       textarea.focus();
@@ -592,7 +572,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     const selected = raw.slice(start, end) || "텍스트";
     const replacement = `${openTag}${selected}${closeTag}`;
     const next = `${raw.slice(0, start)}${replacement}${raw.slice(end)}`;
-    setProfileEdit((prev) => ({ ...prev, profile: next }));
+    setProfileEditDraft((prev) => ({ ...prev, profile: next }));
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.selectionStart = start + openTag.length;
@@ -620,7 +600,10 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
       profileBgm: profileEdit.profileBgm,
       profileBgmVolume: Math.max(0, Math.min(1, Number(profileEdit.profileBgmVolume ?? 1) || 1)),
     });
-    if (data.success) setSaveNotice("프로필 저장 완료");
+    if (data.success) {
+      profileEditDirtyRef.current = false;
+      setSaveNotice("프로필 저장 완료");
+    }
   };
 
   const saveCharacterPatch = async (patch) => {
@@ -971,11 +954,11 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                 <div style={card({ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.62)" })}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>기본 정보</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
-                    <label>이름<input value={profileEdit.name} onChange={(e) => setProfileEdit((prev) => ({ ...prev, name: e.target.value }))} style={inputStyle} /></label>
-                    <label>나이<input value={profileEdit.age} onChange={(e) => setProfileEdit((prev) => ({ ...prev, age: e.target.value }))} style={inputStyle} /></label>
-                    <label>키 / 몸무게<input value={profileEdit.bodyInfo} onChange={(e) => setProfileEdit((prev) => ({ ...prev, bodyInfo: e.target.value }))} style={inputStyle} /></label>
-                    <label>계급<select value={profileEdit.rank} onChange={(e) => setProfileEdit((prev) => ({ ...prev, rank: e.target.value }))} style={inputStyle}><option>분대장</option><option>선임대원</option><option>대원</option></select></label>
-                    <label style={{ gridColumn: "1 / -1" }}>한마디<input value={profileEdit.oneLine} onChange={(e) => setProfileEdit((prev) => ({ ...prev, oneLine: e.target.value }))} style={inputStyle} /></label>
+                    <label>이름<input value={profileEdit.name} onChange={(e) => setProfileEditDraft((prev) => ({ ...prev, name: e.target.value }))} style={inputStyle} /></label>
+                    <label>나이<input value={profileEdit.age} onChange={(e) => setProfileEditDraft((prev) => ({ ...prev, age: e.target.value }))} style={inputStyle} /></label>
+                    <label>키 / 몸무게<input value={profileEdit.bodyInfo} onChange={(e) => setProfileEditDraft((prev) => ({ ...prev, bodyInfo: e.target.value }))} style={inputStyle} /></label>
+                    <label>계급<select value={profileEdit.rank} onChange={(e) => setProfileEditDraft((prev) => ({ ...prev, rank: e.target.value }))} style={inputStyle}><option>분대장</option><option>선임대원</option><option>대원</option></select></label>
+                    <label style={{ gridColumn: "1 / -1" }}>한마디<input value={profileEdit.oneLine} onChange={(e) => setProfileEditDraft((prev) => ({ ...prev, oneLine: e.target.value }))} style={inputStyle} /></label>
                   </div>
                 </div>
               ) : null}
@@ -984,13 +967,13 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>이미지</div>
                 <div style={{ display: "grid", gridTemplateColumns: "156px minmax(0, 1fr)", gap: "12px", alignItems: "start" }}>
                   <div style={{ display: "grid", gap: 8 }}>
-                    <ImageDropInput key={`profile-${profileEdit.image?.length || 0}-${currentUser?.assetVersion || 0}`} label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEdit((prev) => ({ ...prev, image: value }))} previewHeight={112} compact />
-                    <ImageDropInput key={`sd-${profileEdit.investigationImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, investigationImage: value }))} previewHeight={112} previewFit="contain" compact />
-                    <ImageDropInput key={`main-${profileEdit.mainImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEdit((prev) => ({ ...prev, mainImage: value }))} previewHeight={112} previewFit="contain" compact />
-                    <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEdit((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact helperText="프로필 화면에 들어가면 이 BGM이 자동으로 재생돼." />
+                    <ImageDropInput key={`profile-${profileEdit.image?.length || 0}-${currentUser?.assetVersion || 0}`} label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, image: value }))} previewHeight={112} compact />
+                    <ImageDropInput key={`sd-${profileEdit.investigationImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, investigationImage: value }))} previewHeight={112} previewFit="contain" compact />
+                    <ImageDropInput key={`main-${profileEdit.mainImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, mainImage: value }))} previewHeight={112} previewFit="contain" compact />
+                    <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEditDraft((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact helperText="프로필 화면에 들어가면 이 BGM이 자동으로 재생돼." />
                   </div>
                   <div style={{ display: "grid", gap: 10, justifyItems: "stretch", width: "100%", overflow: "hidden", margin: "0 auto" }}>
-                    <FullBodyFrameEditor image={profileEdit.mainImage} frame={profileEdit.mainImageFrame} previewCharacter={{ name: profileEdit.name, rank: profileEdit.rank, oneLine: profileEdit.oneLine }} theme={theme} onChange={(frame) => setProfileEdit((prev) => ({ ...prev, mainImageFrame: frame }))} />
+                    <FullBodyFrameEditor image={profileEdit.mainImage} frame={profileEdit.mainImageFrame} previewCharacter={{ name: profileEdit.name, rank: profileEdit.rank, oneLine: profileEdit.oneLine }} theme={theme} onChange={(frame) => setProfileEditDraft((prev) => ({ ...prev, mainImageFrame: frame }))} />
                   </div>
                 </div>
               </div>
@@ -998,7 +981,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
               {ownerUser?.isAdmin ? (
                 <div style={card({ padding: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.62)", gridColumn: "1 / -1" })}>
                   <div style={{ fontWeight: 900, marginBottom: 10 }}>프로필 내용</div>
-                  <ProfileRichEditor value={profileEdit.profile} onChange={(next) => setProfileEdit((prev) => ({ ...prev, profile: next }))} minHeight={320} />
+                  <ProfileRichEditor value={profileEdit.profile} onChange={(next) => setProfileEditDraft((prev) => ({ ...prev, profile: next }))} minHeight={320} />
                   <div style={{ marginTop: 10, padding: "14px 16px", borderRadius: 14, background: "rgba(240,248,255,0.9)", border: "1px solid rgba(98,176,220,0.16)", color: "#35566f", lineHeight: 1.9 }}>
                     {renderProfileRichContent(profileEdit.profile || "<p>미리보기</p>")}
                   </div>
@@ -1014,7 +997,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
           <div style={{ display: "grid", gap: 12, alignSelf: "stretch", gridTemplateRows: "minmax(220px, auto) minmax(0, 1fr)" }}>
             <QuoteEditor
               quotes={Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []}
-              extraQuotes={[currentUser?.oneLine || "", profileEdit.oneLine || "", ...liveQuotePool]}
+              extraQuotes={[currentUser?.oneLine || ""]}
               style={{ minHeight: 200, height: "100%" }}
               onSave={async (next) => {
                 const data = await saveCharacterPatch({ sdQuotes: next });
