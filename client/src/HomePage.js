@@ -231,13 +231,11 @@ function openGoogleDoc(url) {
 }
 
 function DocButtonsSection({ notice, world, editable, onEditNotice, onEditWorld }) {
-  const itemStyle = {
-    borderRadius: 18,
-    background: "rgba(255,255,255,0.84)",
-    border: "1px solid rgba(98,176,220,0.18)",
-    padding: 14,
+  const rowStyle = {
     display: "grid",
-    gap: 10,
+    gridTemplateColumns: editable ? "1fr auto" : "1fr",
+    gap: 8,
+    alignItems: "center",
   };
 
   const smallButtonStyle = {
@@ -253,18 +251,15 @@ function DocButtonsSection({ notice, world, editable, onEditNotice, onEditWorld 
   };
 
   const renderItem = (item, fallbackTitle, onEdit) => (
-    <div style={itemStyle}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontWeight: 900, color: "#16324a" }}>{item?.title || fallbackTitle}</div>
-        {editable ? <button type="button" className="ghost-button" onClick={onEdit}>수정</button> : null}
-      </div>
+    <div style={rowStyle}>
       <button
         type="button"
         style={smallButtonStyle}
         onClick={() => openGoogleDoc(item?.googleDocUrl || item?.docUrl || item?.url || item?.link || "")}
       >
-        {item?.buttonText || `${item?.title || fallbackTitle} 열기`}
+        {item?.buttonText || item?.title || fallbackTitle}
       </button>
+      {editable ? <button type="button" className="ghost-button" onClick={onEdit}>수정</button> : null}
     </div>
   );
 
