@@ -61,7 +61,7 @@ function ensureRuntimeFile(filename, fallbackValue) {
   return runtimePath;
 }
 
-["users.json", "characters.json", "relationRequests.json", "relations.json", "mails.json"].forEach((filename) => ensureRuntimeFile(filename, []));
+["users.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
 
 const allowedOrigins = [
@@ -100,7 +100,7 @@ const io = new Server(server, { cors: corsOptions });
 
 const pendingJsonWrites = new Map();
 
-function scheduleJsonWrite(filePath, value, { delay = 80 } = {}) {
+function scheduleJsonWrite(filePath, value, { delay = 12 } = {}) {
   const payload = JSON.stringify(value, null, 2);
   const existing = pendingJsonWrites.get(filePath);
   if (existing?.timer) clearTimeout(existing.timer);
@@ -184,8 +184,9 @@ function sendDataImage(res, value) {
   return res.send(Buffer.from(payload, "base64"));
 }
 
-function toCharacterAssetUrl(characterId, pathKey) {
-  return `/asset/character/${encodeURIComponent(String(characterId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+function toCharacterAssetUrl(characterId, pathKey, version = "") {
+  const base = `/asset/character/${encodeURIComponent(String(characterId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+  return version ? `${base}&v=${encodeURIComponent(String(version))}` : base;
 }
 
 function toInvestigationAssetUrl(investigationId, pathKey) {
@@ -602,6 +603,86 @@ const investigationDefinitions = [
 ];
 
 let investigationsDB = investigationDefinitions.map(buildInvestigation);
+
+function mergePersistedInvestigationState(baseItem, persistedItem) {
+  if (!baseItem || !persistedItem || typeof persistedItem !== "object") return baseItem;
+  const merged = {
+    ...baseItem,
+    opened: persistedItem.opened !== undefined ? !!persistedItem.opened : baseItem.opened,
+    hidden: persistedItem.hidden !== undefined ? !!persistedItem.hidden : !!baseItem.hidden,
+    started: persistedItem.started !== undefined ? !!persistedItem.started : baseItem.started,
+    ended: persistedItem.ended !== undefined ? !!persistedItem.ended : baseItem.ended,
+    endedAt: String(persistedItem.endedAt || baseItem.endedAt || ""),
+    endedReason: String(persistedItem.endedReason || baseItem.endedReason || ""),
+    leaders: Array.isArray(persistedItem.leaders) ? persistedItem.leaders : (Array.isArray(baseItem.leaders) ? baseItem.leaders : []),
+    participants: Array.isArray(persistedItem.participants) ? persistedItem.participants : (Array.isArray(baseItem.participants) ? baseItem.participants : []),
+    currentNodeId: String(persistedItem.currentNodeId || baseItem.currentNodeId || ""),
+    sharedLog: String(persistedItem.sharedLog || baseItem.sharedLog || ""),
+    sharedLogs: Array.isArray(persistedItem.sharedLogs) && persistedItem.sharedLogs.length ? persistedItem.sharedLogs : (Array.isArray(baseItem.sharedLogs) ? baseItem.sharedLogs : []),
+    routeHistory: Array.isArray(persistedItem.routeHistory) && persistedItem.routeHistory.length ? persistedItem.routeHistory : (Array.isArray(baseItem.routeHistory) ? baseItem.routeHistory : []),
+    foundItems: Array.isArray(persistedItem.foundItems) ? persistedItem.foundItems : (Array.isArray(baseItem.foundItems) ? baseItem.foundItems : []),
+    foundNPCs: Array.isArray(persistedItem.foundNPCs) ? persistedItem.foundNPCs : (Array.isArray(baseItem.foundNPCs) ? baseItem.foundNPCs : []),
+    rewards: Array.isArray(persistedItem.rewards) ? persistedItem.rewards : (Array.isArray(baseItem.rewards) ? baseItem.rewards : []),
+    points: Number.isFinite(Number(persistedItem.points)) ? Number(persistedItem.points) : Number(baseItem.points || 0),
+    discoveredFlags: persistedItem.discoveredFlags && typeof persistedItem.discoveredFlags === "object" ? persistedItem.discoveredFlags : (baseItem.discoveredFlags || {}),
+    participantStates: persistedItem.participantStates && typeof persistedItem.participantStates === "object" ? persistedItem.participantStates : (baseItem.participantStates || {}),
+    resultSummary: String(persistedItem.resultSummary || baseItem.resultSummary || ""),
+    battleTurn: Number.isFinite(Number(persistedItem.battleTurn)) ? Number(persistedItem.battleTurn) : Number(baseItem.battleTurn || 1),
+    pendingBattleActions: persistedItem.pendingBattleActions && typeof persistedItem.pendingBattleActions === "object" ? persistedItem.pendingBattleActions : (baseItem.pendingBattleActions || {}),
+    lastBattleRound: Array.isArray(persistedItem.lastBattleRound) ? persistedItem.lastBattleRound : (Array.isArray(baseItem.lastBattleRound) ? baseItem.lastBattleRound : []),
+    pendingRewardQueue: Array.isArray(persistedItem.pendingRewardQueue) ? persistedItem.pendingRewardQueue : (Array.isArray(baseItem.pendingRewardQueue) ? baseItem.pendingRewardQueue : []),
+    endCorrosionApplied: persistedItem.endCorrosionApplied !== undefined ? !!persistedItem.endCorrosionApplied : !!baseItem.endCorrosionApplied,
+    scheduleEnabled: persistedItem.scheduleEnabled !== undefined ? !!persistedItem.scheduleEnabled : !!baseItem.scheduleEnabled,
+    openAt: String(persistedItem.openAt || baseItem.openAt || ""),
+    closeAt: String(persistedItem.closeAt || baseItem.closeAt || ""),
+    listImage: String(persistedItem.listImage || baseItem.listImage || ""),
+    entryImage: String(persistedItem.entryImage || baseItem.entryImage || persistedItem.listImage || baseItem.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(persistedItem.listImageFrame || baseItem.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(persistedItem.entryImageFrame || baseItem.entryImageFrame),
+    imageUpdatedAt: Number(persistedItem.imageUpdatedAt || baseItem.imageUpdatedAt || 0),
+    entryCorrosion: Number(persistedItem.entryCorrosion ?? baseItem.entryCorrosion ?? 0),
+    endCorrosion: Number(persistedItem.endCorrosion ?? baseItem.endCorrosion ?? 0),
+    bgmUrl: String(persistedItem.bgmUrl || baseItem.bgmUrl || ""),
+    bgmVolume: Number(persistedItem.bgmVolume ?? baseItem.bgmVolume ?? 1),
+  };
+
+  if (merged.currentNodeId && baseItem.data?.nodes?.[merged.currentNodeId]) {
+    merged.currentNodeId = merged.currentNodeId;
+  } else {
+    merged.currentNodeId = baseItem.currentNodeId;
+  }
+
+  const backgroundImage = String(persistedItem?.data?.backgroundImage || persistedItem.backgroundImage || baseItem?.data?.backgroundImage || "");
+  merged.data = {
+    ...baseItem.data,
+    backgroundImage,
+    listImage: merged.listImage || baseItem.data?.listImage || "",
+    entryImage: merged.entryImage || baseItem.data?.entryImage || merged.listImage || "",
+    listImageFrame: normalizeInvestigationImageFrame(merged.listImageFrame || baseItem.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(merged.entryImageFrame || baseItem.data?.entryImageFrame),
+    imageUpdatedAt: merged.imageUpdatedAt || baseItem.data?.imageUpdatedAt || 0,
+    entryCorrosion: merged.entryCorrosion,
+    endCorrosion: merged.endCorrosion,
+    bgmUrl: merged.bgmUrl,
+    bgmVolume: merged.bgmVolume,
+  };
+
+  if (!merged.sharedLog && Array.isArray(merged.sharedLogs) && merged.sharedLogs.length) {
+    merged.sharedLog = String(merged.sharedLogs[merged.sharedLogs.length - 1]?.text || baseItem.sharedLog || "");
+  }
+  return merged;
+}
+
+function rehydrateInvestigationsFromRuntime() {
+  const persisted = readRuntimeArray("investigations.json");
+  if (!Array.isArray(persisted) || !persisted.length) return;
+  investigationsDB = investigationsDB.map((item) => {
+    const saved = persisted.find((entry) => String(entry?.id) === String(item?.id));
+    return saved ? mergePersistedInvestigationState(item, saved) : item;
+  });
+}
+
+rehydrateInvestigationsFromRuntime();
 
 function getAccountKey(user) {
   return user?.ownerId || user?.id || user?.name || "unknown";
@@ -1750,11 +1831,13 @@ app.post("/createCharacter", (req, res) => {
     currentMap: currentMap || "sector-01",
     x: 20,
     y: 20,
+    updatedAt: Date.now(),
+    assetVersion: Date.now(),
   };
 
   charactersDB.push(newChar);
   writeRuntimeArray("characters.json", charactersDB);
-  res.json({ success: true, character: attachRelationsToCharacter(newChar) });
+  res.json({ success: true, character: buildPublicCharacter(newChar) });
 });
 
 app.post("/updateCharacter", (req, res) => {
@@ -1839,9 +1922,11 @@ app.post("/updateCharacter", (req, res) => {
   if (!char.mainImageFrame || typeof char.mainImageFrame !== "object") {
     char.mainImageFrame = { x: 50, y: 26, scale: 1.06 };
   }
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
 
   writeRuntimeArray("characters.json", charactersDB);
-  return res.json({ success: true, character: attachRelationsToCharacter(char) });
+  return res.json({ success: true, character: buildPublicCharacter(char) });
 });
 
 app.get("/characters/:ownerId", (req, res) => res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(attachRelationsToCharacter)));
@@ -2628,6 +2713,8 @@ customInvestigationsDB.forEach((template) => {
   }
 });
 
+rehydrateInvestigationsFromRuntime();
+
 app.get("/admin/customInvestigations", (req, res) => {
   res.json(customInvestigationsDB);
 });
@@ -2828,6 +2915,8 @@ function summarizeCharacter(character) {
     profileBgm: character.profileBgm || "",
     profileBgmVolume: Number.isFinite(Number(character.profileBgmVolume)) ? Math.max(0, Math.min(1, Number(character.profileBgmVolume))) : 1,
     mainImageFrame: character.mainImageFrame || undefined,
+    updatedAt: Number(character.updatedAt || character.assetVersion || 0),
+    assetVersion: Number(character.assetVersion || character.updatedAt || 0),
   };
 }
 
@@ -2869,9 +2958,10 @@ function buildPublicCharacterSummary(character) {
   const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
   const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
 
+  const version = summary.assetVersion || summary.updatedAt || "";
   const toUrl = (pathKey, fallbackValue) => {
     const rawValue = getValueByPath(character, pathKey);
-    if (isDataImage(rawValue)) return toCharacterAssetUrl(characterId, pathKey);
+    if (isDataImage(rawValue)) return toCharacterAssetUrl(characterId, pathKey, version);
     return typeof rawValue === "string" && rawValue.trim() ? rawValue : (fallbackValue || "");
   };
 
@@ -2893,7 +2983,8 @@ function buildPublicCharacterSummary(character) {
 function buildPublicCharacter(character) {
   if (!character) return character;
   const detailed = attachRelationsToCharacter(character);
-  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey));
+  const version = detailed.assetVersion || detailed.updatedAt || character.assetVersion || character.updatedAt || "";
+  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
 }
 
 function buildPublicDesignShellConfig(config) {

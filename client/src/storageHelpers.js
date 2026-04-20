@@ -30,6 +30,8 @@ export function toLightCharacter(character) {
     dailyAttemptsLeft: character.dailyAttemptsLeft ?? 1,
     gambleCountLeft: character.gambleCountLeft ?? 3,
     currentMap: character.currentMap || "sector-01",
+    x: typeof character.x === "number" ? character.x : undefined,
+    y: typeof character.y === "number" ? character.y : undefined,
     updatedAt: character.updatedAt || character.assetVersion || 0,
     assetVersion: character.assetVersion || character.updatedAt || 0,
   };

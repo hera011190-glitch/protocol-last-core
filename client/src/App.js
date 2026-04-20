@@ -362,7 +362,7 @@ function App() {
     if (now - characterRefreshStampRef.current < cooldown) return;
     characterRefreshStampRef.current = now;
     try {
-      const res = await fetch(buildApiUrl(`/character-public/${character.id}`), {});
+      const res = await fetch(buildApiUrl(`/character-public/${character.id}?t=${Date.now()}`), { cache: "no-store" });
       const data = await res.json();
       const next = data?.character || null;
       if (next) applyActiveCharacter(next);

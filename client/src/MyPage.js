@@ -96,17 +96,16 @@ function ItemUsePanel({ items, catalog, onUse, style = {} }) {
       return;
     }
     if (!entries.some((entry) => entry.key === selectedKey)) {
-      setSelectedKey(entries[0].key);
+      setSelectedKey("");
     }
   }, [entries, selectedKey]);
 
-  const selected = entries.find((entry) => entry.key === selectedKey) || entries[0] || null;
+  const selected = entries.find((entry) => entry.key === selectedKey) || null;
 
   return (
     <div style={card({ padding: "20px 20px 18px", background: "linear-gradient(180deg, rgba(232,244,255,0.96), rgba(248,252,255,0.96))", border: "1px solid rgba(56,189,248,0.22)", ...style })}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
         <h3 style={{ margin: 0 }}>보유 아이템</h3>
-        <div style={{ fontSize: 12, color: "#4f7390", fontWeight: 700 }}>이미지를 누르면 상세 정보를 확인하실 수 있습니다.</div>
       </div>
       {entries.length > 0 ? (
         <>
@@ -140,29 +139,35 @@ function ItemUsePanel({ items, catalog, onUse, style = {} }) {
             })}
           </div>
 
-          {selected ? (
-            <div style={{ marginTop: 16, borderRadius: 22, padding: 16, background: "rgba(255,255,255,0.96)", border: "1px solid rgba(56,189,248,0.18)", display: "grid", gridTemplateColumns: "120px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
-              <div style={{ width: 120, height: 120, borderRadius: 20, overflow: "hidden", background: "linear-gradient(180deg, rgba(191,219,254,0.35), rgba(255,255,255,0.94))" }}>
-                <img src={selected.image} alt={selected.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              </div>
-              <div style={{ display: "grid", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 12, color: "#5d7a95", marginBottom: 4 }}>아이템 이름</div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: "#16324a" }}>{selected.displayName}</div>
+          {selected && typeof document !== "undefined" ? createPortal(
+            <div onClick={() => setSelectedKey("")} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.58)", display: "grid", placeItems: "center", padding: 24, zIndex: 2200 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "min(720px, 100%)", borderRadius: 28, padding: 20, background: "rgba(255,255,255,0.98)", boxShadow: "0 26px 60px rgba(15,23,42,0.24)", display: "grid", gridTemplateColumns: "160px minmax(0, 1fr)", gap: 18, alignItems: "start" }}>
+                <div style={{ width: 160, height: 160, borderRadius: 24, overflow: "hidden", background: "linear-gradient(180deg, rgba(191,219,254,0.35), rgba(255,255,255,0.94))" }}>
+                  <img src={selected.image} alt={selected.displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
-                <div style={{ padding: "12px 14px", borderRadius: 16, background: "rgba(240,248,255,0.86)", color: "#35566f", lineHeight: 1.7, minHeight: 82 }}>
-                  {selected.meta?.description || "등록된 설명이 없습니다."}
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ color: isUsableItem(selected.meta) ? "#0f766e" : "#6a87a3", fontWeight: 800 }}>
-                    {isUsableItem(selected.meta) ? "사용 가능한 아이템입니다." : "사용할 수 없는 아이템입니다."}
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#5d7a95", marginBottom: 4 }}>아이템 이름</div>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: "#16324a" }}>{selected.displayName}</div>
+                    </div>
+                    <button type="button" className="ghost-button" onClick={() => setSelectedKey("")}>닫기</button>
                   </div>
-                  {isUsableItem(selected.meta) ? (
-                    <button type="button" className="home-primary-button" onClick={() => onUse(selected.item, selected.meta, selected.index)}>사용</button>
-                  ) : null}
+                  <div style={{ padding: "14px 16px", borderRadius: 18, background: "rgba(240,248,255,0.86)", color: "#35566f", lineHeight: 1.75, minHeight: 120 }}>
+                    {selected.meta?.description || "등록된 설명이 없습니다."}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ color: isUsableItem(selected.meta) ? "#0f766e" : "#6a87a3", fontWeight: 800 }}>
+                      {isUsableItem(selected.meta) ? "사용 가능한 아이템입니다." : "사용할 수 없는 아이템입니다."}
+                    </div>
+                    {isUsableItem(selected.meta) ? (
+                      <button type="button" className="home-primary-button" onClick={() => onUse(selected.item, selected.meta, selected.index)}>사용</button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body
           ) : null}
         </>
       ) : <div style={{ color: "#5d7a95" }}>보유 아이템이 없습니다.</div>}
@@ -211,11 +216,12 @@ function MailDetail({ mail, onClose, onReceive }) {
   );
 }
 
-function QuoteEditor({ quotes, onSave, style = {} }) {
-  const [list, setList] = useState(Array.isArray(quotes) && quotes.length ? quotes : [""]);
-  const quotesKey = useMemo(() => JSON.stringify(Array.isArray(quotes) ? quotes : []), [quotes]);
+function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
+  const mergedQuotes = useMemo(() => Array.from(new Set([...(Array.isArray(quotes) ? quotes : []), ...(Array.isArray(extraQuotes) ? extraQuotes : [])].map((value) => String(value || "").trim()).filter(Boolean))), [quotes, extraQuotes]);
+  const [list, setList] = useState(mergedQuotes.length ? mergedQuotes : [""]);
+  const quotesKey = useMemo(() => JSON.stringify(mergedQuotes), [mergedQuotes]);
   useEffect(() => {
-    setList(Array.isArray(quotes) && quotes.length ? quotes : [""]);
+    setList(mergedQuotes.length ? mergedQuotes : [""]);
   }, [quotesKey]);
 
   const savedQuotes = list.map((value) => String(value || "").trim()).filter(Boolean);
@@ -593,10 +599,16 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     });
     const data = await res.json();
     if (data.success && data.character) {
-      onUpdateUser(data.character);
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
+      let nextCharacter = data.character;
+      try {
+        const detailRes = await fetch(buildApiUrl(`/character-public/${currentUser.id}?t=${Date.now()}`), { cache: "no-store" });
+        const detailData = await detailRes.json();
+        if (detailData?.character) nextCharacter = detailData.character;
+      } catch {}
+      onUpdateUser(nextCharacter);
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: nextCharacter } }));
       Promise.allSettled([loadMine(), loadAllCharacters()]).catch(() => {});
-      return data;
+      return { ...data, character: nextCharacter };
     }
     await loadMine();
     await loadAllCharacters();
@@ -970,6 +982,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
           <div style={{ display: "grid", gap: 12, alignSelf: "stretch", gridTemplateRows: "minmax(220px, auto) minmax(0, 1fr)" }}>
             <QuoteEditor
               quotes={Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []}
+              extraQuotes={[currentUser?.oneLine || ""]}
               style={{ minHeight: 200, height: "100%" }}
               onSave={async (next) => {
                 const data = await saveCharacterPatch({ sdQuotes: next });

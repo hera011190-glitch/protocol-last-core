@@ -731,7 +731,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const updated = event?.detail?.character;
       if (updated?.id || updated?.name) {
         const updatedKey = getCharacterKey(updated);
-        setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps));
+        setCharacters((prev) => {
+          const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps);
+          if (next.length > 0) writeCachedSdCharacters(next);
+          return next;
+        });
         return;
       }
       try {
