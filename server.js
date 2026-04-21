@@ -1041,6 +1041,7 @@ function applyInvestigationEndCorrosion(item) {
       || charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
     if (char) applyCharacterCorrosion(char, delta);
   });
+  markCharactersDirty();
   writeRuntimeArray("characters.json", charactersDB);
 }
 
@@ -3018,6 +3019,199 @@ function getPublicDesignMapsConfig() {
   if (!publicDesignMapsCache) publicDesignMapsCache = buildPublicDesignMapsConfig(designConfig);
   return publicDesignMapsCache;
 }
+
+const SD_FALLBACK_MAPS = [
+  { id: "sector-01", name: "구역 1", neighbors: { right: "sector-02" } },
+  { id: "sector-02", name: "구역 2", neighbors: { left: "sector-01" } },
+];
+
+function sdClamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sdRand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function getSdServerMaps() {
+  const mapRoot = (designConfig && designConfig.siteContent && designConfig.siteContent.maps) ? designConfig.siteContent.maps : {};
+  const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
+  const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
+  if (collections.length > 0) {
+    const found = collections.find((item) => String(item.id) === String(activeCollectionId)) || collections[0];
+    return Array.isArray(found?.presets) && found.presets.length > 0 ? found.presets : SD_FALLBACK_MAPS;
+  }
+  return Array.isArray(mapRoot.presets) && mapRoot.presets.length > 0 ? mapRoot.presets : SD_FALLBACK_MAPS;
+}
+
+function getSdNextMapId(maps, currentMapId, dir) {
+  const found = (maps || []).find((item) => String(item.id) === String(currentMapId));
+  const linked = found?.neighbors?.[dir];
+  return linked && (maps || []).some((item) => String(item.id) === String(linked)) ? linked : currentMapId;
+}
+
+function markCharactersDirty() {
+  global.__plcCharactersDirty = true;
+}
+
+function tickSdCharactersOnServer() {
+  const maps = getSdServerMaps();
+  if (!Array.isArray(maps) || maps.length === 0) return;
+  let changed = false;
+  const dt = 0.15;
+
+  charactersDB.forEach((character) => {
+    if (!character || !character.approved) return;
+    const hasSprite = !!(character.investigationImage || character.mainImage || character.image);
+    if (!hasSprite) return;
+
+    let currentMap = character.currentMap || maps[0]?.id || "";
+    let x = Number.isFinite(Number(character.x)) ? Number(character.x) : 20;
+    let y = Number.isFinite(Number(character.y)) ? Number(character.y) : 20;
+    let dx = Number.isFinite(Number(character.dx)) ? Number(character.dx) : 0;
+    let dy = Number.isFinite(Number(character.dy)) ? Number(character.dy) : 0;
+    let waitMs = Number.isFinite(Number(character.waitMs)) ? Number(character.waitMs) : 0;
+    let moveCooldownMs = Number.isFinite(Number(character.moveCooldownMs)) ? Number(character.moveCooldownMs) : 0;
+
+    if (waitMs > 0) {
+      waitMs = Math.max(0, waitMs - 150);
+      dx *= 0.94;
+      dy *= 0.94;
+    } else {
+      moveCooldownMs -= 150;
+      if (moveCooldownMs <= 0) {
+        const mapDef = maps.find((item) => String(item.id) === String(currentMap)) || null;
+        const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((item) => String(item.id) === String(nextId)));
+        const wantsPause = Math.random() < 0.24;
+        const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.10;
+        if (wantsPause) {
+          waitMs = Math.round(sdRand(1500, 3000));
+          dx *= 0.24;
+          dy *= 0.24;
+          moveCooldownMs = Math.round(sdRand(9800, 15800));
+        } else if (wantsMapChange) {
+          const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
+          if (dir === "left") {
+            dx = -sdRand(1.12, 1.68);
+            dy = sdRand(-0.42, 0.42);
+          } else if (dir === "right") {
+            dx = sdRand(1.12, 1.68);
+            dy = sdRand(-0.42, 0.42);
+          } else if (dir === "up") {
+            dx = sdRand(-0.42, 0.42);
+            dy = -sdRand(1.02, 1.52);
+          } else {
+            dx = sdRand(-0.42, 0.42);
+            dy = sdRand(1.02, 1.52);
+          }
+          moveCooldownMs = Math.round(sdRand(10800, 17200));
+        } else {
+          dx = sdRand(-1.22, 1.22);
+          dy = sdRand(-0.66, 0.66);
+          if (Math.abs(dx) < 0.52) dx = dx >= 0 ? 0.52 : -0.52;
+          if (Math.abs(dy) < 0.22) dy = dy >= 0 ? 0.22 : -0.22;
+          moveCooldownMs = Math.round(sdRand(11600, 18200));
+        }
+      }
+
+      let nx = x + dx * dt * 1.32;
+      let ny = y + dy * dt * 1.32;
+
+      if (nx <= 4) {
+        const nextMap = getSdNextMapId(maps, currentMap, "left");
+        if (nextMap && nextMap !== currentMap) {
+          currentMap = nextMap;
+          nx = 91.2;
+          ny = sdClamp(ny, 10, 76);
+          dx = -Math.max(0.46, Math.abs(dx || sdRand(0.54, 0.92)));
+          dy = sdClamp(dy || sdRand(-0.24, 0.24), -0.42, 0.42);
+          moveCooldownMs = Math.round(sdRand(10800, 17200));
+        } else {
+          dx *= -1;
+          nx = sdClamp(x + dx * dt * 1.32, 4, 92);
+        }
+      } else if (nx >= 92) {
+        const nextMap = getSdNextMapId(maps, currentMap, "right");
+        if (nextMap && nextMap !== currentMap) {
+          currentMap = nextMap;
+          nx = 8.8;
+          ny = sdClamp(ny, 10, 76);
+          dx = Math.max(0.46, Math.abs(dx || sdRand(0.54, 0.92)));
+          dy = sdClamp(dy || sdRand(-0.24, 0.24), -0.42, 0.42);
+          moveCooldownMs = Math.round(sdRand(10800, 17200));
+        } else {
+          dx *= -1;
+          nx = sdClamp(x + dx * dt * 1.32, 4, 92);
+        }
+      }
+      if (ny <= 8) {
+        const nextMap = getSdNextMapId(maps, currentMap, "up");
+        if (nextMap && nextMap !== currentMap) {
+          currentMap = nextMap;
+          nx = sdClamp(nx, 8, 92);
+          ny = 77.2;
+          dx = sdClamp(dx || sdRand(-0.24, 0.24), -0.42, 0.42);
+          dy = -Math.max(0.46, Math.abs(dy || sdRand(0.54, 0.92)));
+          moveCooldownMs = Math.round(sdRand(10800, 17200));
+        } else {
+          dy *= -1;
+          ny = sdClamp(y + dy * dt * 1.32, 8, 78);
+        }
+      } else if (ny >= 78) {
+        const nextMap = getSdNextMapId(maps, currentMap, "down");
+        if (nextMap && nextMap !== currentMap) {
+          currentMap = nextMap;
+          nx = sdClamp(nx, 8, 92);
+          ny = 8.8;
+          dx = sdClamp(dx || sdRand(-0.24, 0.24), -0.42, 0.42);
+          dy = Math.max(0.46, Math.abs(dy || sdRand(0.54, 0.92)));
+          moveCooldownMs = Math.round(sdRand(10800, 17200));
+        } else {
+          dy *= -1;
+          ny = sdClamp(y + dy * dt * 1.32, 8, 78);
+        }
+      }
+
+      x = sdClamp(nx, 4, 92);
+      y = sdClamp(ny, 8, 78);
+    }
+
+    if (
+      character.currentMap !== currentMap ||
+      Number(character.x) !== x ||
+      Number(character.y) !== y ||
+      Number(character.dx) !== dx ||
+      Number(character.dy) !== dy ||
+      Number(character.waitMs) !== waitMs ||
+      Number(character.moveCooldownMs) !== moveCooldownMs
+    ) {
+      character.currentMap = currentMap;
+      character.x = x;
+      character.y = y;
+      character.dx = dx;
+      character.dy = dy;
+      character.waitMs = waitMs;
+      character.moveCooldownMs = moveCooldownMs;
+      changed = true;
+    }
+  });
+
+  if (changed) markCharactersDirty();
+}
+
+setInterval(() => {
+  try {
+    tickSdCharactersOnServer();
+  } catch {}
+}, 150);
+
+setInterval(() => {
+  if (!global.__plcCharactersDirty) return;
+  try {
+    writeRuntimeArray("characters.json", charactersDB);
+    global.__plcCharactersDirty = false;
+  } catch {}
+}, 2000);
 
 function buildPublicInvestigationState(item) {
   if (!item) return null;

@@ -592,115 +592,24 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
       if (document.visibilityState === "visible") {
         setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, _, arr) => {
-          const isActiveSelf = !!activeCharacter && matchesActiveCharacter(character, activeCharacter);
-          if (!isActiveSelf) return character;
           let currentMap = character.currentMap || maps[0]?.id || "";
           let x = Number(character.x || 0);
           let y = Number(character.y || 0);
           let dx = Number(character.dx || 0);
           let dy = Number(character.dy || 0);
           let waitMs = Number(character.waitMs || 0);
-          let moveCooldownMs = Number(character.moveCooldownMs || 0);
+          const moveCooldownMs = Number(character.moveCooldownMs || 0);
 
           if (waitMs > 0) {
-            waitMs = Math.max(0, waitMs - (isActiveSelf ? dt * 1.25 : dt));
-            return { ...character, waitMs, dx: dx * 0.94, dy: dy * 0.94 };
-          }
-
-          moveCooldownMs -= dt;
-          if (moveCooldownMs <= 0) {
-            const mapDef = maps.find((map) => String(map.id) === String(currentMap)) || null;
-            const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((map) => String(map.id) === String(nextId)));
-            const wantsPause = Math.random() < (isActiveSelf ? 0.14 : 0.24);
-            const wantsMapChange = linkedDirs.length > 0 && Math.random() < (isActiveSelf ? 0.08 : 0.10);
-            if (wantsPause) {
-              waitMs = rand(isActiveSelf ? 900 : 1500, isActiveSelf ? 1900 : 3000);
-              dx *= 0.24;
-              dy *= 0.24;
-              moveCooldownMs = rand(9800, 15800);
-            } else if (wantsMapChange) {
-              const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
-              if (dir === "left") {
-                dx = -rand(1.12, 1.68);
-                dy = rand(-0.42, 0.42);
-              } else if (dir === "right") {
-                dx = rand(1.12, 1.68);
-                dy = rand(-0.42, 0.42);
-              } else if (dir === "up") {
-                dx = rand(-0.42, 0.42);
-                dy = -rand(1.02, 1.52);
-              } else {
-                dx = rand(-0.42, 0.42);
-                dy = rand(1.02, 1.52);
-              }
-              moveCooldownMs = rand(10800, 17200);
-            } else {
-              dx = rand(-1.22, 1.22);
-              dy = rand(-0.66, 0.66);
-              if (Math.abs(dx) < 0.52) dx = dx >= 0 ? 0.52 : -0.52;
-              if (Math.abs(dy) < 0.22) dy = dy >= 0 ? 0.22 : -0.22;
-              moveCooldownMs = rand(11600, 18200);
-            }
+            waitMs = Math.max(0, waitMs - dt);
+            dx *= 0.94;
+            dy *= 0.94;
+            return { ...character, waitMs, dx, dy, moveCooldownMs, currentMap };
           }
 
           const speedFactor = (dt / 1000) * 1.32;
           let nx = x + dx * speedFactor;
           let ny = y + dy * speedFactor;
-
-          if (nx <= 4) {
-            const nextMap = getNextMap(currentMap, "left");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = 91.2;
-              ny = clamp(ny, 10, 76);
-              dx = -Math.max(0.46, Math.abs(dx || rand(0.54, 0.92)));
-              dy = clamp(dy || rand(-0.24, 0.24), -0.42, 0.42);
-              moveCooldownMs = rand(10800, 17200);
-            } else {
-              dx *= -1;
-              nx = clamp(x + dx * speedFactor, 4, 92);
-            }
-          } else if (nx >= 92) {
-            const nextMap = getNextMap(currentMap, "right");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = 8.8;
-              ny = clamp(ny, 10, 76);
-              dx = Math.max(0.46, Math.abs(dx || rand(0.54, 0.92)));
-              dy = clamp(dy || rand(-0.24, 0.24), -0.42, 0.42);
-              moveCooldownMs = rand(10800, 17200);
-            } else {
-              dx *= -1;
-              nx = clamp(x + dx * speedFactor, 4, 92);
-            }
-          }
-          if (ny <= 8) {
-            const nextMap = getNextMap(currentMap, "up");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = clamp(nx, 8, 92);
-              ny = 77.2;
-              dx = clamp(dx || rand(-0.24, 0.24), -0.42, 0.42);
-              dy = -Math.max(0.46, Math.abs(dy || rand(0.54, 0.92)));
-              moveCooldownMs = rand(10800, 17200);
-            } else {
-              dy *= -1;
-              ny = clamp(y + dy * speedFactor, 8, 78);
-            }
-          } else if (ny >= 78) {
-            const nextMap = getNextMap(currentMap, "down");
-            if (nextMap && nextMap !== currentMap) {
-              currentMap = nextMap;
-              nx = clamp(nx, 8, 92);
-              ny = 10.8;
-              dx = clamp(dx || rand(-0.24, 0.24), -0.42, 0.42);
-              dy = Math.max(0.46, Math.abs(dy || rand(0.54, 0.92)));
-              moveCooldownMs = rand(10800, 17200);
-            } else {
-              dy *= -1;
-              ny = clamp(y + dy * speedFactor, 8, 78);
-            }
-          }
 
           const selfKey = getCharacterKey(character);
           const nearby = arr.filter((other) => getCharacterKey(other) !== selfKey && String(other.currentMap || maps[0]?.id || "") === String(currentMap));
@@ -778,26 +687,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
           return next.length > 0 ? next : prev;
         });
       } catch {}
-    }, 2500);
+    }, 1200);
     return () => clearInterval(timer);
   }, [maps, activeCharacter]);
-
-  useEffect(() => {
-    if (!activeCharacter?.id) return undefined;
-    const flush = () => {
-      const mine = dedupeCharacters(charactersRef.current || []).find((character) => matchesActiveCharacter(character, activeCharacter));
-      if (mine) syncActiveCharacterToServer(mine);
-    };
-    const timer = setInterval(flush, 1500);
-    window.addEventListener("beforeunload", flush);
-    document.addEventListener("visibilitychange", flush);
-    return () => {
-      flush();
-      clearInterval(timer);
-      window.removeEventListener("beforeunload", flush);
-      document.removeEventListener("visibilitychange", flush);
-    };
-  }, [activeCharacter]);
 
   useEffect(() => {
     const handleCharacterUpdated = async (event) => {
