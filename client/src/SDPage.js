@@ -114,12 +114,12 @@ function buildVisualStateFromServer(character, prev, savedState) {
   const hasPrevPosition = Number.isFinite(prevX) && Number.isFinite(prevY);
   const hasRemotePosition = Number.isFinite(remoteX) && Number.isFinite(remoteY);
   const drift = hasPrevPosition && hasRemotePosition ? Math.hypot(remoteX - prevX, remoteY - prevY) : Number.POSITIVE_INFINITY;
-  const keepPrevPosition = sameMap && hasPrevPosition && (!hasRemotePosition || drift < 22);
+  const canBlendPosition = sameMap && hasPrevPosition && hasRemotePosition && drift < 14;
 
   return {
     ...character,
-    x: keepPrevPosition ? prevX : character?.x,
-    y: keepPrevPosition ? prevY : character?.y,
+    x: canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x),
+    y: canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y),
     dx: typeof character?.dx === "number" ? character.dx : prev?.dx,
     dy: typeof character?.dy === "number" ? character.dy : prev?.dy,
     waitMs: typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs,
@@ -467,8 +467,6 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const charactersRef = useRef(characters);
   const activeMapRef = useRef(activeMapId);
   const quotesRef = useRef(quotes);
-  const activeCharacterMapRef = useRef("");
-  const activeMapFollowLockRef = useRef(false);
   const mapRoot = remoteMapRoot || design?.siteContent?.maps || {};
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
   const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
@@ -721,7 +719,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           return next.length > 0 ? next : prev;
         });
       } catch {}
-    }, 1200);
+    }, 250);
     return () => clearInterval(timer);
   }, [maps, activeCharacter]);
 
@@ -785,16 +783,6 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!activeCharacter) return null;
     return stableCharacters.find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
   }, [stableCharacters, activeCharacter]);
-  useEffect(() => {
-    const nextMapId = String(canonicalActiveCharacter?.currentMap || "").trim();
-    const prevMapId = String(activeCharacterMapRef.current || "").trim();
-    activeCharacterMapRef.current = nextMapId;
-    if (!nextMapId || !prevMapId || nextMapId === prevMapId) return;
-    if (activeMapFollowLockRef.current) return;
-    if (String(activeMapRef.current || "") !== prevMapId) return;
-    if (!maps.some((map) => String(map.id) === nextMapId)) return;
-    setActiveMapId((current) => (String(current || "") === prevMapId ? nextMapId : current));
-  }, [canonicalActiveCharacter?.currentMap, maps]);
   const mapCharacters = useMemo(() => {
     const targetMapId = String(currentMap?.id || "");
     return stableCharacters.filter((character) => {
@@ -812,11 +800,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
     if (!nextId || nextId === activeMapId) return;
-    activeMapFollowLockRef.current = true;
     setActiveMapId(nextId);
-    window.setTimeout(() => {
-      activeMapFollowLockRef.current = false;
-    }, 1200);
   };
 
   return (
