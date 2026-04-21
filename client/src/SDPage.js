@@ -35,6 +35,48 @@ function spawnFromEdge(edge) {
   return { x: rand(10, 88), y: 78, dx: rand(-0.26, 0.26), dy: rand(-1.02, -0.64) };
 }
 
+function chooseLocalMotion(currentMap, maps, currentDx = 0, currentDy = 0) {
+  const mapDef = (maps || []).find((item) => String(item.id) === String(currentMap)) || null;
+  const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([, nextId]) => nextId && (maps || []).some((item) => String(item.id) === String(nextId)));
+  const wantsPause = Math.random() < 0.14;
+  const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.18;
+
+  if (wantsPause) {
+    return {
+      dx: Number(currentDx || 0) * 0.24,
+      dy: Number(currentDy || 0) * 0.24,
+      waitMs: Math.round(rand(800, 1700)),
+      moveCooldownMs: Math.round(rand(3400, 6200)),
+    };
+  }
+
+  if (wantsMapChange) {
+    const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
+    if (dir === "left") {
+      return { dx: -rand(1.38, 2.05), dy: rand(-0.42, 0.42), waitMs: 0, moveCooldownMs: Math.round(rand(3200, 6000)) };
+    }
+    if (dir === "right") {
+      return { dx: rand(1.38, 2.05), dy: rand(-0.42, 0.42), waitMs: 0, moveCooldownMs: Math.round(rand(3200, 6000)) };
+    }
+    if (dir === "up") {
+      return { dx: rand(-0.42, 0.42), dy: -rand(1.24, 1.88), waitMs: 0, moveCooldownMs: Math.round(rand(3200, 6000)) };
+    }
+    return { dx: rand(-0.42, 0.42), dy: rand(1.24, 1.88), waitMs: 0, moveCooldownMs: Math.round(rand(3200, 6000)) };
+  }
+
+  let dx = rand(-1.62, 1.62);
+  let dy = rand(-0.88, 0.88);
+  if (Math.abs(dx) < 0.68) dx = dx >= 0 ? 0.68 : -0.68;
+  if (Math.abs(dy) < 0.28) dy = dy >= 0 ? 0.28 : -0.28;
+  return {
+    dx,
+    dy,
+    waitMs: 0,
+    moveCooldownMs: Math.round(rand(4000, 7200)),
+  };
+}
+
+
 function readSavedPositions() {
   try {
     const raw = localStorage.getItem("plc-sd-positions");
@@ -594,11 +636,14 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!characters.length) return;
-    writeCachedSdCharacters(stabilizeCharacterRows(characters, activeCharacter, maps));
+    const stableRows = stabilizeCharacterRows(characters, activeCharacter, maps);
+    writeCachedSdCharacters(stableRows);
     if (Date.now() - saveTickRef.current < 700) return;
     saveTickRef.current = Date.now();
-    persistCharacterPositions(characters);
-  }, [characters]);
+    persistCharacterPositions(stableRows);
+    const mine = activeCharacter ? stableRows.find((character) => matchesActiveCharacter(character, activeCharacter)) : null;
+    if (mine) syncActiveCharacterToServer(mine);
+  }, [characters, activeCharacter, maps]);
 
   useEffect(() => () => {
     const latest = stabilizeCharacterRows(charactersRef.current || [], activeCharacter, maps);
@@ -639,6 +684,19 @@ export default function SDPage({ activeCharacter, design, theme }) {
             return { ...character, waitMs, dx, dy, moveCooldownMs, currentMap };
           }
 
+          let nextCooldownMs = moveCooldownMs - dt;
+          if (!Number.isFinite(nextCooldownMs)) nextCooldownMs = 0;
+          if (nextCooldownMs <= 0 || (Math.abs(dx) < 0.02 && Math.abs(dy) < 0.02)) {
+            const nextMotion = chooseLocalMotion(currentMap, maps, dx, dy);
+            dx = nextMotion.dx;
+            dy = nextMotion.dy;
+            waitMs = Number(nextMotion.waitMs || 0);
+            nextCooldownMs = Number(nextMotion.moveCooldownMs || 0);
+            if (waitMs > 0) {
+              return { ...character, waitMs, dx, dy, moveCooldownMs: nextCooldownMs, currentMap };
+            }
+          }
+
           const speedFactor = (dt / 1000) * 1.32;
           let nx = x + dx * speedFactor;
           let ny = y + dy * speedFactor;
@@ -656,7 +714,63 @@ export default function SDPage({ activeCharacter, design, theme }) {
             }
           });
 
-          return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs, currentMap };
+          if (nx <= 4) {
+            const nextMap = getNextMap(currentMap, "left");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = 91.2;
+              ny = clamp(ny, 10, 76);
+              dx = -Math.max(0.62, Math.abs(dx || rand(0.72, 1.12)));
+              dy = clamp(dy || rand(-0.30, 0.30), -0.54, 0.54);
+              nextCooldownMs = Math.round(rand(3200, 6000));
+            } else {
+              dx *= -1;
+              nx = clamp(nx, 4, 92);
+            }
+          } else if (nx >= 92) {
+            const nextMap = getNextMap(currentMap, "right");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = 8.8;
+              ny = clamp(ny, 10, 76);
+              dx = Math.max(0.62, Math.abs(dx || rand(0.72, 1.12)));
+              dy = clamp(dy || rand(-0.30, 0.30), -0.54, 0.54);
+              nextCooldownMs = Math.round(rand(3200, 6000));
+            } else {
+              dx *= -1;
+              nx = clamp(nx, 4, 92);
+            }
+          }
+
+          if (ny <= 8) {
+            const nextMap = getNextMap(currentMap, "up");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = clamp(nx, 8, 92);
+              ny = 77.2;
+              dx = clamp(dx || rand(-0.30, 0.30), -0.54, 0.54);
+              dy = -Math.max(0.62, Math.abs(dy || rand(0.72, 1.12)));
+              nextCooldownMs = Math.round(rand(3200, 6000));
+            } else {
+              dy *= -1;
+              ny = clamp(ny, 8, 78);
+            }
+          } else if (ny >= 78) {
+            const nextMap = getNextMap(currentMap, "down");
+            if (nextMap && nextMap !== currentMap) {
+              currentMap = nextMap;
+              nx = clamp(nx, 8, 92);
+              ny = 8.8;
+              dx = clamp(dx || rand(-0.30, 0.30), -0.54, 0.54);
+              dy = Math.max(0.62, Math.abs(dy || rand(0.72, 1.12)));
+              nextCooldownMs = Math.round(rand(3200, 6000));
+            } else {
+              dy *= -1;
+              ny = clamp(ny, 8, 78);
+            }
+          }
+
+          return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs: nextCooldownMs, currentMap };
         }), activeCharacter, maps));
       }
 
@@ -719,7 +833,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           return next.length > 0 ? next : prev;
         });
       } catch {}
-    }, 140);
+    }, 3000);
     return () => clearInterval(timer);
   }, [maps, activeCharacter]);
 
