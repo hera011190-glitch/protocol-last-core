@@ -319,7 +319,7 @@ function stabilizeCharacterRows(rows, activeCharacter, maps) {
     cardImage: source?.cardImage || source?.mainImage || source?.profileImage || source?.image || "",
     investigationImage: source?.investigationImage || activeCharacter?.investigationImage || source?.mainImage || source?.profileImage || source?.image || "",
     spriteImage: source?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || source?.investigationImage || source?.mainImage || source?.profileImage || source?.image || "",
-    currentMap: saved?.currentMap || source?.currentMap || activeCharacter?.currentMap || "",
+    currentMap: source?.currentMap || activeCharacter?.currentMap || saved?.currentMap || "",
     x: typeof source?.x === "number" ? source.x : saved?.x,
     y: typeof source?.y === "number" ? source.y : saved?.y,
     dx: typeof source?.dx === "number" ? source.dx : saved?.dx,
@@ -718,7 +718,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
         setCharacters((prev) => {
           const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps, activeCharacter);
           const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-          const next = stabilizeCharacterRows(mergeCharacterStates([], sourceRows, maps), activeCharacter, maps);
+          const next = stabilizeCharacterRows(mergeCharacterStates([], sourceRows, maps, activeCharacter), activeCharacter, maps);
           if (next.length > 0) writeCachedSdCharacters(next);
           return next.length > 0 || prev.length === 0 ? next : prev;
         });
