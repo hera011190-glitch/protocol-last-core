@@ -361,7 +361,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   const tintStart = Math.max(0, 100 - tintReveal - 18);
   const tintMid = Math.max(0, 100 - tintReveal - 6);
   return (
-    <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto" }}>
+    <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", transition: "left 0.18s linear, top 0.18s linear, transform 0.18s linear", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform" }}>
       {quote?.text ? (
         <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translate3d(-50%, 0, 0)", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
@@ -482,6 +482,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     activeMapRef.current = activeMapId;
   }, [activeMapId]);
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(SD_POSITIONS_KEY);
+      localStorage.removeItem(SD_CHARACTERS_KEY);
+    } catch {}
+  }, []);
 
   useEffect(() => {
     quotesRef.current = quotes;
