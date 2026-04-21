@@ -854,6 +854,10 @@ export default function SDPage({ activeCharacter, design, theme }) {
   }, [activeMapId]);
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
+  const canonicalActiveCharacter = useMemo(() => {
+    if (!activeCharacter) return null;
+    return dedupeCharacters(characters).find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
+  }, [characters, activeCharacter]);
   const mapCharacters = useMemo(() => {
     const targetMapId = String(currentMap?.id || "");
     const seen = new Set();
@@ -863,6 +867,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
       const key = getCharacterKey(character);
       if (!key || seen.has(key)) return false;
       if (activeCharacter && matchesActiveCharacter(character, activeCharacter)) {
+        if (!canonicalActiveCharacter) return false;
+        const canonicalKey = getCharacterKey(canonicalActiveCharacter);
+        const canonicalMapId = String(canonicalActiveCharacter?.currentMap || "");
+        if (!canonicalKey || key !== canonicalKey) return false;
+        if (canonicalMapId && canonicalMapId !== targetMapId) return false;
         if (activeShown) return false;
         activeShown = true;
       }
@@ -874,7 +883,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       seen.add(key);
       return true;
     });
-  }, [characters, currentMap, activeCharacter]);
+  }, [characters, currentMap, activeCharacter, canonicalActiveCharacter]);
   const availableDirs = currentMap?.neighbors || {};
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
