@@ -719,7 +719,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
           return next.length > 0 ? next : prev;
         });
       } catch {}
-    }, 250);
+    }, 140);
     return () => clearInterval(timer);
   }, [maps, activeCharacter]);
 

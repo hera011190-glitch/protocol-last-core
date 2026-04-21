@@ -3082,35 +3082,35 @@ function tickSdCharactersOnServer() {
       if (moveCooldownMs <= 0) {
         const mapDef = maps.find((item) => String(item.id) === String(currentMap)) || null;
         const linkedDirs = Object.entries(mapDef?.neighbors || {}).filter(([dir, nextId]) => nextId && maps.some((item) => String(item.id) === String(nextId)));
-        const wantsPause = Math.random() < 0.24;
-        const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.10;
+        const wantsPause = Math.random() < 0.14;
+        const wantsMapChange = linkedDirs.length > 0 && Math.random() < 0.18;
         if (wantsPause) {
-          waitMs = Math.round(sdRand(1500, 3000));
+          waitMs = Math.round(sdRand(800, 1700));
           dx *= 0.24;
           dy *= 0.24;
-          moveCooldownMs = Math.round(sdRand(9800, 15800));
+          moveCooldownMs = Math.round(sdRand(3400, 6200));
         } else if (wantsMapChange) {
           const [dir] = linkedDirs[Math.floor(Math.random() * linkedDirs.length)];
           if (dir === "left") {
-            dx = -sdRand(1.12, 1.68);
+            dx = -sdRand(1.38, 2.05);
             dy = sdRand(-0.42, 0.42);
           } else if (dir === "right") {
-            dx = sdRand(1.12, 1.68);
+            dx = sdRand(1.38, 2.05);
             dy = sdRand(-0.42, 0.42);
           } else if (dir === "up") {
             dx = sdRand(-0.42, 0.42);
-            dy = -sdRand(1.02, 1.52);
+            dy = -sdRand(1.24, 1.88);
           } else {
             dx = sdRand(-0.42, 0.42);
-            dy = sdRand(1.02, 1.52);
+            dy = sdRand(1.24, 1.88);
           }
-          moveCooldownMs = Math.round(sdRand(10800, 17200));
+          moveCooldownMs = Math.round(sdRand(3200, 6000));
         } else {
-          dx = sdRand(-1.22, 1.22);
-          dy = sdRand(-0.66, 0.66);
-          if (Math.abs(dx) < 0.52) dx = dx >= 0 ? 0.52 : -0.52;
-          if (Math.abs(dy) < 0.22) dy = dy >= 0 ? 0.22 : -0.22;
-          moveCooldownMs = Math.round(sdRand(11600, 18200));
+          dx = sdRand(-1.62, 1.62);
+          dy = sdRand(-0.88, 0.88);
+          if (Math.abs(dx) < 0.68) dx = dx >= 0 ? 0.68 : -0.68;
+          if (Math.abs(dy) < 0.28) dy = dy >= 0 ? 0.28 : -0.28;
+          moveCooldownMs = Math.round(sdRand(4000, 7200));
         }
       }
 
@@ -3123,9 +3123,9 @@ function tickSdCharactersOnServer() {
           currentMap = nextMap;
           nx = 91.2;
           ny = sdClamp(ny, 10, 76);
-          dx = -Math.max(0.46, Math.abs(dx || sdRand(0.54, 0.92)));
-          dy = sdClamp(dy || sdRand(-0.24, 0.24), -0.42, 0.42);
-          moveCooldownMs = Math.round(sdRand(10800, 17200));
+          dx = -Math.max(0.62, Math.abs(dx || sdRand(0.72, 1.12)));
+          dy = sdClamp(dy || sdRand(-0.30, 0.30), -0.54, 0.54);
+          moveCooldownMs = Math.round(sdRand(3200, 6000));
         } else {
           dx *= -1;
           nx = sdClamp(x + dx * dt * 1.32, 4, 92);
@@ -3136,9 +3136,9 @@ function tickSdCharactersOnServer() {
           currentMap = nextMap;
           nx = 8.8;
           ny = sdClamp(ny, 10, 76);
-          dx = Math.max(0.46, Math.abs(dx || sdRand(0.54, 0.92)));
-          dy = sdClamp(dy || sdRand(-0.24, 0.24), -0.42, 0.42);
-          moveCooldownMs = Math.round(sdRand(10800, 17200));
+          dx = Math.max(0.62, Math.abs(dx || sdRand(0.72, 1.12)));
+          dy = sdClamp(dy || sdRand(-0.30, 0.30), -0.54, 0.54);
+          moveCooldownMs = Math.round(sdRand(3200, 6000));
         } else {
           dx *= -1;
           nx = sdClamp(x + dx * dt * 1.32, 4, 92);
@@ -3150,9 +3150,9 @@ function tickSdCharactersOnServer() {
           currentMap = nextMap;
           nx = sdClamp(nx, 8, 92);
           ny = 77.2;
-          dx = sdClamp(dx || sdRand(-0.24, 0.24), -0.42, 0.42);
-          dy = -Math.max(0.46, Math.abs(dy || sdRand(0.54, 0.92)));
-          moveCooldownMs = Math.round(sdRand(10800, 17200));
+          dx = sdClamp(dx || sdRand(-0.30, 0.30), -0.54, 0.54);
+          dy = -Math.max(0.62, Math.abs(dy || sdRand(0.72, 1.12)));
+          moveCooldownMs = Math.round(sdRand(3200, 6000));
         } else {
           dy *= -1;
           ny = sdClamp(y + dy * dt * 1.32, 8, 78);
@@ -3163,9 +3163,9 @@ function tickSdCharactersOnServer() {
           currentMap = nextMap;
           nx = sdClamp(nx, 8, 92);
           ny = 8.8;
-          dx = sdClamp(dx || sdRand(-0.24, 0.24), -0.42, 0.42);
-          dy = Math.max(0.46, Math.abs(dy || sdRand(0.54, 0.92)));
-          moveCooldownMs = Math.round(sdRand(10800, 17200));
+          dx = sdClamp(dx || sdRand(-0.30, 0.30), -0.54, 0.54);
+          dy = Math.max(0.62, Math.abs(dy || sdRand(0.72, 1.12)));
+          moveCooldownMs = Math.round(sdRand(3200, 6000));
         } else {
           dy *= -1;
           ny = sdClamp(y + dy * dt * 1.32, 8, 78);
