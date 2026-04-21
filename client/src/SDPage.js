@@ -371,20 +371,47 @@ function CharacterSprite({ character, quote, moving, onClick }) {
             inset: 0,
             zIndex: 2,
             pointerEvents: "none",
-            opacity: tintReveal > 0 ? Math.min(0.94, 0.12 + tintStrength * 0.88) : 0,
+            opacity: tintReveal > 0 ? 1 : 0,
             transition: "opacity 0.28s ease",
-            background: `linear-gradient(180deg, rgba(160, 30, 30, 0) 0%, rgba(160, 30, 30, 0) ${Math.max(0, tintStart - 8)}%, rgba(176, 24, 24, 0.22) ${Math.max(0, tintMid - 2)}%, rgba(170, 14, 14, 0.62) ${Math.min(100, tintMid + 16)}%, rgba(145, 0, 0, 0.92) 100%)`,
-            mixBlendMode: "multiply",
-            WebkitMaskImage: `url(${spriteImage})`,
-            maskImage: `url(${spriteImage})`,
-            WebkitMaskRepeat: "no-repeat",
-            maskRepeat: "no-repeat",
-            WebkitMaskPosition: "center",
-            maskPosition: "center",
-            WebkitMaskSize: "contain",
-            maskSize: "contain",
           }}
-        />
+        >
+          <img
+            src={spriteImage}
+            alt=""
+            loading="eager"
+            decoding="async"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              position: "absolute",
+              inset: 0,
+              opacity: Math.min(0.95, 0.12 + tintStrength * 1.05),
+              filter: `sepia(1) saturate(${(2.2 + tintStrength * 3.2).toFixed(2)}) hue-rotate(-40deg) brightness(${(0.8 + tintStrength * 0.08).toFixed(2)}) contrast(1.1)`,
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
+            }}
+          />
+          <img
+            src={spriteImage}
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+            decoding="async"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              position: "absolute",
+              inset: 0,
+              opacity: Math.min(0.92, 0.16 + tintStrength * 0.82),
+              filter: `sepia(1) saturate(${(2.35 + tintStrength * 2.8).toFixed(2)}) hue-rotate(-36deg) brightness(${(0.86 + tintStrength * 0.06).toFixed(2)}) contrast(1.08)`,
+              mixBlendMode: "multiply",
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+            }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -398,6 +425,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const [remoteMapRoot, setRemoteMapRoot] = useState(() => readCachedMapConfig() || design?.siteContent?.maps || null);
   const lastFrameRef = useRef(0);
   const saveTickRef = useRef(0);
+  const lastServerSyncRef = useRef("");
   const charactersRef = useRef(characters);
   const activeMapRef = useRef(activeMapId);
   const quotesRef = useRef(quotes);
@@ -411,6 +439,28 @@ export default function SDPage({ activeCharacter, design, theme }) {
     }
     return Array.isArray(mapRoot.presets) && mapRoot.presets.length > 0 ? mapRoot.presets : FALLBACK_MAPS;
   }, [mapRoot, collections, activeCollectionId]);
+
+  const syncActiveCharacterToServer = (row) => {
+    if (!activeCharacter?.id || !row || !matchesActiveCharacter(row, activeCharacter)) return;
+    const payload = {
+      charId: activeCharacter.id,
+      currentMap: row.currentMap || "",
+      x: Number.isFinite(Number(row.x)) ? Number(row.x) : 50,
+      y: Number.isFinite(Number(row.y)) ? Number(row.y) : 50,
+      dx: Number.isFinite(Number(row.dx)) ? Number(row.dx) : 0,
+      dy: Number.isFinite(Number(row.dy)) ? Number(row.dy) : 0,
+      waitMs: Number.isFinite(Number(row.waitMs)) ? Number(row.waitMs) : 0,
+      moveCooldownMs: Number.isFinite(Number(row.moveCooldownMs)) ? Number(row.moveCooldownMs) : 0,
+    };
+    const syncKey = JSON.stringify(payload);
+    if (lastServerSyncRef.current === syncKey) return;
+    lastServerSyncRef.current = syncKey;
+    fetch(buildApiUrl("/updateCharacter"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     charactersRef.current = characters;
@@ -530,6 +580,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (document.visibilityState === "visible") {
         setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character, _, arr) => {
           const isActiveSelf = !!activeCharacter && matchesActiveCharacter(character, activeCharacter);
+          if (!isActiveSelf) return character;
           let currentMap = character.currentMap || maps[0]?.id || "";
           let x = Number(character.x || 0);
           let y = Number(character.y || 0);
@@ -701,29 +752,36 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (!maps.length) return undefined;
-    let cancelled = false;
-    const refresh = async () => {
+    const timer = setInterval(async () => {
       try {
         const incoming = await fetchCharactersWithFallback();
-        if (cancelled) return;
         setCharacters((prev) => {
-          const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
-          const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-          const next = stabilizeCharacterRows(mergeCharacterStates(prev, sourceRows, maps), activeCharacter, maps);
-          if (next.length > 0) {
-            writeCachedSdCharacters(next);
-            persistCharacterPositions(next);
-          }
-          return next.length > 0 || prev.length === 0 ? next : prev;
+          if (!Array.isArray(incoming) || incoming.length === 0) return prev;
+          const next = stabilizeCharacterRows(mergeCharacterStates([], incoming, maps), activeCharacter, maps);
+          if (next.length > 0) writeCachedSdCharacters(next);
+          return next.length > 0 ? next : prev;
         });
       } catch {}
-    };
-    const timer = setInterval(refresh, 3500);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    }, 2500);
+    return () => clearInterval(timer);
   }, [maps, activeCharacter]);
+
+  useEffect(() => {
+    if (!activeCharacter?.id) return undefined;
+    const flush = () => {
+      const mine = dedupeCharacters(charactersRef.current || []).find((character) => matchesActiveCharacter(character, activeCharacter));
+      if (mine) syncActiveCharacterToServer(mine);
+    };
+    const timer = setInterval(flush, 1500);
+    window.addEventListener("beforeunload", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      flush();
+      clearInterval(timer);
+      window.removeEventListener("beforeunload", flush);
+      document.removeEventListener("visibilitychange", flush);
+    };
+  }, [activeCharacter]);
 
   useEffect(() => {
     const handleCharacterUpdated = async (event) => {
@@ -731,21 +789,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (updated?.id || updated?.name) {
         const updatedKey = getCharacterKey(updated);
         setCharacters((prev) => {
-          const baseRows = dedupeCharacters(prev);
-          const nextRows = matchesActiveCharacter(updated, activeCharacter)
-            ? [
-                ...baseRows.filter((character) => !matchesActiveCharacter(character, updated)),
-                buildCharacterState({
-                  ...(baseRows.find((character) => matchesActiveCharacter(character, updated)) || activeCharacter || {}),
-                  ...updated,
-                }, baseRows.find((character) => matchesActiveCharacter(character, updated)) || activeCharacter || updated, maps, 0),
-              ]
-            : baseRows.map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character);
-          const next = stabilizeCharacterRows(nextRows, activeCharacter, maps);
-          if (next.length > 0) {
-            writeCachedSdCharacters(next);
-            persistCharacterPositions(next);
-          }
+          const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps);
+          if (next.length > 0) writeCachedSdCharacters(next);
           return next;
         });
         return;
@@ -755,11 +800,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
         setCharacters((prev) => {
           const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
           const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-          const next = stabilizeCharacterRows(mergeCharacterStates(prev, sourceRows, maps), activeCharacter, maps);
-          if (next.length > 0) {
-            writeCachedSdCharacters(next);
-            persistCharacterPositions(next);
-          }
+          const next = stabilizeCharacterRows(mergeCharacterStates([], sourceRows, maps), activeCharacter, maps);
+          if (next.length > 0) writeCachedSdCharacters(next);
           return next.length > 0 || prev.length === 0 ? next : prev;
         });
       } catch {}
@@ -814,31 +856,20 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
     const activeKey = getCharacterKey(activeCharacter);
-    setCharacters((prev) => {
-      const baseRows = dedupeCharacters(prev).filter((character) => !matchesActiveCharacter(character, activeCharacter));
-      const activeSeed = dedupeCharacters(prev).find((character) => matchesActiveCharacter(character, activeCharacter)) || activeCharacter || {};
-      const movedActive = buildCharacterState({
-        ...activeSeed,
-        ...activeCharacter,
-        currentMap: nextId,
-        x: spawn.x,
-        y: spawn.y,
-        dx: spawn.dx * 0.72,
-        dy: spawn.dy * 0.72,
-        waitMs: 1700,
-        moveCooldownMs: rand(4600, 7600),
-        spriteImage: activeCharacter?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || activeSeed?.spriteImage || "",
-      }, activeSeed || activeCharacter, maps, 0);
-      const next = stabilizeCharacterRows([...baseRows, movedActive], { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y }, maps);
-      if (next.length > 0) {
-        writeCachedSdCharacters(next);
-        persistCharacterPositions(next);
-      }
-      return next;
-    });
+    const movedCharacter = {
+      ...activeCharacter,
+      currentMap: nextId,
+      x: spawn.x,
+      y: spawn.y,
+      dx: spawn.dx * 0.72,
+      dy: spawn.dy * 0.72,
+      waitMs: 1700,
+      moveCooldownMs: rand(4600, 7600),
+    };
+    setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, ...movedCharacter } : character), movedCharacter, maps));
+    syncActiveCharacterToServer(movedCharacter);
     if (activeCharacter?.id) {
-      fetch(buildApiUrl("/updateCharacter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ charId: activeCharacter.id, currentMap: nextId, x: spawn.x, y: spawn.y }) }).catch(() => {});
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: { ...activeCharacter, currentMap: nextId, x: spawn.x, y: spawn.y, spriteImage: activeCharacter?.spriteImage || activeCharacter?.investigationImage || activeCharacter?.mainImage || activeCharacter?.image || "", investigationImage: activeCharacter?.investigationImage || "", mainImage: activeCharacter?.mainImage || "", image: activeCharacter?.image || "" } } }));
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: movedCharacter } }));
     }
   };
 

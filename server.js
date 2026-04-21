@@ -1867,6 +1867,10 @@ app.post("/updateCharacter", (req, res) => {
     currentMap,
     x,
     y,
+    dx,
+    dy,
+    waitMs,
+    moveCooldownMs,
     currentHp,
     skills,
     approved,
@@ -1911,6 +1915,10 @@ app.post("/updateCharacter", (req, res) => {
   if (currentMap !== undefined) char.currentMap = currentMap;
   if (x !== undefined) char.x = Number(x);
   if (y !== undefined) char.y = Number(y);
+  if (dx !== undefined) char.dx = Number(dx);
+  if (dy !== undefined) char.dy = Number(dy);
+  if (waitMs !== undefined) char.waitMs = Number(waitMs);
+  if (moveCooldownMs !== undefined) char.moveCooldownMs = Number(moveCooldownMs);
   if (currentHp !== undefined) char.currentHp = Number(currentHp);
   if (skills !== undefined) char.skills = Array.isArray(skills) ? skills : [];
   if (approved !== undefined) char.approved = !!approved;
@@ -2984,17 +2992,7 @@ function buildPublicCharacter(character) {
   if (!character) return character;
   const detailed = attachRelationsToCharacter(character);
   const version = detailed.assetVersion || detailed.updatedAt || character.assetVersion || character.updatedAt || "";
-  const mapped = mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
-  const summary = buildPublicCharacterSummary(character) || {};
-  return {
-    ...mapped,
-    image: summary.image || mapped.image || "",
-    profileImage: summary.profileImage || mapped.profileImage || mapped.image || "",
-    mainImage: summary.mainImage || mapped.mainImage || mapped.image || "",
-    cardImage: summary.cardImage || mapped.cardImage || summary.mainImage || summary.profileImage || mapped.mainImage || mapped.image || "",
-    investigationImage: summary.investigationImage || mapped.investigationImage || summary.mainImage || summary.profileImage || mapped.mainImage || mapped.image || "",
-    spriteImage: summary.spriteImage || mapped.spriteImage || summary.investigationImage || summary.mainImage || summary.profileImage || mapped.investigationImage || mapped.mainImage || mapped.image || "",
-  };
+  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
 }
 
 function buildPublicDesignShellConfig(config) {
