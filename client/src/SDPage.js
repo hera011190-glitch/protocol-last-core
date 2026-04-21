@@ -125,15 +125,28 @@ function persistCharacterPositions(rows) {
   } catch {}
 }
 
-function mergeCharacterStates(prevList, freshList, maps) {
+function mergeCharacterStates(prevList, freshList, maps, activeCharacter = null) {
   const prevRows = dedupeCharacters(prevList || []);
+  const prevAliasMap = Object.fromEntries(prevRows.flatMap((row) => getCharacterAliases(row).map((alias) => [alias, row])));
   const prevById = Object.fromEntries(prevRows.map((character) => [getCharacterKey(character), character]));
   const saved = readSavedPositions();
   return dedupeCharacters(freshList || []).map((character, index) => {
     const key = getCharacterKey(character);
-    const prev = prevById[key] || findStateByAliases(Object.fromEntries(prevRows.flatMap((row) => getCharacterAliases(row).map((alias) => [alias, row]))), character);
-    const savedState = findStateByAliases(saved, character) || saved[key];
-    return buildCharacterState(character, prev || savedState, maps, index);
+    const prev = prevById[key] || findStateByAliases(prevAliasMap, character);
+    const savedState = findStateByAliases(saved, character) || saved[key] || null;
+    const preferPrev = activeCharacter && matchesActiveCharacter(character, activeCharacter);
+    const fallbackState = preferPrev
+      ? (prev || savedState)
+      : {
+          x: typeof character?.x === "number" ? undefined : savedState?.x,
+          y: typeof character?.y === "number" ? undefined : savedState?.y,
+          dx: typeof character?.dx === "number" ? undefined : savedState?.dx,
+          dy: typeof character?.dy === "number" ? undefined : savedState?.dy,
+          waitMs: typeof character?.waitMs === "number" ? undefined : savedState?.waitMs,
+          moveCooldownMs: typeof character?.moveCooldownMs === "number" ? undefined : savedState?.moveCooldownMs,
+          currentMap: character?.currentMap || savedState?.currentMap,
+        };
+    return buildCharacterState(character, fallbackState, maps, index);
   });
 }
 
@@ -519,13 +532,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (cancelled) return;
       const fallbackRows = readCachedSdCharacters();
       const finalRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
-      const next = stabilizeCharacterRows(mergeCharacterStates([], finalRows, maps), activeCharacter, maps);
+      const next = stabilizeCharacterRows(mergeCharacterStates([], finalRows, maps, activeCharacter), activeCharacter, maps);
       setCharacters((prev) => (next.length > 0 || prev.length === 0 ? next : prev));
       if (next.length > 0) writeCachedSdCharacters(next);
       setActiveMapId((prev) => {
         const stored = prev || readLastViewedMapId();
         if (stored && maps.some((map) => String(map.id) === String(stored))) return stored;
-        const sourceRows = next.length > 0 ? next : mergeCharacterStates([], fallbackRows, maps);
+        const sourceRows = next.length > 0 ? next : mergeCharacterStates([], fallbackRows, maps, activeCharacter);
         const mine = sourceRows.find((v) => String(v.id) === String(activeCharacter?.id));
         return mine?.currentMap || maps[0]?.id || "";
       });
@@ -533,13 +546,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
     loadCharacters().catch(() => {
       setCharacters((prev) => {
         if (Array.isArray(prev) && prev.length > 0) return prev;
-        const cached = stabilizeCharacterRows(mergeCharacterStates([], readCachedSdCharacters(), maps), activeCharacter, maps);
+        const cached = stabilizeCharacterRows(mergeCharacterStates([], readCachedSdCharacters(), maps, activeCharacter), activeCharacter, maps);
         return cached;
       });
       setActiveMapId((prev) => {
         const stored = prev || readLastViewedMapId();
         if (stored && maps.some((map) => String(map.id) === String(stored))) return stored;
-        const cached = stabilizeCharacterRows(mergeCharacterStates([], readCachedSdCharacters(), maps), activeCharacter, maps);
+        const cached = stabilizeCharacterRows(mergeCharacterStates([], readCachedSdCharacters(), maps, activeCharacter), activeCharacter, maps);
         const mine = cached.find((v) => String(v.id) === String(activeCharacter?.id));
         return mine?.currentMap || maps[0]?.id || "";
       });
@@ -757,8 +770,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
         const incoming = await fetchCharactersWithFallback();
         setCharacters((prev) => {
           if (!Array.isArray(incoming) || incoming.length === 0) return prev;
-          const next = stabilizeCharacterRows(mergeCharacterStates([], incoming, maps), activeCharacter, maps);
-          if (next.length > 0) writeCachedSdCharacters(next);
+          const next = stabilizeCharacterRows(mergeCharacterStates(charactersRef.current || [], incoming, maps, activeCharacter), activeCharacter, maps);
+          if (next.length > 0) {
+            writeCachedSdCharacters(next);
+            persistCharacterPositions(next);
+          }
           return next.length > 0 ? next : prev;
         });
       } catch {}
@@ -789,7 +805,17 @@ export default function SDPage({ activeCharacter, design, theme }) {
       if (updated?.id || updated?.name) {
         const updatedKey = getCharacterKey(updated);
         setCharacters((prev) => {
-          const next = stabilizeCharacterRows(dedupeCharacters(prev).map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character), activeCharacter, maps);
+          const baseRows = dedupeCharacters(prev);
+          const nextRows = matchesActiveCharacter(updated, activeCharacter)
+            ? [
+                ...baseRows.filter((character) => !matchesActiveCharacter(character, updated)),
+                buildCharacterState({
+                  ...(baseRows.find((character) => matchesActiveCharacter(character, updated)) || activeCharacter || {}),
+                  ...updated,
+                }, baseRows.find((character) => matchesActiveCharacter(character, updated)) || activeCharacter || updated, maps, 0),
+              ]
+            : baseRows.map((character, index) => getCharacterKey(character) === updatedKey ? buildCharacterState({ ...character, ...updated }, character, maps, index) : character);
+          const next = stabilizeCharacterRows(nextRows, activeCharacter, maps);
           if (next.length > 0) writeCachedSdCharacters(next);
           return next;
         });
@@ -798,7 +824,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
       try {
         const incoming = await fetchCharactersWithFallback();
         setCharacters((prev) => {
-          const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps);
+          const fallbackRows = prev.length > 0 ? prev : mergeCharacterStates([], readCachedSdCharacters(), maps, activeCharacter);
           const sourceRows = incoming.length > 0 || fallbackRows.length === 0 ? incoming : fallbackRows;
           const next = stabilizeCharacterRows(mergeCharacterStates([], sourceRows, maps), activeCharacter, maps);
           if (next.length > 0) writeCachedSdCharacters(next);
@@ -855,7 +881,6 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!nextId || nextId === activeMapId) return;
     const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
     setActiveMapId(nextId);
-    const activeKey = getCharacterKey(activeCharacter);
     const movedCharacter = {
       ...activeCharacter,
       currentMap: nextId,
@@ -866,7 +891,15 @@ export default function SDPage({ activeCharacter, design, theme }) {
       waitMs: 1700,
       moveCooldownMs: rand(4600, 7600),
     };
-    setCharacters((prev) => stabilizeCharacterRows(dedupeCharacters(prev).map((character) => getCharacterKey(character) === activeKey ? { ...character, ...movedCharacter } : character), movedCharacter, maps));
+    setCharacters((prev) => {
+      const baseRows = dedupeCharacters(prev).filter((character) => !matchesActiveCharacter(character, activeCharacter));
+      const next = stabilizeCharacterRows([...baseRows, movedCharacter], movedCharacter, maps);
+      if (next.length > 0) {
+        writeCachedSdCharacters(next);
+        persistCharacterPositions(next);
+      }
+      return next;
+    });
     syncActiveCharacterToServer(movedCharacter);
     if (activeCharacter?.id) {
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: movedCharacter } }));
