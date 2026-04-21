@@ -103,6 +103,31 @@ function findStateByAliases(source, character) {
   return null;
 }
 
+function buildVisualStateFromServer(character, prev, savedState) {
+  const remoteMap = String(character?.currentMap || savedState?.currentMap || "").trim();
+  const prevMap = String(prev?.currentMap || "").trim();
+  const sameMap = !!remoteMap && !!prevMap && remoteMap === prevMap;
+  const prevX = Number(prev?.x);
+  const prevY = Number(prev?.y);
+  const remoteX = Number(character?.x);
+  const remoteY = Number(character?.y);
+  const hasPrevPosition = Number.isFinite(prevX) && Number.isFinite(prevY);
+  const hasRemotePosition = Number.isFinite(remoteX) && Number.isFinite(remoteY);
+  const drift = hasPrevPosition && hasRemotePosition ? Math.hypot(remoteX - prevX, remoteY - prevY) : Number.POSITIVE_INFINITY;
+  const keepPrevPosition = sameMap && hasPrevPosition && (!hasRemotePosition || drift < 22);
+
+  return {
+    ...character,
+    x: keepPrevPosition ? prevX : character?.x,
+    y: keepPrevPosition ? prevY : character?.y,
+    dx: typeof character?.dx === "number" ? character.dx : prev?.dx,
+    dy: typeof character?.dy === "number" ? character.dy : prev?.dy,
+    waitMs: typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs,
+    moveCooldownMs: typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs,
+    currentMap: remoteMap || character?.currentMap || prev?.currentMap || savedState?.currentMap || "",
+  };
+}
+
 function persistCharacterPositions(rows) {
   const safeRows = dedupeCharacters(rows || []);
   const payload = {};
@@ -134,19 +159,17 @@ function mergeCharacterStates(prevList, freshList, maps, activeCharacter = null)
     const key = getCharacterKey(character);
     const prev = prevById[key] || findStateByAliases(prevAliasMap, character);
     const savedState = findStateByAliases(saved, character) || saved[key] || null;
-    const preferPrev = activeCharacter && matchesActiveCharacter(character, activeCharacter);
-    const fallbackState = preferPrev
-      ? (prev || savedState)
-      : {
-          x: typeof character?.x === "number" ? undefined : savedState?.x,
-          y: typeof character?.y === "number" ? undefined : savedState?.y,
-          dx: typeof character?.dx === "number" ? undefined : savedState?.dx,
-          dy: typeof character?.dy === "number" ? undefined : savedState?.dy,
-          waitMs: typeof character?.waitMs === "number" ? undefined : savedState?.waitMs,
-          moveCooldownMs: typeof character?.moveCooldownMs === "number" ? undefined : savedState?.moveCooldownMs,
-          currentMap: character?.currentMap || savedState?.currentMap,
-        };
-    return buildCharacterState(character, fallbackState, maps, index);
+    const visualSource = buildVisualStateFromServer(character, prev, savedState);
+    const fallbackState = {
+      x: typeof visualSource?.x === "number" ? visualSource.x : savedState?.x,
+      y: typeof visualSource?.y === "number" ? visualSource.y : savedState?.y,
+      dx: typeof visualSource?.dx === "number" ? visualSource.dx : savedState?.dx,
+      dy: typeof visualSource?.dy === "number" ? visualSource.dy : savedState?.dy,
+      waitMs: typeof visualSource?.waitMs === "number" ? visualSource.waitMs : savedState?.waitMs,
+      moveCooldownMs: typeof visualSource?.moveCooldownMs === "number" ? visualSource.moveCooldownMs : savedState?.moveCooldownMs,
+      currentMap: visualSource?.currentMap || savedState?.currentMap,
+    };
+    return buildCharacterState(visualSource, fallbackState, maps, index);
   });
 }
 
@@ -178,6 +201,8 @@ const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 const SD_ACTIVE_MAP_KEY = "plc-sd-active-map";
 const SD_MAP_CONFIG_CACHE_KEY = "plc-sd-map-config";
+const SD_POSITIONS_KEY = "plc-sd-positions";
+const SD_CHARACTERS_KEY = SD_CHARACTER_CACHE_KEY;
 
 function readCachedMapConfig() {
   try {
@@ -442,6 +467,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const charactersRef = useRef(characters);
   const activeMapRef = useRef(activeMapId);
   const quotesRef = useRef(quotes);
+  const activeCharacterMapRef = useRef("");
+  const activeMapFollowLockRef = useRef(false);
   const mapRoot = remoteMapRoot || design?.siteContent?.maps || {};
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
   const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
@@ -758,6 +785,16 @@ export default function SDPage({ activeCharacter, design, theme }) {
     if (!activeCharacter) return null;
     return stableCharacters.find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
   }, [stableCharacters, activeCharacter]);
+  useEffect(() => {
+    const nextMapId = String(canonicalActiveCharacter?.currentMap || "").trim();
+    const prevMapId = String(activeCharacterMapRef.current || "").trim();
+    activeCharacterMapRef.current = nextMapId;
+    if (!nextMapId || !prevMapId || nextMapId === prevMapId) return;
+    if (activeMapFollowLockRef.current) return;
+    if (String(activeMapRef.current || "") !== prevMapId) return;
+    if (!maps.some((map) => String(map.id) === nextMapId)) return;
+    setActiveMapId((current) => (String(current || "") === prevMapId ? nextMapId : current));
+  }, [canonicalActiveCharacter?.currentMap, maps]);
   const mapCharacters = useMemo(() => {
     const targetMapId = String(currentMap?.id || "");
     return stableCharacters.filter((character) => {
@@ -775,31 +812,11 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
     if (!nextId || nextId === activeMapId) return;
-    const spawn = spawnFromEdge(dir === "left" ? "right" : dir === "right" ? "left" : dir === "up" ? "down" : "up");
+    activeMapFollowLockRef.current = true;
     setActiveMapId(nextId);
-    const movedCharacter = {
-      ...activeCharacter,
-      currentMap: nextId,
-      x: spawn.x,
-      y: spawn.y,
-      dx: spawn.dx * 0.72,
-      dy: spawn.dy * 0.72,
-      waitMs: 1700,
-      moveCooldownMs: rand(4600, 7600),
-    };
-    setCharacters((prev) => {
-      const baseRows = dedupeCharacters(prev).filter((character) => !matchesActiveCharacter(character, activeCharacter));
-      const next = stabilizeCharacterRows([...baseRows, movedCharacter], movedCharacter, maps);
-      if (next.length > 0) {
-        writeCachedSdCharacters(next);
-        persistCharacterPositions(next);
-      }
-      return next;
-    });
-    syncActiveCharacterToServer(movedCharacter);
-    if (activeCharacter?.id) {
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: movedCharacter } }));
-    }
+    window.setTimeout(() => {
+      activeMapFollowLockRef.current = false;
+    }, 1200);
   };
 
   return (
