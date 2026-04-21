@@ -476,8 +476,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
   };
 
   useEffect(() => {
-    charactersRef.current = characters;
-  }, [characters]);
+    charactersRef.current = stabilizeCharacterRows(characters, activeCharacter, maps);
+  }, [characters, activeCharacter, maps]);
 
   useEffect(() => {
     activeMapRef.current = activeMapId;
@@ -638,7 +638,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     const quoteTimer = setInterval(() => {
       const now = Date.now();
-      const visible = dedupeCharacters(charactersRef.current || [])
+      const visible = stabilizeCharacterRows(charactersRef.current || [], activeCharacter, maps)
         .filter((character) => String(character?.currentMap || maps[0]?.id || "") === String(activeMapRef.current || ""));
 
       setQuotes((prev) => {
@@ -746,36 +746,24 @@ export default function SDPage({ activeCharacter, design, theme }) {
   }, [activeMapId]);
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
+  const stableCharacters = useMemo(() => stabilizeCharacterRows(characters, activeCharacter, maps), [characters, activeCharacter, maps]);
   const canonicalActiveCharacter = useMemo(() => {
     if (!activeCharacter) return null;
-    return dedupeCharacters(characters).find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
-  }, [characters, activeCharacter]);
+    return stableCharacters.find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
+  }, [stableCharacters, activeCharacter]);
   const mapCharacters = useMemo(() => {
     const targetMapId = String(currentMap?.id || "");
-    const seen = new Set();
-    let activeShown = false;
-    return characters.filter((character) => {
+    return stableCharacters.filter((character) => {
       if (String(character?.currentMap || "") !== targetMapId) return false;
-      const key = getCharacterKey(character);
-      if (!key || seen.has(key)) return false;
       if (activeCharacter && matchesActiveCharacter(character, activeCharacter)) {
         if (!canonicalActiveCharacter) return false;
         const canonicalKey = getCharacterKey(canonicalActiveCharacter);
-        const canonicalMapId = String(canonicalActiveCharacter?.currentMap || "");
-        if (!canonicalKey || key !== canonicalKey) return false;
-        if (canonicalMapId && canonicalMapId !== targetMapId) return false;
-        if (activeShown) return false;
-        activeShown = true;
+        const currentKey = getCharacterKey(character);
+        return !!canonicalKey && canonicalKey === currentKey;
       }
-      if (activeCharacter && !matchesActiveCharacter(character, activeCharacter)) {
-        const sameName = normalizeKeyPart(character?.name) && normalizeKeyPart(character?.name) === normalizeKeyPart(activeCharacter?.name);
-        const sameId = normalizeKeyPart(character?.id) && normalizeKeyPart(character?.id) === normalizeKeyPart(activeCharacter?.id);
-        if ((sameName || sameId) && activeShown) return false;
-      }
-      seen.add(key);
       return true;
     });
-  }, [characters, currentMap, activeCharacter, canonicalActiveCharacter]);
+  }, [stableCharacters, currentMap, activeCharacter, canonicalActiveCharacter]);
   const availableDirs = currentMap?.neighbors || {};
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
