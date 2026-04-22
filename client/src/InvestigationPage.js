@@ -231,7 +231,6 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
         participantStates: JSON.parse(JSON.stringify(playbackSource.participantStates || {})),
         battle: playbackSource.battle ? JSON.parse(JSON.stringify(playbackSource.battle)) : null,
       });
-      setBattlePlaybackLocked(true);
       setStagedBattleLogs([]);
     } else {
       playbackSourceRef.current = null;
@@ -354,7 +353,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       setNowTick(Date.now());
     };
     tick();
-    const timer = window.setInterval(tick, battleActive ? 34 : 140);
+    const timer = window.setInterval(tick, battleActive ? 24 : 140);
     document.addEventListener("visibilitychange", tick);
     return () => {
       window.clearInterval(timer);
@@ -942,7 +941,7 @@ useEffect(() => {
     const visibleEntries = stagedBattleLogs.filter((entry) => {
       if (isBattlePhaseHeader(entry)) return false;
       const start = Number(entry?.appearedAt || 0);
-      const end = Math.max(start, Number(entry?.snapshotAt || 0)) + 260;
+      const end = Math.max(start, Number(entry?.snapshotAt || 0)) + 420;
       return nowTick >= start && nowTick <= end;
     });
     return visibleEntries.length ? visibleEntries[visibleEntries.length - 1] : null;
@@ -955,7 +954,7 @@ useEffect(() => {
     ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...playbackState.battle } }
     : currentNode;
   const showBanner = !!investigation?.eventBanner && Number(investigation?.eventBannerUntil || 0) > nowTick;
-  const pendingActions = pendingActionsEarly || {};
+  const pendingActions = battlePlaybackLocked ? {} : (pendingActionsEarly || {});
   const aliveParticipants = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) > 0);
   const spectators = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) <= 0);
   const leaderDown = leaders.some((name) => Number(participantStates[name]?.hp || 0) <= 0);
@@ -966,13 +965,15 @@ useEffect(() => {
     : BATTLE_TURN_LIMIT_MS;
   const battleTimeoutReached = battleActive && battleTurnRemainingMs <= 0;
   const battleReadyCount = aliveParticipants.filter((participant) => !!pendingActions?.[participant.name]).length;
-  const battlePhaseLabel = getBattlePhaseText({
-    battleActive,
-    pendingReward,
-    readyCount: battleReadyCount,
-    aliveCount: aliveParticipants.length,
-    endedReadonly,
-  });
+  const battlePhaseLabel = battlePlaybackLocked
+    ? "행동 연출"
+    : getBattlePhaseText({
+        battleActive,
+        pendingReward,
+        readyCount: battleReadyCount,
+        aliveCount: aliveParticipants.length,
+        endedReadonly,
+      });
   const battleSkillOptions = Array.isArray(character?.skills) && character.skills.length > 0
     ? character.skills.map((skill) => {
         const normalized = typeof skill === "string" ? { key: skill, name: skill } : skill;
@@ -1075,7 +1076,6 @@ useEffect(() => {
     setMyBattleAction("");
     setActionPicker("");
     setEditingSavedAction(true);
-    playbackSourceRef.current = null;
     const visibleEntries = rounds.filter((entry) => entry?.text);
     const now = Date.now();
     const baseParticipantStates = JSON.parse(JSON.stringify(playbackSourceRef.current?.participantStates || investigation?.participantStates || {}));
@@ -1120,7 +1120,12 @@ useEffect(() => {
       setBattlePlaybackLocked(false);
       battlePlaybackLockStartedRef.current = 0;
       setTimeout(() => setStagedBattleLogs([]), 90);
-      if (queuedState) applyInvestigation(queuedState);
+      if (queuedState) {
+        applyInvestigation(queuedState);
+      } else if (postPlaybackRefreshRef.current) {
+        postPlaybackRefreshRef.current = false;
+        loadInvestigation();
+      }
     }, playbackDuration);
     return () => {
       snapshotTimers.forEach((timer) => clearTimeout(timer));
@@ -1149,31 +1154,14 @@ useEffect(() => {
           const queuedRoundKey = getBattleRoundKey(queuedState);
           if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) loadInvestigation();
           else applyInvestigation(queuedState);
+        } else if (postPlaybackRefreshRef.current) {
+          postPlaybackRefreshRef.current = false;
+          loadInvestigation();
         }
       }
     }, 160);
     return () => clearInterval(timer);
   }, [battlePlaybackLocked, stagedBattleLogs]);
-
-  useEffect(() => {
-    if (!battlePlaybackLocked) return undefined;
-    if (stagedBattleLogs.length > 0) return undefined;
-    const timer = setTimeout(() => {
-      battlePlaybackLockStartedRef.current = 0;
-      setBattlePlaybackLocked(false);
-      const queuedState = queuedStateUpdateRef.current;
-      queuedStateUpdateRef.current = null;
-      if (queuedState) {
-        const queuedRoundKey = getBattleRoundKey(queuedState);
-        if (queuedRoundKey && queuedRoundKey === handledBattleRoundKeyRef.current) loadInvestigation();
-        else applyInvestigation(queuedState);
-      } else if (postPlaybackRefreshRef.current) {
-        postPlaybackRefreshRef.current = false;
-        loadInvestigation();
-      }
-    }, 320);
-    return () => clearTimeout(timer);
-  }, [battlePlaybackLocked, stagedBattleLogs.length, previewMode]);
 
   useEffect(() => {
     if (battleActive) return;
@@ -2590,7 +2578,7 @@ function BattlePartyStrip({ participants, participantStates, pendingActions, rou
             <div style={{ marginTop: "6px", height: "8px", borderRadius: "999px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}><div style={{ width: `${hpPercent}%`, height: "100%", background: "linear-gradient(90deg, #93c5fd, #38bdf8)" }} /></div>
             <div style={{ marginTop: "6px", fontSize: "11px", color: "#e2e8f0" }}>HP {hp}/{maxHp}</div>
             {dead ? <div style={{ marginTop: "6px", fontSize: "11px", color: "#fecaca", fontWeight: 800 }}>관전</div> : null}
-            {!dead ? <div style={{ marginTop: 4, fontSize: 11, color: pendingActions?.[participant.name] ? "#bae6fd" : battlePlaybackLocked ? "#fef08a" : "#cbd5e1", fontWeight: 900 }}>{pendingActions?.[participant.name] ? "선택 완료" : battlePlaybackLocked ? "행동 진행 중" : "대기 중"}</div> : null}
+            {!dead ? <div style={{ marginTop: 4, fontSize: 11, color: pendingActions?.[participant.name] ? "#bae6fd" : battlePlaybackLocked ? "#fef08a" : "#cbd5e1", fontWeight: 900 }}>{battlePlaybackLocked ? "행동 연출 중" : pendingActions?.[participant.name] ? "선택 완료" : "대기 중"}</div> : null}
             {effect ? <div style={{ marginTop: 4, fontSize: 11, color: visual.badgeColor, fontWeight: 900, textShadow: "0 0 10px rgba(255,255,255,0.16)" }}>{visual.badge}</div> : null}
           </div>
         );
