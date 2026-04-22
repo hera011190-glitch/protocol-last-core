@@ -346,7 +346,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       setNowTick(Date.now());
     };
     tick();
-    const timer = window.setInterval(tick, battleActive ? 80 : 140);
+    const timer = window.setInterval(tick, battleActive ? 34 : 140);
     document.addEventListener("visibilitychange", tick);
     return () => {
       window.clearInterval(timer);
@@ -929,6 +929,19 @@ useEffect(() => {
   const explorationLocked = blockByReward || blockByNpc || endedReadonly;
   const participantStates = investigation?.participantStates || {};
   const displayLogs = liveDisplayLogs;
+  const activeBattlePlaybackEntry = useMemo(() => {
+    if (!(battlePlaybackLocked && stagedBattleLogs.length > 0)) return null;
+    const visibleEntries = stagedBattleLogs.filter((entry) => {
+      if (isBattlePhaseHeader(entry)) return false;
+      const start = Number(entry?.appearedAt || 0);
+      const end = Math.max(start, Number(entry?.snapshotAt || 0)) + 260;
+      return nowTick >= start && nowTick <= end;
+    });
+    return visibleEntries.length ? visibleEntries[visibleEntries.length - 1] : null;
+  }, [battlePlaybackLocked, stagedBattleLogs, nowTick]);
+  const animatedBattleRounds = battlePlaybackLocked
+    ? (activeBattlePlaybackEntry ? [activeBattlePlaybackEntry] : [])
+    : stagedBattleLogs;
   const displayParticipantStates = playbackState?.participantStates || participantStates;
   const displayCurrentNode = playbackState?.battle
     ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...playbackState.battle } }
@@ -1752,9 +1765,9 @@ useEffect(() => {
                 ) : (
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "0 18px", borderRadius: 0, background: "transparent", border: "none", boxShadow: "none", backdropFilter: "none", zIndex: 1045 }}>
-                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
+                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={animatedBattleRounds} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
                       <div style={{ marginTop: 12 }}>
-                        <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
+                        <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={animatedBattleRounds} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                       </div>
                     </div>
                     <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
