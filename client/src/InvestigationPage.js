@@ -615,6 +615,7 @@ useEffect(() => {
   const sendAdminNotice = async () => {
     const text = input.trim();
     if (!isAdmin || !text) return;
+    setInput("");
     const message = {
       name: "운영",
       text,
@@ -632,20 +633,21 @@ useEffect(() => {
       alert(data.message || "공지 전송에 실패했습니다.");
       return;
     }
-    setInput("");
     setStickToBottom(true);
     loadChats();
   };
 
   const sendChat = async () => {
     if (endedReadonly) return;
-    if (!input.trim()) return;
+    const text = input.trim();
+    if (!text) return;
     if (!character) return;
     if (!canSpeak) {
       alert(muted ? "현재 채팅할 수 없는 상태입니다." : "HP가 0인 상태에서는 채팅할 수 없습니다.");
       return;
     }
-    const message = { name: character.name, text: input, image: character.image || "", createdAt: new Date().toISOString(), isAdminNotice: false };
+    setInput("");
+    const message = { name: character.name, text, image: character.image || "", createdAt: new Date().toISOString(), isAdminNotice: false };
     const res = await apiFetch("/investigationChat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -656,7 +658,6 @@ useEffect(() => {
       alert(data.message || "채팅 전송에 실패했습니다.");
       return;
     }
-    setInput("");
     setStickToBottom(true);
     loadChats();
   };
@@ -892,6 +893,7 @@ useEffect(() => {
   const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
   const completedProgressCount = visitedNodeCount + completedInvestigationActionCount;
   const overallProgressPercent = totalProgressCount > 0 ? Math.min(100, Math.round((completedProgressCount / totalProgressCount) * 100)) : 0;
+  const progressDisplayPercent = Math.max(visitProgressPercent, overallProgressPercent);
   const foundItems = Array.isArray(investigation?.foundItems) ? investigation.foundItems : [];
   const foundNPCs = Array.isArray(investigation?.foundNPCs) ? investigation.foundNPCs : [];
   const rewards = Array.isArray(investigation?.rewards) ? investigation.rewards : [];
@@ -1652,7 +1654,7 @@ useEffect(() => {
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", position: "absolute", left: "50%", top: 16, transform: "translateX(-50%)", justifyContent: "center", maxWidth: isDaily ? "calc(100% - 260px)" : `calc(100% - ${CENTER_TOP_CHIP_RESERVED_WIDTH})`, zIndex: 1050 }}>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>현재 위치: {currentNode?.name || "-"}</div>
-                    <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {overallProgressPercent}%</div>
+                    <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {progressDisplayPercent}%</div>
                     {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {investigation.battleTurn || 1}</div> : null}
                     {battleActive ? (
                       <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12, color: battleTimeoutReached ? "#fecaca" : "#fef3c7" }}>
@@ -1707,7 +1709,7 @@ useEffect(() => {
                   </div>
                 ) : (
                   <>
-                    <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
+                    <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "0 18px", borderRadius: 0, background: "transparent", border: "none", boxShadow: "none", backdropFilter: "none", zIndex: 1045 }}>
                       <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
                       <div style={{ marginTop: 12 }}>
                         <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
@@ -1813,7 +1815,7 @@ useEffect(() => {
                               </div>
                             )}
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontWeight: 800, marginBottom: "4px" }}>{msg.isAdminNotice ? "[운영 공지]" : `${msg.name}:`}</div>
+                              <div style={{ fontWeight: 800, marginBottom: "4px" }}>{msg.isAdminNotice ? "[운영 공지]" : `${msg.name}`}</div>
                               <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{msg.text}</div>
                             </div>
                           </div>
