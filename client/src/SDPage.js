@@ -146,35 +146,40 @@ function findStateByAliases(source, character) {
 }
 
 function buildVisualStateFromServer(character, prev, savedState) {
-  const now = Date.now();
   const remoteMap = String(character?.currentMap || savedState?.currentMap || "").trim();
   const prevMap = String(prev?.currentMap || "").trim();
-  const sameMap = !!remoteMap && !!prevMap && remoteMap === prevMap;
   const prevX = Number(prev?.x);
   const prevY = Number(prev?.y);
+  const hasPrevPosition = Number.isFinite(prevX) && Number.isFinite(prevY);
+
+  if (prev && (hasPrevPosition || prevMap)) {
+    return {
+      ...character,
+      x: hasPrevPosition ? prev?.x : character?.x,
+      y: hasPrevPosition ? prev?.y : character?.y,
+      dx: typeof prev?.dx === "number" ? prev.dx : character?.dx,
+      dy: typeof prev?.dy === "number" ? prev.dy : character?.dy,
+      waitMs: typeof prev?.waitMs === "number" ? prev.waitMs : character?.waitMs,
+      moveCooldownMs: typeof prev?.moveCooldownMs === "number" ? prev.moveCooldownMs : character?.moveCooldownMs,
+      currentMap: prev?.currentMap || remoteMap || character?.currentMap || savedState?.currentMap || "",
+      localMapLockUntil: Number(prev?.localMapLockUntil || 0),
+    };
+  }
+
   const remoteX = Number(character?.x);
   const remoteY = Number(character?.y);
-  const hasPrevPosition = Number.isFinite(prevX) && Number.isFinite(prevY);
   const hasRemotePosition = Number.isFinite(remoteX) && Number.isFinite(remoteY);
-  const drift = hasPrevPosition && hasRemotePosition ? Math.hypot(remoteX - prevX, remoteY - prevY) : Number.POSITIVE_INFINITY;
-  const localMapLockUntil = Number(prev?.localMapLockUntil || 0);
-  const keepLockedLocalMap = localMapLockUntil > now;
-  const canBlendPosition = !keepLockedLocalMap && sameMap && hasPrevPosition && hasRemotePosition && drift < 14;
-  const prevDx = Number(prev?.dx);
-  const prevDy = Number(prev?.dy);
-  const hasPrevMotion = Number.isFinite(prevDx) && Number.isFinite(prevDy) && (Math.abs(prevDx) + Math.abs(prevDy) > 0.12);
-  const keepLocalMotion = keepLockedLocalMap || (sameMap && (hasPrevMotion || Number(prev?.waitMs || 0) > 0 || Number(prev?.moveCooldownMs || 0) > 0));
 
   return {
     ...character,
-    x: keepLocalMotion ? prev?.x : (keepLockedLocalMap ? prev?.x : (canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x))),
-    y: keepLocalMotion ? prev?.y : (keepLockedLocalMap ? prev?.y : (canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y))),
-    dx: keepLocalMotion ? prev?.dx : (typeof character?.dx === "number" ? character.dx : prev?.dx),
-    dy: keepLocalMotion ? prev?.dy : (typeof character?.dy === "number" ? character.dy : prev?.dy),
-    waitMs: keepLocalMotion ? prev?.waitMs : (typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs),
-    moveCooldownMs: keepLocalMotion ? prev?.moveCooldownMs : (typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs),
-    currentMap: keepLockedLocalMap ? (prev?.currentMap || remoteMap || character?.currentMap || savedState?.currentMap || "") : (remoteMap || character?.currentMap || prev?.currentMap || savedState?.currentMap || ""),
-    localMapLockUntil: keepLockedLocalMap ? localMapLockUntil : Number(character?.localMapLockUntil || prev?.localMapLockUntil || 0),
+    x: hasRemotePosition ? remoteX : character?.x,
+    y: hasRemotePosition ? remoteY : character?.y,
+    dx: typeof character?.dx === "number" ? character.dx : prev?.dx,
+    dy: typeof character?.dy === "number" ? character.dy : prev?.dy,
+    waitMs: typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs,
+    moveCooldownMs: typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs,
+    currentMap: remoteMap || character?.currentMap || prev?.currentMap || savedState?.currentMap || "",
+    localMapLockUntil: Number(character?.localMapLockUntil || prev?.localMapLockUntil || 0),
   };
 }
 
