@@ -36,6 +36,9 @@ function CharacterCard({ character, onClick, theme }) {
       onClick={onClick}
       theme={theme}
       isOnline={!!character.isOnline}
+      rankFontSize={10}
+      nameFontSize={14.5}
+      oneLineFontSize={8.8}
     />
   );
 }

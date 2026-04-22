@@ -64,6 +64,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
   const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
   const relations = Array.isArray(character?.relations) ? character.relations : [];
   const skills = Array.isArray(character?.skills) ? character.skills : [];
+  const skillNames = skills.map((skill) => (typeof skill === "string" ? skill : (skill?.name || skill?.key || ""))).filter(Boolean);
   const itemNames = Array.isArray(character?.items) ? character.items : [];
   const oneLine = String(character?.oneLine || "한마디가 없습니다.").trim();
   const stats = character?.stats || {};
@@ -237,8 +238,8 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, minHeight: 0 }}>
               <ScrollPanel title="보유 스킬" minHeight={320}>
-                <div style={{ color: "#4f7390", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
-                  {skills.length > 0 ? skills.map((skill) => (typeof skill === "string" ? `• ${skill}` : `• ${skill.name || skill.key}`)).join("\n") : "보유 스킬이 없습니다."}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignContent: "start" }}>
+                  {skillNames.length > 0 ? skillNames.map((skill, index) => <ItemChip key={`${skill}-${index}`}>{skill}</ItemChip>) : <div style={{ color: "#6a87a3" }}>보유 스킬이 없습니다.</div>}
                 </div>
               </ScrollPanel>
               <ScrollPanel title="보유 아이템" minHeight={320}>
