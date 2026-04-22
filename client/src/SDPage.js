@@ -146,6 +146,7 @@ function findStateByAliases(source, character) {
 }
 
 function buildVisualStateFromServer(character, prev, savedState) {
+  const now = Date.now();
   const remoteMap = String(character?.currentMap || savedState?.currentMap || "").trim();
   const prevMap = String(prev?.currentMap || "").trim();
   const sameMap = !!remoteMap && !!prevMap && remoteMap === prevMap;
@@ -156,21 +157,24 @@ function buildVisualStateFromServer(character, prev, savedState) {
   const hasPrevPosition = Number.isFinite(prevX) && Number.isFinite(prevY);
   const hasRemotePosition = Number.isFinite(remoteX) && Number.isFinite(remoteY);
   const drift = hasPrevPosition && hasRemotePosition ? Math.hypot(remoteX - prevX, remoteY - prevY) : Number.POSITIVE_INFINITY;
-  const canBlendPosition = sameMap && hasPrevPosition && hasRemotePosition && drift < 14;
+  const localMapLockUntil = Number(prev?.localMapLockUntil || 0);
+  const keepLockedLocalMap = localMapLockUntil > now;
+  const canBlendPosition = !keepLockedLocalMap && sameMap && hasPrevPosition && hasRemotePosition && drift < 14;
   const prevDx = Number(prev?.dx);
   const prevDy = Number(prev?.dy);
   const hasPrevMotion = Number.isFinite(prevDx) && Number.isFinite(prevDy) && (Math.abs(prevDx) + Math.abs(prevDy) > 0.12);
-  const keepLocalMotion = sameMap && (hasPrevMotion || Number(prev?.waitMs || 0) > 0 || Number(prev?.moveCooldownMs || 0) > 0);
+  const keepLocalMotion = keepLockedLocalMap || (sameMap && (hasPrevMotion || Number(prev?.waitMs || 0) > 0 || Number(prev?.moveCooldownMs || 0) > 0));
 
   return {
     ...character,
-    x: canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x),
-    y: canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y),
+    x: keepLockedLocalMap ? prev?.x : (canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x)),
+    y: keepLockedLocalMap ? prev?.y : (canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y)),
     dx: keepLocalMotion ? prev?.dx : (typeof character?.dx === "number" ? character.dx : prev?.dx),
     dy: keepLocalMotion ? prev?.dy : (typeof character?.dy === "number" ? character.dy : prev?.dy),
     waitMs: keepLocalMotion ? prev?.waitMs : (typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs),
     moveCooldownMs: keepLocalMotion ? prev?.moveCooldownMs : (typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs),
-    currentMap: remoteMap || character?.currentMap || prev?.currentMap || savedState?.currentMap || "",
+    currentMap: keepLockedLocalMap ? (prev?.currentMap || remoteMap || character?.currentMap || savedState?.currentMap || "") : (remoteMap || character?.currentMap || prev?.currentMap || savedState?.currentMap || ""),
+    localMapLockUntil: keepLockedLocalMap ? localMapLockUntil : Number(character?.localMapLockUntil || prev?.localMapLockUntil || 0),
   };
 }
 
@@ -727,6 +731,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
               dx = -Math.max(0.62, Math.abs(dx || rand(0.72, 1.12)));
               dy = clamp(dy || rand(-0.30, 0.30), -0.54, 0.54);
               nextCooldownMs = Math.round(rand(3200, 6000));
+              character = { ...character, localMapLockUntil: Date.now() + 4200 };
             } else {
               dx *= -1;
               nx = clamp(nx, 4, 92);
@@ -740,6 +745,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
               dx = Math.max(0.62, Math.abs(dx || rand(0.72, 1.12)));
               dy = clamp(dy || rand(-0.30, 0.30), -0.54, 0.54);
               nextCooldownMs = Math.round(rand(3200, 6000));
+              character = { ...character, localMapLockUntil: Date.now() + 4200 };
             } else {
               dx *= -1;
               nx = clamp(nx, 4, 92);
@@ -755,6 +761,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
               dx = clamp(dx || rand(-0.30, 0.30), -0.54, 0.54);
               dy = -Math.max(0.62, Math.abs(dy || rand(0.72, 1.12)));
               nextCooldownMs = Math.round(rand(3200, 6000));
+              character = { ...character, localMapLockUntil: Date.now() + 4200 };
             } else {
               dy *= -1;
               ny = clamp(ny, 8, 78);
@@ -768,13 +775,14 @@ export default function SDPage({ activeCharacter, design, theme }) {
               dx = clamp(dx || rand(-0.30, 0.30), -0.54, 0.54);
               dy = Math.max(0.62, Math.abs(dy || rand(0.72, 1.12)));
               nextCooldownMs = Math.round(rand(3200, 6000));
+              character = { ...character, localMapLockUntil: Date.now() + 4200 };
             } else {
               dy *= -1;
               ny = clamp(ny, 8, 78);
             }
           }
 
-          return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs: nextCooldownMs, currentMap };
+          return { ...character, x: clamp(nx, 4, 92), y: clamp(ny, 8, 78), dx, dy, waitMs, moveCooldownMs: nextCooldownMs, currentMap, localMapLockUntil: Number(character?.localMapLockUntil || 0) };
         }), activeCharacter, maps));
       }
 
