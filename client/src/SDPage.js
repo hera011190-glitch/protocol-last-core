@@ -157,15 +157,19 @@ function buildVisualStateFromServer(character, prev, savedState) {
   const hasRemotePosition = Number.isFinite(remoteX) && Number.isFinite(remoteY);
   const drift = hasPrevPosition && hasRemotePosition ? Math.hypot(remoteX - prevX, remoteY - prevY) : Number.POSITIVE_INFINITY;
   const canBlendPosition = sameMap && hasPrevPosition && hasRemotePosition && drift < 14;
+  const prevDx = Number(prev?.dx);
+  const prevDy = Number(prev?.dy);
+  const hasPrevMotion = Number.isFinite(prevDx) && Number.isFinite(prevDy) && (Math.abs(prevDx) + Math.abs(prevDy) > 0.12);
+  const keepLocalMotion = sameMap && (hasPrevMotion || Number(prev?.waitMs || 0) > 0 || Number(prev?.moveCooldownMs || 0) > 0);
 
   return {
     ...character,
     x: canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x),
     y: canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y),
-    dx: typeof character?.dx === "number" ? character.dx : prev?.dx,
-    dy: typeof character?.dy === "number" ? character.dy : prev?.dy,
-    waitMs: typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs,
-    moveCooldownMs: typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs,
+    dx: keepLocalMotion ? prev?.dx : (typeof character?.dx === "number" ? character.dx : prev?.dx),
+    dy: keepLocalMotion ? prev?.dy : (typeof character?.dy === "number" ? character.dy : prev?.dy),
+    waitMs: keepLocalMotion ? prev?.waitMs : (typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs),
+    moveCooldownMs: keepLocalMotion ? prev?.moveCooldownMs : (typeof character?.moveCooldownMs === "number" ? character.moveCooldownMs : prev?.moveCooldownMs),
     currentMap: remoteMap || character?.currentMap || prev?.currentMap || savedState?.currentMap || "",
   };
 }
