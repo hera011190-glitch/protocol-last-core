@@ -1070,6 +1070,19 @@ useEffect(() => {
     });
     setPlaybackState({ active: true, participantStates: baseParticipantStates, battle: baseBattle });
     setStagedBattleLogs(scheduledEntries);
+    const snapshotTimers = scheduledEntries
+      .filter((entry) => entry?.snapshot && Number(entry?.snapshotAt || 0) > 0)
+      .map((entry) => setTimeout(() => {
+        setPlaybackState({
+          active: true,
+          participantStates: JSON.parse(JSON.stringify(entry.snapshot.participantStates || baseParticipantStates)),
+          battle: {
+            ...(JSON.parse(JSON.stringify(baseBattle || {})) || {}),
+            hp: Number(entry.snapshot.battleHp ?? baseBattle?.hp ?? 0),
+            maxHp: Number(entry.snapshot.battleMaxHp ?? baseBattle?.maxHp ?? baseBattle?.hp ?? 0),
+          },
+        });
+      }, Math.max(0, Number(entry.snapshotAt || 0) - now)));
     requestAnimationFrame(() => {
       if (logScrollRef.current && stickLogsToBottom) {
         logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
@@ -1077,7 +1090,7 @@ useEffect(() => {
     });
     battlePlaybackLockStartedRef.current = now;
     setBattlePlaybackLocked(true);
-    const playbackDuration = Math.max(720, cursor - now + 180);
+    const playbackDuration = Math.max(980, cursor - now + 240);
     const unlockTimer = setTimeout(() => {
       const queuedState = queuedStateUpdateRef.current;
       queuedStateUpdateRef.current = null;
@@ -1089,47 +1102,10 @@ useEffect(() => {
       if (queuedState) applyInvestigation(queuedState);
     }, playbackDuration);
     return () => {
+      snapshotTimers.forEach((timer) => clearTimeout(timer));
       clearTimeout(unlockTimer);
     };
   }, [battleActive, investigation?.battleTurn, investigation?.lastBattleRound, investigation?.sharedLogs, investigation?.participantStates, currentNode?.battle]);
-
-  useEffect(() => {
-    if (!battlePlaybackLocked || stagedBattleLogs.length === 0) return undefined;
-
-    const baseParticipantStates = JSON.parse(JSON.stringify(playbackSourceRef.current?.participantStates || investigation?.participantStates || {}));
-    const battleSource = playbackSourceRef.current?.battle || currentNode?.battle || null;
-    const baseBattle = battleSource ? JSON.parse(JSON.stringify(battleSource)) : null;
-
-    const syncPlaybackSnapshot = () => {
-      const now = Date.now();
-      const latestSnapshotEntry = [...stagedBattleLogs]
-        .reverse()
-        .find((entry) => entry?.snapshot && Number(entry?.snapshotAt || 0) > 0 && Number(entry.snapshotAt) <= now);
-
-      if (!latestSnapshotEntry?.snapshot) {
-        setPlaybackState({
-          active: true,
-          participantStates: baseParticipantStates,
-          battle: baseBattle,
-        });
-        return;
-      }
-
-      setPlaybackState({
-        active: true,
-        participantStates: JSON.parse(JSON.stringify(latestSnapshotEntry.snapshot.participantStates || baseParticipantStates)),
-        battle: {
-          ...(JSON.parse(JSON.stringify(baseBattle || {})) || {}),
-          hp: Number(latestSnapshotEntry.snapshot.battleHp ?? baseBattle?.hp ?? 0),
-          maxHp: Number(latestSnapshotEntry.snapshot.battleMaxHp ?? baseBattle?.maxHp ?? baseBattle?.hp ?? 0),
-        },
-      });
-    };
-
-    syncPlaybackSnapshot();
-    const timer = setInterval(syncPlaybackSnapshot, 40);
-    return () => clearInterval(timer);
-  }, [battlePlaybackLocked, stagedBattleLogs, investigation?.participantStates, currentNode?.battle]);
 
   useEffect(() => {
     if (!battlePlaybackLocked) return undefined;
@@ -2164,7 +2140,7 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const recent = Array.isArray(rounds)
     ? rounds.filter((entry) => {
         const age = nowTick - Number(entry?.appearedAt || 0);
-        return age >= 0 && age < 2400;
+        return age >= 0 && age < 900;
       })
     : [];
 
@@ -2248,43 +2224,43 @@ function getBattlePlaybackTimings(entry, index = 0) {
   if (isBattlePhaseHeader(entry)) {
     return {
       isPhaseHeader: true,
-      beforeLog: index === 0 ? 70 : 120,
+      beforeLog: index === 0 ? 80 : 180,
       beforeSnapshot: 0,
-      totalAfterLog: 160,
+      totalAfterLog: 280,
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 180, totalAfterLog: 360 };
+    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 280, totalAfterLog: 560 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 160, totalAfterLog: 300 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 240, totalAfterLog: 500 };
   }
   if (["skill", "debuff", "drain"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 200, totalAfterLog: 420 };
+    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 320, totalAfterLog: 640 };
   }
   if (["guard", "shield", "buff"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 160, totalAfterLog: 300 };
+    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 220, totalAfterLog: 440 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 170, totalAfterLog: 320 };
+    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 260, totalAfterLog: 520 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: /회복/.test(text) ? 170 : 180, totalAfterLog: /회복/.test(text) ? 320 : 340 };
+    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: /회복/.test(text) ? 260 : 280, totalAfterLog: /회복/.test(text) ? 520 : 560 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 45, beforeSnapshot: 130, totalAfterLog: 240 };
+    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 180, totalAfterLog: 380 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 200, totalAfterLog: 380 };
+    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 320, totalAfterLog: 600 };
   }
-  return { isPhaseHeader: false, beforeLog: 50, beforeSnapshot: 160, totalAfterLog: 300 };
+  return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 240, totalAfterLog: 500 };
 }
 
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
   const recent = getRecentBattleEntry(name, rounds, state, nowTick);
   const effect = recent?.effect || "";
   const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : 0;
-  const duration = ({ damage: 1620, attack: 1420, skill: 1680, heal: 1440, item: 1460, guard: 1320, evade: 1180 })[effect] || 1320;
+  const duration = ({ damage: 760, attack: 620, skill: 820, heal: 700, item: 720, guard: 560, evade: 520 })[effect] || 620;
   const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : 1;
   const pulse = recent?.entry ? Math.sin(progress * Math.PI) : 0;
   const persistentGuard = effect === "guard" && !recent?.entry && !!state?.defending;
