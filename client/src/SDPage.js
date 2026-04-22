@@ -167,8 +167,8 @@ function buildVisualStateFromServer(character, prev, savedState) {
 
   return {
     ...character,
-    x: keepLockedLocalMap ? prev?.x : (canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x)),
-    y: keepLockedLocalMap ? prev?.y : (canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y)),
+    x: keepLocalMotion ? prev?.x : (keepLockedLocalMap ? prev?.x : (canBlendPosition ? prevX + ((remoteX - prevX) * 0.42) : (hasRemotePosition ? remoteX : character?.x))),
+    y: keepLocalMotion ? prev?.y : (keepLockedLocalMap ? prev?.y : (canBlendPosition ? prevY + ((remoteY - prevY) * 0.42) : (hasRemotePosition ? remoteY : character?.y))),
     dx: keepLocalMotion ? prev?.dx : (typeof character?.dx === "number" ? character.dx : prev?.dx),
     dy: keepLocalMotion ? prev?.dy : (typeof character?.dy === "number" ? character.dy : prev?.dy),
     waitMs: keepLocalMotion ? prev?.waitMs : (typeof character?.waitMs === "number" ? character.waitMs : prev?.waitMs),
