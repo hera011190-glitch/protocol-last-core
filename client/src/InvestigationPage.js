@@ -221,10 +221,18 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       const prevNodeId = investigation?.currentNodeId || currentNodeId || investigation?.data?.start || nodeId;
       const prevNode = investigation?.data?.nodes?.[prevNodeId] || null;
       const nextNode = data?.data?.nodes?.[nodeId] || null;
-      playbackSourceRef.current = {
+      const playbackSource = {
         participantStates: JSON.parse(JSON.stringify(investigation?.participantStates || data?.participantStates || {})),
         battle: JSON.parse(JSON.stringify(prevNode?.battle || nextNode?.battle || null)),
       };
+      playbackSourceRef.current = playbackSource;
+      setPlaybackState({
+        active: true,
+        participantStates: JSON.parse(JSON.stringify(playbackSource.participantStates || {})),
+        battle: playbackSource.battle ? JSON.parse(JSON.stringify(playbackSource.battle)) : null,
+      });
+      setBattlePlaybackLocked(true);
+      setStagedBattleLogs([]);
     } else {
       playbackSourceRef.current = null;
       queuedStateUpdateRef.current = null;
