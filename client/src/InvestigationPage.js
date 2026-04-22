@@ -185,9 +185,13 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const displayBattle = playbackState?.battle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
   const playbackBattleActive = !!playbackState?.battle;
   const battleActive = playbackBattleActive || (!investigation?.ended && !!currentNode?.battle);
-  const liveDisplayLogs = useMemo(() => (battlePlaybackLocked && stagedBattleLogs.length > 0
-    ? [...logs, ...stagedBattleLogs.map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }))]
-    : logs), [battlePlaybackLocked, stagedBattleLogs, logs]);
+  const liveDisplayLogs = useMemo(() => {
+    if (!(battlePlaybackLocked && stagedBattleLogs.length > 0)) return logs;
+    const visibleStagedLogs = stagedBattleLogs
+      .filter((entry) => Number(entry?.appearedAt || 0) <= nowTick)
+      .map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }));
+    return [...logs, ...visibleStagedLogs];
+  }, [battlePlaybackLocked, stagedBattleLogs, logs, nowTick]);
 
   const getBattleRoundKey = (source) => {
     const rounds = Array.isArray(source?.lastBattleRound) ? source.lastBattleRound : [];
@@ -603,20 +607,8 @@ useEffect(() => {
       setBattleTurnStartedAt(0);
       return;
     }
-    const turn = Math.max(1, Number(investigation?.battleTurn || 1));
-    const storageKey = `plc-battle-turn-start:${investigationId}:${turn}`;
-    let startedAt = 0;
-    try {
-      startedAt = Number(window.localStorage.getItem(storageKey) || 0);
-    } catch {}
-    if (!startedAt) {
-      startedAt = Date.now();
-      try {
-        window.localStorage.setItem(storageKey, String(startedAt));
-      } catch {}
-    }
-    setBattleTurnStartedAt(startedAt);
-  }, [previewMode, battleActive, investigationId, investigation?.battleTurn]);
+    setBattleTurnStartedAt(Date.now());
+  }, [previewMode, battleActive, investigationId, investigation?.battleTurn, currentNodeId]);
 
   useEffect(() => {
     battleTimeoutHandlingRef.current = "";
@@ -1065,20 +1057,19 @@ useEffect(() => {
     playbackSourceRef.current = null;
     const visibleEntries = rounds.filter((entry) => entry?.text);
     const now = Date.now();
-    const lastSnapshotEntry = [...visibleEntries].reverse().find((entry) => entry?.snapshot && !entry?.isPhaseHeader);
-    const finalParticipantStates = lastSnapshotEntry?.snapshot?.participantStates
-      ? JSON.parse(JSON.stringify(lastSnapshotEntry.snapshot.participantStates))
-      : JSON.parse(JSON.stringify(investigation?.participantStates || {}));
+    const baseParticipantStates = JSON.parse(JSON.stringify(playbackSourceRef.current?.participantStates || investigation?.participantStates || {}));
     const battleSource = playbackSourceRef.current?.battle || currentNode?.battle || null;
-    const finalBattle = lastSnapshotEntry?.snapshot
-      ? {
-          ...(JSON.parse(JSON.stringify(battleSource || {})) || {}),
-          hp: Number(lastSnapshotEntry.snapshot.battleHp ?? battleSource?.hp ?? 0),
-          maxHp: Number(lastSnapshotEntry.snapshot.battleMaxHp ?? battleSource?.maxHp ?? battleSource?.hp ?? 0),
-        }
-      : (battleSource ? JSON.parse(JSON.stringify(battleSource)) : null);
-    setPlaybackState({ active: true, participantStates: finalParticipantStates, battle: finalBattle });
-    setStagedBattleLogs(visibleEntries.map((entry, index) => ({ ...entry, appearedAt: now + index * 90 })));
+    const baseBattle = battleSource ? JSON.parse(JSON.stringify(battleSource)) : null;
+    let cursor = now;
+    const scheduledEntries = visibleEntries.map((entry, index) => {
+      const timings = getBattlePlaybackTimings(entry, index);
+      const appearedAt = cursor + Number(timings.beforeLog || 0);
+      const snapshotAt = entry?.snapshot ? appearedAt + Number(timings.beforeSnapshot || 0) : 0;
+      cursor = appearedAt + Number(timings.totalAfterLog || 0);
+      return { ...entry, appearedAt, snapshotAt };
+    });
+    setPlaybackState({ active: true, participantStates: baseParticipantStates, battle: baseBattle });
+    setStagedBattleLogs(scheduledEntries);
     requestAnimationFrame(() => {
       if (logScrollRef.current && stickLogsToBottom) {
         logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
@@ -1086,6 +1077,7 @@ useEffect(() => {
     });
     battlePlaybackLockStartedRef.current = now;
     setBattlePlaybackLocked(true);
+    const playbackDuration = Math.max(720, cursor - now + 180);
     const unlockTimer = setTimeout(() => {
       const queuedState = queuedStateUpdateRef.current;
       queuedStateUpdateRef.current = null;
@@ -1095,19 +1087,61 @@ useEffect(() => {
       battlePlaybackLockStartedRef.current = 0;
       setTimeout(() => setStagedBattleLogs([]), 90);
       if (queuedState) applyInvestigation(queuedState);
-    }, 520);
+    }, playbackDuration);
     return () => {
       clearTimeout(unlockTimer);
     };
   }, [battleActive, investigation?.battleTurn, investigation?.lastBattleRound, investigation?.sharedLogs, investigation?.participantStates, currentNode?.battle]);
 
   useEffect(() => {
+    if (!battlePlaybackLocked || stagedBattleLogs.length === 0) return undefined;
+
+    const baseParticipantStates = JSON.parse(JSON.stringify(playbackSourceRef.current?.participantStates || investigation?.participantStates || {}));
+    const battleSource = playbackSourceRef.current?.battle || currentNode?.battle || null;
+    const baseBattle = battleSource ? JSON.parse(JSON.stringify(battleSource)) : null;
+
+    const syncPlaybackSnapshot = () => {
+      const now = Date.now();
+      const latestSnapshotEntry = [...stagedBattleLogs]
+        .reverse()
+        .find((entry) => entry?.snapshot && Number(entry?.snapshotAt || 0) > 0 && Number(entry.snapshotAt) <= now);
+
+      if (!latestSnapshotEntry?.snapshot) {
+        setPlaybackState({
+          active: true,
+          participantStates: baseParticipantStates,
+          battle: baseBattle,
+        });
+        return;
+      }
+
+      setPlaybackState({
+        active: true,
+        participantStates: JSON.parse(JSON.stringify(latestSnapshotEntry.snapshot.participantStates || baseParticipantStates)),
+        battle: {
+          ...(JSON.parse(JSON.stringify(baseBattle || {})) || {}),
+          hp: Number(latestSnapshotEntry.snapshot.battleHp ?? baseBattle?.hp ?? 0),
+          maxHp: Number(latestSnapshotEntry.snapshot.battleMaxHp ?? baseBattle?.maxHp ?? baseBattle?.hp ?? 0),
+        },
+      });
+    };
+
+    syncPlaybackSnapshot();
+    const timer = setInterval(syncPlaybackSnapshot, 40);
+    return () => clearInterval(timer);
+  }, [battlePlaybackLocked, stagedBattleLogs, investigation?.participantStates, currentNode?.battle]);
+
+  useEffect(() => {
     if (!battlePlaybackLocked) return undefined;
     skipAutoActionSyncRef.current = false;
     setMyBattleAction("");
     setActionPicker("");
+    const hardTimeoutMs = Math.max(
+      2600,
+      ...stagedBattleLogs.map((entry) => Math.max(0, Number(entry?.appearedAt || 0) - Number(battlePlaybackLockStartedRef.current || 0), Number(entry?.snapshotAt || 0) - Number(battlePlaybackLockStartedRef.current || 0)) + 1200),
+    );
     const timer = setInterval(() => {
-      if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > 2100) {
+      if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > hardTimeoutMs) {
         battlePlaybackLockStartedRef.current = 0;
         setStagedBattleLogs([]);
         setPlaybackState(null);
@@ -1122,7 +1156,7 @@ useEffect(() => {
       }
     }, 160);
     return () => clearInterval(timer);
-  }, [battlePlaybackLocked]);
+  }, [battlePlaybackLocked, stagedBattleLogs]);
 
   useEffect(() => {
     if (!battlePlaybackLocked) return undefined;
@@ -2128,7 +2162,10 @@ const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://ww
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const safeName = String(name || "");
   const recent = Array.isArray(rounds)
-    ? rounds.filter((entry) => nowTick - Number(entry?.appearedAt || 0) < 2400)
+    ? rounds.filter((entry) => {
+        const age = nowTick - Number(entry?.appearedAt || 0);
+        return age >= 0 && age < 2400;
+      })
     : [];
 
   for (let index = recent.length - 1; index >= 0; index -= 1) {
