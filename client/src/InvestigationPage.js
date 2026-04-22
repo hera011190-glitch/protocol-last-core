@@ -61,6 +61,13 @@ function formatRouteTime(time) {
   return formatTime(time);
 }
 
+function formatCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 function getSkillCooldown(state, skill) {
   const key = String(skill?.key || skill?.name || "");
   const cooldowns = state?.skillCooldowns || {};
@@ -82,6 +89,12 @@ function OverlayPanel({ title, onClose, children }) {
 }
 
 const BATTLE_ACTIONS = ["공격", "방어", "스킬", "아이템"];
+const BATTLE_TURN_LIMIT_MS = 5 * 60 * 1000;
+const CHAT_PANEL_WIDTH = 320;
+const RIGHT_PANEL_WIDTH = 278;
+const LEFT_SIDE_PANEL_TOP = 152;
+const LEFT_CHAT_PANEL_HEIGHT = "calc(100% - 404px)";
+const CENTER_TOP_CHIP_RESERVED_WIDTH = "688px";
 
 function buildFallbackParticipants(investigation) {
   const roster = new Map();
@@ -151,6 +164,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const skipAutoActionSyncRef = useRef(false);
   const [battleActionSubmitting, setBattleActionSubmitting] = useState(false);
   const [battleReadyUntil, setBattleReadyUntil] = useState(0);
+  const [battleTurnStartedAt, setBattleTurnStartedAt] = useState(0);
   const [localPendingActions, setLocalPendingActions] = useState({});
   const [nowTick, setNowTick] = useState(Date.now());
   const chatScrollRef = useRef(null);
@@ -160,6 +174,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const prevLogLengthRef = useRef(0);
   const dailyRewardAutoRef = useRef("");
   const battlePlaybackLockStartedRef = useRef(0);
+  const battleTimeoutHandlingRef = useRef("");
   const handledBattleRoundKeyRef = useRef("");
   const prevBattleTurnRef = useRef(0);
   const postPlaybackRefreshRef = useRef(false);
@@ -571,6 +586,31 @@ useEffect(() => {
   const selfState = investigation?.participantStates?.[character?.name || ""] || null;
   const muted = !!(selfState?.mutedUntil && Number(selfState.mutedUntil) > Date.now());
   const canSpeak = (!selfState || Number(selfState.hp || 0) > 0) && !muted && investigation?.type !== "daily";
+  const livePendingBattleActions = investigation?.pendingBattleActions || {};
+
+  useEffect(() => {
+    if (previewMode || !battleActive || !investigationId) {
+      setBattleTurnStartedAt(0);
+      return;
+    }
+    const turn = Math.max(1, Number(investigation?.battleTurn || 1));
+    const storageKey = `plc-battle-turn-start:${investigationId}:${turn}`;
+    let startedAt = 0;
+    try {
+      startedAt = Number(window.localStorage.getItem(storageKey) || 0);
+    } catch {}
+    if (!startedAt) {
+      startedAt = Date.now();
+      try {
+        window.localStorage.setItem(storageKey, String(startedAt));
+      } catch {}
+    }
+    setBattleTurnStartedAt(startedAt);
+  }, [previewMode, battleActive, investigationId, investigation?.battleTurn]);
+
+  useEffect(() => {
+    battleTimeoutHandlingRef.current = "";
+  }, [investigationId, investigation?.battleTurn, battleActive]);
 
   const sendAdminNotice = async () => {
     const text = input.trim();
@@ -896,6 +936,18 @@ useEffect(() => {
   const leaderDown = leaders.some((name) => Number(participantStates[name]?.hp || 0) <= 0);
   const aliveNames = aliveParticipants.map((p) => p.name);
   const battleItemOptions = foundItems.filter((item) => item === "응급 붕대" || item === "소독약");
+  const battleTurnRemainingMs = battleActive && battleTurnStartedAt
+    ? Math.max(0, (battleTurnStartedAt + BATTLE_TURN_LIMIT_MS) - nowTick)
+    : BATTLE_TURN_LIMIT_MS;
+  const battleTimeoutReached = battleActive && battleTurnRemainingMs <= 0;
+  const battleReadyCount = aliveParticipants.filter((participant) => !!pendingActions?.[participant.name]).length;
+  const battlePhaseLabel = getBattlePhaseText({
+    battleActive,
+    pendingReward,
+    readyCount: battleReadyCount,
+    aliveCount: aliveParticipants.length,
+    endedReadonly,
+  });
   const battleSkillOptions = Array.isArray(character?.skills) && character.skills.length > 0
     ? character.skills.map((skill) => {
         const normalized = typeof skill === "string" ? { key: skill, name: skill } : skill;
@@ -923,6 +975,60 @@ useEffect(() => {
       setEditingSavedAction(true);
     }
   }, [battleActive, investigation?.pendingBattleActions, investigation?.battleTurn, character?.name]);
+
+  useEffect(() => {
+    if (previewMode || !battleActive || battlePlaybackLocked || !battleTimeoutReached || !investigationId) return;
+    const turnKey = `${investigationId}:${Number(investigation?.battleTurn || 1)}`;
+    if (battleTimeoutHandlingRef.current === turnKey) return;
+
+    const aliveMissingParticipants = aliveParticipants.filter((participant) => !livePendingBattleActions?.[participant.name]);
+    if (!aliveMissingParticipants.length) return;
+
+    const canAutoResolveAll = !!(isAdmin || canControl);
+    const selfMissing = !!(character?.name && aliveMissingParticipants.some((participant) => participant.name === character.name));
+    if (!canAutoResolveAll && !selfMissing) return;
+
+    battleTimeoutHandlingRef.current = turnKey;
+
+    const fillAndSubmitBattleTurn = async () => {
+      try {
+        const targets = canAutoResolveAll
+          ? aliveMissingParticipants.map((participant) => participant.name)
+          : selfMissing
+            ? [character.name]
+            : [];
+
+        for (const targetName of targets) {
+          const res = await apiFetch("/setBattleAction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ investigationId, characterName: targetName, actionName: "방어" }),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.message || "자동 방어 처리 실패");
+          if (data.investigation) applyInvestigation(data.investigation);
+        }
+
+        if (canAutoResolveAll) {
+          const submitRes = await apiFetch("/submitBattleTurn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ investigationId }),
+          });
+          const submitData = await submitRes.json();
+          if (!submitData.success) throw new Error(submitData.message || "자동 턴 진행 실패");
+          if (submitData.investigation) applyInvestigation(submitData.investigation);
+          else loadInvestigation();
+        } else {
+          loadInvestigation();
+        }
+      } catch (err) {
+        console.error("battle timeout auto resolve error", err);
+      }
+    };
+
+    fillAndSubmitBattleTurn();
+  }, [previewMode, battleActive, battlePlaybackLocked, battleTimeoutReached, investigationId, investigation?.battleTurn, livePendingBattleActions, aliveParticipants, isAdmin, canControl, character?.name]);
 
   useEffect(() => {
     const rounds = Array.isArray(investigation?.lastBattleRound) ? investigation.lastBattleRound : [];
@@ -1540,14 +1646,20 @@ useEffect(() => {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "18px", alignItems: "start", minHeight: "100%" }}>
             <div style={{ display: "grid", gap: "18px", minHeight: "100%" }}>
-              <div style={{ ...mainPanelStyle, position: "absolute", inset: 0, overflow: "hidden", paddingTop: 0, paddingLeft: isDaily ? 14 : 284, paddingRight: 292, paddingBottom: battleActive ? 224 : 172 }}>
+              <div style={{ ...mainPanelStyle, position: "absolute", inset: 0, overflow: "hidden", paddingTop: 0, paddingLeft: isDaily ? 14 : CHAT_PANEL_WIDTH + 12, paddingRight: RIGHT_PANEL_WIDTH + 14, paddingBottom: battleActive ? 224 : 172 }}>
                 <SceneVisualPanel currentNode={currentNode} battleActive={battleActive} leaders={leaders} participants={participants} activeNpcScene={activeNpcScene} pendingReward={pendingReward} investigationBackgroundImage={investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || ""} nowTick={nowTick} isDaily={investigation?.type === "daily"} />
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "start", marginTop: "16px" }}>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", position: "absolute", left: "50%", top: 16, transform: "translateX(-50%)", justifyContent: "center", maxWidth: isDaily ? "calc(100% - 260px)" : "calc(100% - 640px)", zIndex: 1050 }}>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", position: "absolute", left: "50%", top: 16, transform: "translateX(-50%)", justifyContent: "center", maxWidth: isDaily ? "calc(100% - 260px)" : `calc(100% - ${CENTER_TOP_CHIP_RESERVED_WIDTH})`, zIndex: 1050 }}>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>현재 위치: {currentNode?.name || "-"}</div>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>진행률: {overallProgressPercent}%</div>
                     {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>전투 턴 {investigation.battleTurn || 1}</div> : null}
+                    {battleActive ? (
+                      <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12, color: battleTimeoutReached ? "#fecaca" : "#fef3c7" }}>
+                        {battleTimeoutReached ? "시간 초과 · 자동 방어 진행 중" : `남은 시간 ${formatCountdown(battleTurnRemainingMs)}`}
+                      </div>
+                    ) : null}
+                    {battleActive ? <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>{battlePhaseLabel} · {battleReadyCount}/{aliveParticipants.length || 0}</div> : null}
                   </div>
                   {leaderDown ? (
                     <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
@@ -1575,7 +1687,7 @@ useEffect(() => {
                 </div>
 
                 {!battleActive ? (
-                  <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
+                  <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
                       {directionalChoices.up ? <button type="button" onClick={() => moveTo(directionalChoices.up.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.up.text}</button> : null}
                       {directionalChoices.left ? <button type="button" onClick={() => moveTo(directionalChoices.left.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.left.text}</button> : null}
@@ -1595,13 +1707,13 @@ useEffect(() => {
                   </div>
                 ) : (
                   <>
-                    <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
+                    <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(12,9,16,0.54), rgba(20,11,17,0.7))", border: "1px solid rgba(248,113,113,0.14)", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
                       <BattleHero node={displayCurrentNode} investigation={investigation} rounds={stagedBattleLogs} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
                       <div style={{ marginTop: 12 }}>
                         <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={stagedBattleLogs} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                       </div>
                     </div>
-                    <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 620px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
+                    <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
                       {selfState && Number(selfState.hp || 0) > 0 ? (
                         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("공격") ? "is-tab-active" : ""}`} onClick={() => chooseBattleAction("공격")} disabled={battleInputLocked}>공격</button>
@@ -1614,14 +1726,15 @@ useEffect(() => {
                         <div style={{ ...dangerMessageStyle, textAlign: "center" }}>현재 관전 상태라 전투 행동을 선택할 수 없습니다.</div>
                       )}
                       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-                                                {endedReadonly ? <div style={readyBadgeStyle}>종료된 조사 기록 열람 중</div> : null}
+                        {battleActive ? <div style={readyBadgeStyle}>미선택 인원은 5분 후 자동으로 방어 처리됩니다.</div> : null}
+                        {endedReadonly ? <div style={readyBadgeStyle}>종료된 조사 기록 열람 중</div> : null}
                       </div>
                     </div>
                   </>
                 )}
               </div>
 
-              <div style={{ ...sidePanelStyle, position: "absolute", right: 14, top: 152, width: 278, height: "calc(100% - 418px)", zIndex: 1042, display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden", background: "linear-gradient(180deg, rgba(18,15,20,0.44), rgba(12,10,16,0.76))", border: "1px solid rgba(245,158,11,0.08)" }}>
+              <div style={{ ...sidePanelStyle, position: "absolute", right: 14, top: 152, width: RIGHT_PANEL_WIDTH, height: "calc(100% - 418px)", zIndex: 1042, display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden", background: "linear-gradient(180deg, rgba(18,15,20,0.44), rgba(12,10,16,0.76))", border: "1px solid rgba(245,158,11,0.08)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "center", marginBottom: "14px" }}>
                   <div>
                     <div className="section-eyebrow">LOG</div>
@@ -1680,7 +1793,7 @@ useEffect(() => {
 
             <div style={{ display: "contents" }}>
               {!isDaily && (
-                  <div style={{ ...sidePanelStyle, position: "absolute", left: 14, top: 152, width: 272, height: "calc(100% - 418px)", zIndex: 1042, display: "flex", flexDirection: "column", overflow: "hidden", background: "linear-gradient(180deg, rgba(4,10,22,0.34), rgba(8,18,32,0.7))", border: "1px solid rgba(125,211,252,0.08)" }}>
+                  <div style={{ ...sidePanelStyle, position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: LEFT_CHAT_PANEL_HEIGHT, zIndex: 1042, display: "flex", flexDirection: "column", overflow: "hidden", background: "linear-gradient(180deg, rgba(4,10,22,0.34), rgba(8,18,32,0.7))", border: "1px solid rgba(125,211,252,0.08)" }}>
                   <div className="section-eyebrow">CHAT</div>
                   <h3 style={{ marginTop: "10px", marginBottom: "14px" }}>채팅</h3>
 
@@ -1724,7 +1837,7 @@ useEffect(() => {
                     ) : null}
                   </div>
 
-                  <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                  <div style={{ display: "flex", gap: "6px", marginTop: "12px", alignItems: "stretch" }}>
                     <input
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
@@ -1738,13 +1851,13 @@ useEffect(() => {
                         }
                       }}
                     />
-                    <button type="button" className="home-primary-button" onClick={isAdmin ? sendAdminNotice : sendChat} disabled={isAdmin ? !input.trim() : !canSpeak}>전송</button>
+                    <button type="button" className="home-primary-button" title="전송" aria-label="전송" onClick={isAdmin ? sendAdminNotice : sendChat} disabled={isAdmin ? !input.trim() : !canSpeak} style={chatSendButtonStyle}>➤</button>
                   </div>
                 </div>
               )}
 
               {isDaily && (
-                  <div style={{ position: "absolute", left: 14, top: 152, width: 272, height: "calc(100% - 362px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
+                  <div style={{ position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: "calc(100% - 348px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
               )}
 
               <div style={{ position: "absolute", right: 14, top: "calc(100% - 248px)", zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, width: 278 }}>
@@ -2365,11 +2478,6 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
         <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>
         <div style={{ marginTop: 8, color: "#fce7f3", fontWeight: 700 }}>HP {hp}/{maxHp}</div>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>
-        <div style={topChipStyle}>ATK {battle.atk || 0}</div>
-        <div style={topChipStyle}>DEF {battle.def || 0}</div>
-        <div style={topChipStyle}>DEX {battle.agi || 0}</div>
-      </div>
       {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 12, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
     </div>
   );
@@ -2469,6 +2577,7 @@ const chatBoxStyle = { minHeight: 0, height: "100%", overflowY: "auto", overflow
 const chatMessageStyle = { padding: "12px 14px", borderRadius: "18px", background: "rgba(255,255,255,0.05)", border: "none", backdropFilter: "blur(10px)" };
 const noticeMessageStyle = { padding: "12px 14px", borderRadius: "18px", background: "linear-gradient(135deg, rgba(14,116,144,0.48), rgba(30,64,175,0.38))", border: "1px solid rgba(186,230,253,0.34)", color: "#eff6ff", backdropFilter: "blur(10px)", boxShadow: "0 12px 22px rgba(14,116,144,0.18)" };
 const chatInputStyle = { flex: 1, minWidth: 0, padding: "12px 14px", borderRadius: "18px", border: "none", background: "rgba(255,255,255,0.08)", color: "white", backdropFilter: "blur(10px)" };
+const chatSendButtonStyle = { width: 48, minWidth: 48, padding: 0, display: "grid", placeItems: "center", fontSize: 18, fontWeight: 900, lineHeight: 1, borderRadius: 18 };
 const overlaySectionTitleStyle = { marginTop: "14px", marginBottom: "8px", color: "#7dd3fc", fontSize: "12px", fontWeight: 800, letterSpacing: "0.08em" };
 const overlayCardStyle = { padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#e2e8f0" };
 const overlayListStyle = { display: "flex", flexWrap: "wrap", gap: "8px" };

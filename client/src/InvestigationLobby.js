@@ -411,7 +411,7 @@ function InvestigationLobby({
                   {((investigation.started && (isAdmin || isParticipating)) || (isAdmin && !investigation.started && canStartLobby)) ? (
                     <button type="button" onClick={enterOrStartInvestigation} className="home-primary-button">조사로 들어가기</button>
                   ) : null}
-                  <button type="button" onClick={goBack} className="ghost-button">조사 나가기</button>
+                  <button type="button" onClick={goBack} className="ghost-button">뒤로가기</button>
                 </div>
               </div>
 
