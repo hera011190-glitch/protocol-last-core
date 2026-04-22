@@ -180,10 +180,11 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const postPlaybackRefreshRef = useRef(false);
   const playbackSourceRef = useRef(null);
   const queuedStateUpdateRef = useRef(null);
+  const endedResultOpenedRef = useRef(false);
   const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
   const displayBattle = playbackState?.battle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
-  const playbackBattleActive = !!playbackState?.active && !!playbackState?.battle;
-  const battleActive = !!currentNode?.battle || playbackBattleActive;
+  const playbackBattleActive = !!playbackState?.battle;
+  const battleActive = playbackBattleActive || (!investigation?.ended && !!currentNode?.battle);
   const liveDisplayLogs = useMemo(() => (battlePlaybackLocked && stagedBattleLogs.length > 0
     ? [...logs, ...stagedBattleLogs.map((entry, idx) => ({ id: `staged-${idx}-${entry.appearedAt || idx}`, text: entry.text, time: "" }))]
     : logs), [battlePlaybackLocked, stagedBattleLogs, logs]);
@@ -198,9 +199,10 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     if (!data) return;
     if (data.type === "daily") setChat([]);
     const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
+    if (data?.ended && hasRoundPlayback) setShowResult(false);
     handledBattleRoundKeyRef.current = hasRoundPlayback ? getBattleRoundKey(data) : "";
     const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
-    if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || data?.ended) {
+    if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || (data?.ended && !hasRoundPlayback)) {
       playbackSourceRef.current = null;
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
@@ -385,6 +387,7 @@ useEffect(() => {
     }
 
     if (hasRoundPlayback && !alreadyHandledRound) {
+      if (payload?.ended) setShowResult(false);
       postPlaybackRefreshRef.current = true;
       applyInvestigation(payload);
       return;
@@ -421,10 +424,17 @@ useEffect(() => {
             ? prev.points
             : 0,
         participantStates: payload.participantStates || prev.participantStates || {},
+        discoveredFlags: payload.discoveredFlags || prev.discoveredFlags || {},
         activeNpcScene: payload.activeNpcScene !== undefined ? payload.activeNpcScene : (prev.activeNpcScene || null),
         npcLineIndex: typeof payload.npcLineIndex === "number" ? payload.npcLineIndex : (typeof prev.npcLineIndex === "number" ? prev.npcLineIndex : 0),
         pendingReward: payload.pendingReward !== undefined ? payload.pendingReward : (prev.pendingReward || null),
         clues: payload.clues || prev.clues || [],
+        totalNodeCount: typeof payload.totalNodeCount === "number" ? payload.totalNodeCount : prev.totalNodeCount,
+        visitedNodeCount: typeof payload.visitedNodeCount === "number" ? payload.visitedNodeCount : prev.visitedNodeCount,
+        visitProgressPercent: typeof payload.visitProgressPercent === "number" ? payload.visitProgressPercent : prev.visitProgressPercent,
+        totalInvestigationActionCount: typeof payload.totalInvestigationActionCount === "number" ? payload.totalInvestigationActionCount : prev.totalInvestigationActionCount,
+        completedInvestigationActionCount: typeof payload.completedInvestigationActionCount === "number" ? payload.completedInvestigationActionCount : prev.completedInvestigationActionCount,
+        overallProgressPercent: typeof payload.overallProgressPercent === "number" ? payload.overallProgressPercent : prev.overallProgressPercent,
         readyToEnd: payload.readyToEnd ?? prev.readyToEnd,
         endNoticeDismissed: payload.endNoticeDismissed ?? prev.endNoticeDismissed,
         eventBanner: payload.eventBanner ?? prev.eventBanner,
@@ -881,19 +891,19 @@ useEffect(() => {
   const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
   const endConfirmations = Array.isArray(investigation?.endConfirmations) ? investigation.endConfirmations : [];
   const hasConfirmedExit = character?.name ? endConfirmations.includes(character.name) : false;
-  const totalNodeCount = Object.keys(investigation?.data?.nodes || {}).length || 0;
-  const visitedNodeCount = Array.from(new Set(routeHistory.map((entry) => entry.nodeId))).length;
-  const visitProgressPercent = totalNodeCount > 0 ? Math.min(100, Math.round((visitedNodeCount / totalNodeCount) * 100)) : 0;
-  const totalInvestigationActionCount = Object.values(investigation?.data?.nodes || {}).reduce((sum, node) => {
+  const totalNodeCount = Number(investigation?.totalNodeCount ?? (Object.keys(investigation?.data?.nodes || {}).length || 0));
+  const visitedNodeCount = Number(investigation?.visitedNodeCount ?? Array.from(new Set(routeHistory.map((entry) => entry.nodeId))).length);
+  const visitProgressPercent = Number(investigation?.visitProgressPercent ?? (totalNodeCount > 0 ? Math.min(100, Math.round((visitedNodeCount / totalNodeCount) * 100)) : 0));
+  const totalInvestigationActionCount = Number(investigation?.totalInvestigationActionCount ?? Object.values(investigation?.data?.nodes || {}).reduce((sum, node) => {
     const fromList = Array.isArray(node?.investigations) ? node.investigations.filter(Boolean).length : 0;
     const fromResults = Object.keys(node?.actionResults || {}).length;
     return sum + Math.max(fromList, fromResults);
-  }, 0);
-  const completedInvestigationActionCount = Object.keys(investigation?.discoveredFlags || {}).length;
+  }, 0));
+  const completedInvestigationActionCount = Number(investigation?.completedInvestigationActionCount ?? Object.keys(investigation?.discoveredFlags || {}).length);
   const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
   const completedProgressCount = visitedNodeCount + completedInvestigationActionCount;
-  const overallProgressPercent = totalProgressCount > 0 ? Math.min(100, Math.round((completedProgressCount / totalProgressCount) * 100)) : 0;
-  const progressDisplayPercent = Math.max(visitProgressPercent, overallProgressPercent);
+  const overallProgressPercent = Number(investigation?.overallProgressPercent ?? (totalProgressCount > 0 ? Math.min(100, Math.round((completedProgressCount / totalProgressCount) * 100)) : 0));
+  const progressDisplayPercent = overallProgressPercent;
   const foundItems = Array.isArray(investigation?.foundItems) ? investigation.foundItems : [];
   const foundNPCs = Array.isArray(investigation?.foundNPCs) ? investigation.foundNPCs : [];
   const rewards = Array.isArray(investigation?.rewards) ? investigation.rewards : [];
@@ -1059,14 +1069,15 @@ useEffect(() => {
     const finalParticipantStates = lastSnapshotEntry?.snapshot?.participantStates
       ? JSON.parse(JSON.stringify(lastSnapshotEntry.snapshot.participantStates))
       : JSON.parse(JSON.stringify(investigation?.participantStates || {}));
+    const battleSource = playbackSourceRef.current?.battle || currentNode?.battle || null;
     const finalBattle = lastSnapshotEntry?.snapshot
       ? {
-          ...(JSON.parse(JSON.stringify(currentNode?.battle || {})) || {}),
-          hp: Number(lastSnapshotEntry.snapshot.battleHp ?? currentNode?.battle?.hp ?? 0),
-          maxHp: Number(lastSnapshotEntry.snapshot.battleMaxHp ?? currentNode?.battle?.maxHp ?? currentNode?.battle?.hp ?? 0),
+          ...(JSON.parse(JSON.stringify(battleSource || {})) || {}),
+          hp: Number(lastSnapshotEntry.snapshot.battleHp ?? battleSource?.hp ?? 0),
+          maxHp: Number(lastSnapshotEntry.snapshot.battleMaxHp ?? battleSource?.maxHp ?? battleSource?.hp ?? 0),
         }
-      : (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
-    setPlaybackState({ participantStates: finalParticipantStates, battle: finalBattle });
+      : (battleSource ? JSON.parse(JSON.stringify(battleSource)) : null);
+    setPlaybackState({ active: true, participantStates: finalParticipantStates, battle: finalBattle });
     setStagedBattleLogs(visibleEntries.map((entry, index) => ({ ...entry, appearedAt: now + index * 90 })));
     requestAnimationFrame(() => {
       if (logScrollRef.current && stickLogsToBottom) {
@@ -1144,6 +1155,26 @@ useEffect(() => {
       setShowResult(false);
     }
   }, [endedReadonly]);
+
+  useEffect(() => {
+    if (endedReadonly) {
+      endedResultOpenedRef.current = false;
+      setShowResult(false);
+      return;
+    }
+    if (!investigation?.ended) {
+      endedResultOpenedRef.current = false;
+      return;
+    }
+    if (battlePlaybackLocked || stagedBattleLogs.length > 0) {
+      setShowResult(false);
+      return;
+    }
+    if (!endedResultOpenedRef.current) {
+      endedResultOpenedRef.current = true;
+      setShowResult(true);
+    }
+  }, [investigation?.ended, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length]);
 
   if (!investigation || !currentNodeId || !currentNode) {
     return (
@@ -1589,7 +1620,8 @@ useEffect(() => {
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
                 <div style={topChipStyle}>방문 {visitedNodeCount}/{totalNodeCount || "-"}</div>
-                <div style={topChipStyle}>진행률 {visitProgressPercent}%</div>
+                <div style={topChipStyle}>조사 {completedInvestigationActionCount}/{totalInvestigationActionCount || "-"}</div>
+                <div style={topChipStyle}>진행률 {overallProgressPercent}%</div>
                 <div style={topChipStyle}>아이템 {foundItems.length}개</div>
                 <div style={topChipStyle}>단서 {clues.length}개</div>
                 <div style={topChipStyle}>보상 {rewards.length}개</div>

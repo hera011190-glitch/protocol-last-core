@@ -691,12 +691,50 @@ function getDisplayName(user) {
   return user?.id || user?.name || "알 수 없음";
 }
 
+function getInvestigationProgressMeta(item) {
+  const totalNodeCount = Object.keys(item?.data?.nodes || {}).length || 0;
+  const visitedNodeCount = Array.from(new Set((item?.routeHistory || []).map((entry) => entry?.nodeId).filter(Boolean))).length;
+  const totalInvestigationActionCount = Object.values(item?.data?.nodes || {}).reduce((sum, node) => {
+    const fromList = Array.isArray(node?.investigations) ? node.investigations.filter(Boolean).length : 0;
+    const fromResults = Object.keys(node?.actionResults || {}).length;
+    return sum + Math.max(fromList, fromResults);
+  }, 0);
+  const completedInvestigationActionCount = Math.min(Object.keys(item?.discoveredFlags || {}).length, totalInvestigationActionCount);
+  const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
+  const completedProgressCount = visitedNodeCount + completedInvestigationActionCount;
+  const visitProgressPercent = totalNodeCount > 0 ? Math.min(100, Math.round((visitedNodeCount / totalNodeCount) * 100)) : 0;
+  const overallProgressPercent = totalProgressCount > 0 ? Math.min(100, Math.round((completedProgressCount / totalProgressCount) * 100)) : 0;
+  return {
+    totalNodeCount,
+    visitedNodeCount,
+    totalInvestigationActionCount,
+    completedInvestigationActionCount,
+    totalProgressCount,
+    completedProgressCount,
+    visitProgressPercent,
+    overallProgressPercent,
+  };
+}
+
+function refreshInvestigationCompletionState(item) {
+  if (!item) return null;
+  const progress = getInvestigationProgressMeta(item);
+  const currentNode = item?.data?.nodes?.[item?.currentNodeId];
+  const shouldReadyToEnd = progress.totalProgressCount > 0
+    && progress.completedProgressCount >= progress.totalProgressCount
+    && !currentNode?.battle;
+  if (shouldReadyToEnd && !item.readyToEnd) {
+    item.endNoticeDismissed = false;
+  }
+  item.readyToEnd = shouldReadyToEnd;
+  return progress;
+}
+
 function getInvestigationSummary(item) {
   syncInvestigationRoster(item);
   const participantsCount = Array.isArray(item.participants) ? item.participants.length : 0;
-  const uniqueVisitedCount = Array.from(new Set((item.routeHistory || []).map((entry) => entry.nodeId))).length;
-  const nodeCount = Object.keys(item.data?.nodes || {}).length || 1;
-  const progressPercent = Math.min(100, Math.round((uniqueVisitedCount / Math.max(nodeCount, 1)) * 100));
+  const progress = refreshInvestigationCompletionState(item);
+  const progressPercent = Number(progress?.overallProgressPercent || 0);
   const effectiveOpened = getEffectiveOpened(item);
   const payload = {
     id: item.id,
@@ -723,6 +761,12 @@ function getInvestigationSummary(item) {
     points: 0,
     rewardsCount: Array.isArray(item.rewards) ? item.rewards.length : 0,
     progressPercent,
+    visitProgressPercent: Number(progress?.visitProgressPercent || 0),
+    overallProgressPercent: Number(progress?.overallProgressPercent || 0),
+    totalNodeCount: Number(progress?.totalNodeCount || 0),
+    visitedNodeCount: Number(progress?.visitedNodeCount || 0),
+    totalInvestigationActionCount: Number(progress?.totalInvestigationActionCount || 0),
+    completedInvestigationActionCount: Number(progress?.completedInvestigationActionCount || 0),
     currentNodeName: item.data?.nodes?.[item.currentNodeId]?.name || "-",
     dailyOwnerKey: String(item.dailyOwnerKey || ""),
     dailyResumeOwnerKey: String(item.dailyResumeOwnerKey || ""),
@@ -1566,6 +1610,7 @@ function applyBattleTurn(item, actions) {
     item.lastBattleRound = roundLogs;
     item.pendingBattleActions = {};
     item.battleTurn += 1;
+    refreshInvestigationCompletionState(item);
 
     const expReward = 15 + Number(battle.rewardPoints || 0);
     item.participants.forEach((participant) => {
@@ -1684,6 +1729,7 @@ function applyBattleTurn(item, actions) {
     finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
   }
 
+  refreshInvestigationCompletionState(item);
   emitInvestigationState(item.id);
   return { success: true };
 }
@@ -2292,12 +2338,7 @@ app.post("/moveInvestigation", (req, res) => {
     setEventBanner(item, "전투 시작!", "danger", 2600);
   }
 
-  const uniqueVisited = Array.from(new Set((item.routeHistory || []).map((route) => route.nodeId)));
-  const nodeCount = Object.keys(item.data?.nodes || {}).length;
-  if (uniqueVisited.length >= nodeCount && !item.readyToEnd && !nextNode.battle) {
-    item.readyToEnd = true;
-    item.endNoticeDismissed = false;
-  }
+  refreshInvestigationCompletionState(item);
 
   emitInvestigationState(investigationId);
   res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog });
@@ -2337,6 +2378,7 @@ app.post("/investigationAction", (req, res) => {
   }
 
   item.sharedLogs.push(createLogEntry(item.sharedLog));
+  refreshInvestigationCompletionState(item);
   emitInvestigationState(investigationId);
   res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog });
 });
@@ -3216,6 +3258,7 @@ setInterval(() => {
 function buildPublicInvestigationState(item) {
   if (!item) return null;
   syncInvestigationRoster(item);
+  const progress = refreshInvestigationCompletionState(item);
   const payload = {
     id: item.id,
     investigationId: item.id,
@@ -3241,6 +3284,13 @@ function buildPublicInvestigationState(item) {
     rewards: item.rewards || [],
     points: 0,
     participantStates: item.participantStates || {},
+    discoveredFlags: item.discoveredFlags || {},
+    visitProgressPercent: Number(progress?.visitProgressPercent || 0),
+    overallProgressPercent: Number(progress?.overallProgressPercent || 0),
+    totalNodeCount: Number(progress?.totalNodeCount || 0),
+    visitedNodeCount: Number(progress?.visitedNodeCount || 0),
+    totalInvestigationActionCount: Number(progress?.totalInvestigationActionCount || 0),
+    completedInvestigationActionCount: Number(progress?.completedInvestigationActionCount || 0),
     ended: item.ended || false,
     endedAt: item.endedAt || "",
     endedReason: item.endedReason || "",
