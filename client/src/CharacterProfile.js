@@ -28,6 +28,16 @@ function StatCell({ label, value }) {
   );
 }
 
+function ProfileInfoCell({ label, value }) {
+  const text = String(value ?? "").trim();
+  return (
+    <div style={{ padding: "12px 14px", borderRadius: 20, background: "rgba(255,255,255,0.76)", boxShadow: "inset 0 0 0 1px rgba(98,176,220,0.08)", minHeight: 70, display: "grid", alignContent: "center" }}>
+      <div style={{ fontSize: 11, color: "#6a87a3", fontWeight: 800 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 900, marginTop: 4, color: "#13324b", wordBreak: "keep-all" }}>{text || "-"}</div>
+    </div>
+  );
+}
+
 function RelationCard({ relation }) {
   if (!relation) return null;
   return (
@@ -73,6 +83,9 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
   const itemNames = Array.isArray(viewCharacter?.items) ? viewCharacter.items : [];
   const oneLine = String(viewCharacter?.oneLine || "한마디가 없습니다.").trim();
   const stats = viewCharacter?.stats || {};
+  const profileAge = viewCharacter?.age || viewCharacter?.profileAge || "";
+  const profileRank = viewCharacter?.rank || "대원";
+  const profileBodyInfo = viewCharacter?.bodyInfo || viewCharacter?.body || viewCharacter?.heightWeight || [viewCharacter?.height, viewCharacter?.weight].filter(Boolean).join(" / ");
   const [audioMuted, setAudioMuted] = useState(() => {
     try {
       return localStorage.getItem("plc-audio-muted") === "1";
@@ -251,7 +264,13 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateRows: "auto auto minmax(300px, 1fr)", gap: 16, minHeight: "100%" }}>
+          <div style={{ display: "grid", gridTemplateRows: "auto auto auto minmax(220px, 1fr)", gap: 14, minHeight: "100%" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+              <ProfileInfoCell label="나이" value={profileAge} />
+              <ProfileInfoCell label="계급" value={profileRank} />
+              <ProfileInfoCell label="키 / 몸무게" value={profileBodyInfo} />
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
               <StatCell label="HP" value={hpStat} />
               <StatCell label="ATK" value={stats.atk ?? 0} />
@@ -265,12 +284,12 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, minHeight: 0 }}>
-              <ScrollPanel title="보유 스킬" minHeight={320}>
+              <ScrollPanel title="보유 스킬" minHeight={220}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignContent: "start" }}>
                   {skillNames.length > 0 ? skillNames.map((skill, index) => <ItemChip key={`${skill}-${index}`}>{skill}</ItemChip>) : <div style={{ color: "#6a87a3" }}>보유 스킬이 없습니다.</div>}
                 </div>
               </ScrollPanel>
-              <ScrollPanel title="보유 아이템" minHeight={320}>
+              <ScrollPanel title="보유 아이템" minHeight={220}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignContent: "start" }}>
                   {itemNames.length > 0 ? itemNames.map((item, index) => <ItemChip key={`${item}-${index}`}>{item}</ItemChip>) : <div style={{ color: "#6a87a3" }}>보유 아이템이 없습니다.</div>}
                 </div>
