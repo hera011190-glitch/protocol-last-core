@@ -28,6 +28,124 @@ function MenuCard({ title, onClick, disabled = false }) {
   );
 }
 
+
+function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, onSelect, onClose }) {
+  const normalizedSearch = String(search || "").trim().toLowerCase();
+  const safeUsers = Array.isArray(users) ? users : [];
+  const filteredUsers = safeUsers.filter((user) => {
+    const id = String(user?.id || "");
+    const type = String(user?.type || "");
+    if (!normalizedSearch) return true;
+    return id.toLowerCase().includes(normalizedSearch) || type.toLowerCase().includes(normalizedSearch);
+  });
+
+  if (!open) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(8, 18, 32, 0.42)",
+        backdropFilter: "blur(8px)",
+        display: "grid",
+        placeItems: "center",
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          width: "min(720px, 96vw)",
+          maxHeight: "82vh",
+          overflow: "hidden",
+          borderRadius: 28,
+          background: "rgba(248, 252, 255, 0.98)",
+          border: "1px solid rgba(98,176,220,0.24)",
+          boxShadow: "0 28px 70px rgba(20, 62, 95, 0.28)",
+          color: "#16324a",
+          display: "grid",
+          gridTemplateRows: "auto auto 1fr auto",
+        }}
+      >
+        <div style={{ padding: "22px 24px 12px", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+          <div>
+            <div className="section-eyebrow">USER SELECT</div>
+            <h3 style={{ margin: "8px 0 0", fontSize: 24 }}>계정 선택</h3>
+            <div style={{ marginTop: 6, color: "#5d7a95", fontSize: 13 }}>
+              가입된 계정 {safeUsers.length}개 중 {filteredUsers.length}개 표시
+            </div>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
+        </div>
+
+        <div style={{ padding: "0 24px 14px" }}>
+          <input
+            value={search}
+            onChange={(e) => onSearchChange?.(e.target.value)}
+            placeholder="유저 아이디 검색"
+            autoFocus
+            style={{
+              ...inputStyle,
+              marginTop: 0,
+              fontSize: 15,
+              background: "rgba(255,255,255,0.98)",
+            }}
+          />
+        </div>
+
+        <div style={{ padding: "0 24px 20px", overflow: "auto" }}>
+          {filteredUsers.length === 0 ? (
+            <div style={{ padding: 18, borderRadius: 18, background: "rgba(240,248,255,0.9)", color: "#5d7a95", textAlign: "center" }}>
+              검색 결과가 없습니다.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+              {filteredUsers.map((user) => {
+                const id = String(user?.id || "");
+                const type = String(user?.type || "");
+                const active = String(selectedUserId || "") === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onSelect?.(id)}
+                    style={{
+                      textAlign: "left",
+                      padding: "14px 15px",
+                      borderRadius: 18,
+                      border: active ? "1px solid rgba(61, 154, 220, 0.75)" : "1px solid rgba(98,176,220,0.18)",
+                      background: active ? "linear-gradient(135deg, rgba(126,220,255,0.32), rgba(255,255,255,0.98))" : "rgba(255,255,255,0.92)",
+                      color: "#16324a",
+                      cursor: "pointer",
+                      boxShadow: active ? "0 12px 26px rgba(73,132,170,0.22)" : "0 10px 22px rgba(73,132,170,0.1)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, wordBreak: "break-all" }}>{id || "아이디 없음"}</div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: "#6d86a0" }}>{type || "user"}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 24px 22px", borderTop: "1px solid rgba(98,176,220,0.14)", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ color: "#5d7a95", fontSize: 13 }}>
+            현재 선택: <b style={{ color: "#16324a" }}>{selectedUserId || "없음"}</b>
+          </div>
+          <button type="button" className="home-primary-button" onClick={onClose}>선택 완료</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const PROFILE_FONT_OPTIONS = [
   { label: "기본 폰트", value: `"Pretendard", "Noto Sans KR", sans-serif` },
   { label: "맑은 고딕", value: `"Malgun Gothic", sans-serif` },
@@ -36,6 +154,8 @@ const PROFILE_FONT_OPTIONS = [
   { label: "바탕", value: `"Batang", serif` },
   { label: "궁서", value: `"Gungsuh", serif` },
 ];
+
+const API_BASE = window.location.hostname === "localhost" ? "http://localhost:3001" : "";
 
 const inputStyle = {
   width: "100%",
@@ -133,6 +253,8 @@ export default function AdminPage({
   const [users, setUsers] = useState([]);
   const [characters, setCharacters] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [userSelectOpen, setUserSelectOpen] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState(null);
   const [message, setMessage] = useState("");
@@ -206,7 +328,7 @@ export default function AdminPage({
 
   const loadSiteBgm = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/designConfig?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`${API_BASE}/designConfig?t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       setSiteBgm(String(data?.siteContent?.bgm?.site || data?.siteContent?.bgm?.home || ""));
       setSiteBgmVolume(Math.max(0, Math.min(1, Number(data?.siteContent?.bgm?.siteVolume ?? data?.siteContent?.bgm?.volume ?? 1) || 1)));
@@ -223,7 +345,7 @@ export default function AdminPage({
 
   const saveSiteBgm = async () => {
     try {
-      const currentRes = await fetch(`http://localhost:3001/designConfig?t=${Date.now()}`, { cache: "no-store" });
+      const currentRes = await fetch(`${API_BASE}/designConfig?t=${Date.now()}`, { cache: "no-store" });
       const current = await currentRes.json();
       const next = {
         ...(current || {}),
@@ -236,7 +358,7 @@ export default function AdminPage({
           },
         },
       };
-      const saveRes = await fetch("http://localhost:3001/designConfig", {
+      const saveRes = await fetch(`${API_BASE}/designConfig`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),
@@ -257,10 +379,10 @@ export default function AdminPage({
   };
 
   const loadAll = async () => {
-    const userRes = await fetch("http://localhost:3001/admin/users");
+    const userRes = await fetch(`${API_BASE}/admin/users`);
     const userData = await userRes.json();
     setUsers(Array.isArray(userData) ? userData : []);
-    const charRes = await fetch(`http://localhost:3001/characters-lite?t=${Date.now()}`, { cache: "no-store" });
+    const charRes = await fetch(`${API_BASE}/characters-lite?t=${Date.now()}`, { cache: "no-store" });
     const charData = await charRes.json();
     setCharacters(Array.isArray(charData) ? charData : []);
   };
@@ -268,7 +390,7 @@ export default function AdminPage({
   const loadCharacterDetail = async (characterId) => {
     if (!characterId) return null;
     try {
-      const res = await fetch(`http://localhost:3001/character/${characterId}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`${API_BASE}/character/${characterId}?t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       return data?.character || null;
     } catch {
@@ -287,8 +409,20 @@ export default function AdminPage({
     return () => clearTimeout(timer);
   }, [message]);
 
+  const selectedUser = useMemo(
+    () => users.find((user) => String(user?.id || "") === String(selectedUserId || "")),
+    [users, selectedUserId]
+  );
+  const selectAdminUser = (userId) => {
+    const nextId = String(userId || "");
+    setSelectedUserId(nextId);
+    setSelectedCharacterId("");
+    setSelectedCharacterDetail(null);
+    setUserSelectOpen(false);
+  };
+
   const ownerCharacters = useMemo(
-    () => characters.filter((c) => c.ownerId === selectedUserId),
+    () => characters.filter((c) => String(c.ownerId || "") === String(selectedUserId || "")),
     [characters, selectedUserId]
   );
   const selectedCharacterLite = ownerCharacters.find((c) => String(c.id) === String(selectedCharacterId));
@@ -352,7 +486,7 @@ export default function AdminPage({
   const createCharacterForUser = async () => {
     if (!selectedUserId) return setMessage("먼저 계정을 선택해주세요.");
     if (!form.charName.trim()) return setMessage("캐릭터 이름을 입력해주세요.");
-    const res = await fetch("http://localhost:3001/createCharacter", {
+    const res = await fetch(`${API_BASE}/createCharacter`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -381,7 +515,7 @@ export default function AdminPage({
 
   const saveSelectedCharacter = async () => {
     if (!selectedCharacter) return setMessage("캐릭터를 선택해주세요.");
-    const res = await fetch("http://localhost:3001/updateCharacter", {
+    const res = await fetch(`${API_BASE}/updateCharacter`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -419,7 +553,7 @@ export default function AdminPage({
     if (!selectedCharacter) return setMessage("캐릭터를 선택해주세요.");
     const ok = window.confirm(`${selectedCharacter.name} 캐릭터를 삭제하겠습니까?`);
     if (!ok) return;
-    const res = await fetch(`http://localhost:3001/admin/characters/${selectedCharacter.id}`, { method: "DELETE" });
+    const res = await fetch(`${API_BASE}/admin/characters/${selectedCharacter.id}`, { method: "DELETE" });
     const data = await res.json();
     if (!data.success) return setMessage(data.message || "캐릭터 삭제 실패");
     setSelectedCharacterId("");
@@ -439,6 +573,16 @@ export default function AdminPage({
         </div>
         <button type="button" className="ghost-button" onClick={goBack}>뒤로가기</button>
       </div>
+
+      <UserSelectModal
+        open={userSelectOpen}
+        users={users}
+        selectedUserId={selectedUserId}
+        search={userSearch}
+        onSearchChange={setUserSearch}
+        onSelect={selectAdminUser}
+        onClose={() => setUserSelectOpen(false)}
+      />
 
       <div style={{ ...panelStyle, marginBottom: 18 }}>
         <div className="section-eyebrow">SITE BGM</div>
@@ -460,7 +604,26 @@ export default function AdminPage({
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         <div style={panelStyle}>
           <div className="section-eyebrow">CHARACTER CREATE</div>
-          <label>계정 선택<select value={selectedUserId} onChange={(e) => { setSelectedUserId(e.target.value); setSelectedCharacterId(""); }} style={inputStyle}><option value="">선택</option>{users.map((user) => <option key={user.id} value={user.id}>{user.id}</option>)}</select></label>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 800 }}>계정 선택</div>
+            <button
+              type="button"
+              onClick={() => setUserSelectOpen(true)}
+              style={{
+                ...inputStyle,
+                textAlign: "left",
+                cursor: "pointer",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <span>{selectedUserId ? `${selectedUserId}${selectedUser?.type ? ` (${selectedUser.type})` : ""}` : "계정을 선택해주세요"}</span>
+              <b style={{ color: "#3d9adc" }}>계정 선택</b>
+            </button>
+            <div style={{ fontSize: 12, color: "#5d7a95" }}>가입된 계정 {users.length}개가 운영 계정 선택창에 표시됩니다.</div>
+          </div>
           <label>캐릭터 이름<input value={form.charName} onChange={(e) => setForm({ ...form, charName: e.target.value })} style={inputStyle} /></label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <label>나이<input value={form.charAge} onChange={(e) => setForm({ ...form, charAge: e.target.value })} style={inputStyle} /></label>

@@ -181,6 +181,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const playbackSourceRef = useRef(null);
   const queuedStateUpdateRef = useRef(null);
   const endedResultOpenedRef = useRef(false);
+  const keepEndResultOpenRef = useRef(false);
   const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
   const displayBattle = playbackState?.battle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
   const playbackBattleActive = !!playbackState?.battle;
@@ -211,7 +212,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     const incomingRoundKey = hasRoundPlayback ? getBattleRoundKey(data) : "";
     const alreadyHandledSameRound = !!incomingRoundKey && incomingRoundKey === handledBattleRoundKeyRef.current;
     const skipRoundPlayback = !!options?.skipRoundPlayback || alreadyHandledSameRound;
-    if (data?.ended && hasRoundPlayback) setShowResult(false);
+    if (data?.ended && hasRoundPlayback && !keepEndResultOpenRef.current) setShowResult(false);
     handledBattleRoundKeyRef.current = incomingRoundKey;
     const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || (data?.ended && !hasRoundPlayback)) {
@@ -406,7 +407,7 @@ useEffect(() => {
     }
 
     if (hasRoundPlayback && !alreadyHandledRound) {
-      if (payload?.ended) setShowResult(false);
+      if (payload?.ended && !keepEndResultOpenRef.current) setShowResult(false);
       postPlaybackRefreshRef.current = true;
       applyInvestigation(payload);
       return;
@@ -680,6 +681,7 @@ useEffect(() => {
   };
 
   const leaveInvestigationView = async () => {
+    keepEndResultOpenRef.current = false;
     try {
       if (investigation?.type === "daily" && investigation?.started && !investigation?.ended) {
         markDailyResume(investigationId, character);
@@ -843,6 +845,8 @@ useEffect(() => {
       alert(data.message || "조사 종료에 실패했습니다.");
       return;
     }
+    keepEndResultOpenRef.current = true;
+    endedResultOpenedRef.current = true;
     setShowResult(true);
     window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { force: true } }));
     loadInvestigation();
@@ -1182,11 +1186,18 @@ useEffect(() => {
   useEffect(() => {
     if (endedReadonly) {
       endedResultOpenedRef.current = false;
+      keepEndResultOpenRef.current = false;
       setShowResult(false);
       return;
     }
     if (!investigation?.ended) {
       endedResultOpenedRef.current = false;
+      keepEndResultOpenRef.current = false;
+      return;
+    }
+    if (keepEndResultOpenRef.current) {
+      endedResultOpenedRef.current = true;
+      setShowResult(true);
       return;
     }
     if (battlePlaybackLocked || stagedBattleLogs.length > 0) {
@@ -1252,10 +1263,12 @@ useEffect(() => {
 
   const confirmExit = async () => {
     if (hasConfirmedExit) {
+      keepEndResultOpenRef.current = false;
       goBack();
       return;
     }
     if (!character?.name) {
+      keepEndResultOpenRef.current = false;
       goBack();
       return;
     }
@@ -1269,7 +1282,13 @@ useEffect(() => {
       alert(data.message || "확인 처리에 실패했어.");
       return;
     }
+    keepEndResultOpenRef.current = false;
     goBack();
+  };
+
+  const closeResultPanel = () => {
+    keepEndResultOpenRef.current = false;
+    setShowResult(false);
   };
 
   const advanceNpc = async () => {
@@ -1633,7 +1652,7 @@ useEffect(() => {
         ) : null}
 
         {showResult && investigation.ended && !endedReadonly && (
-          <OverlayPanel title="조사 결과" onClose={() => setShowResult(false)}>
+          <OverlayPanel title="조사 결과" onClose={closeResultPanel}>
             <div style={resultCardStyle}>
               <div style={{ fontSize: "28px", fontWeight: 900, marginBottom: "8px", color: investigation.endedReason === "전멸" ? "#fecaca" : "#bbf7d0" }}>
                 {investigation.endedReason === "전멸" ? "FAILED" : "COMPLETE"}
