@@ -945,6 +945,7 @@ useEffect(() => {
   const animatedBattleRounds = battlePlaybackLocked
     ? stagedBattleLogs.filter((entry) => Number(entry?.appearedAt || 0) <= nowTick)
     : stagedBattleLogs;
+  const currentBattleMotionEntry = getActiveBattleMotionEntry(animatedBattleRounds, nowTick);
   const displayParticipantStates = playbackState?.participantStates || participantStates;
   const displayCurrentNode = playbackState?.battle
     ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...playbackState.battle } }
@@ -1762,9 +1763,12 @@ useEffect(() => {
                 ) : (
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "0 18px", borderRadius: 0, background: "transparent", border: "none", boxShadow: "none", backdropFilter: "none", zIndex: 1045 }}>
-                      <BattleHero node={displayCurrentNode} investigation={investigation} rounds={animatedBattleRounds} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
-                      <div style={{ marginTop: 12 }}>
-                        <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={animatedBattleRounds} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
+                      <div style={{ position: "relative", paddingTop: currentBattleMotionEntry ? 34 : 0 }}>
+                        <BattleMotionOverlay entry={currentBattleMotionEntry} participants={participants} nowTick={nowTick} />
+                        <BattleHero node={displayCurrentNode} investigation={investigation} rounds={animatedBattleRounds} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
+                        <div style={{ marginTop: 12 }}>
+                          <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={animatedBattleRounds} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
+                        </div>
                       </div>
                     </div>
                     <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
@@ -2266,6 +2270,18 @@ function getBattlePlaybackTimings(entry, index = 0) {
   return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 240, totalAfterLog: 500 };
 }
 
+function getActiveBattleMotionEntry(rounds, nowTick = Date.now()) {
+  const visible = Array.isArray(rounds)
+    ? rounds.filter((entry) => {
+        if (!entry?.text || isBattlePhaseHeader(entry)) return false;
+        const appearedAt = Number(entry?.appearedAt || 0);
+        const age = nowTick - appearedAt;
+        return appearedAt > 0 && age >= 0 && age < 960;
+      })
+    : [];
+  return visible.length > 0 ? visible[visible.length - 1] : null;
+}
+
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
   const recent = getRecentBattleEntry(name, rounds, state, nowTick);
   const effect = recent?.effect || "";
@@ -2286,9 +2302,9 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
 
   if (effect === "damage") {
     const decay = 1 - progress;
-    translateX = Math.sin(age / 28) * 14 * decay;
-    translateY = Math.sin(age / 21) * 3.2 * decay;
-    scale = 1 - 0.04 * pulse;
+    translateX = Math.sin(age / 22) * 20 * decay;
+    translateY = Math.sin(age / 18) * 5.4 * decay;
+    scale = 1 - 0.06 * pulse;
     glow = "drop-shadow(0 0 16px rgba(248,113,113,0.78)) drop-shadow(0 10px 18px rgba(0,0,0,0.28))";
     frameBoxShadow = `0 0 0 2px rgba(248,113,113,${(0.34 + decay * 0.38).toFixed(3)}), 0 0 28px rgba(239,68,68,${(0.3 + decay * 0.32).toFixed(3)})`;
     overlayStyle = {
@@ -2328,9 +2344,9 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
   } else if (effect === "attack") {
     const thrust = Math.sin(progress * Math.PI);
     const snap = Math.sin(progress * Math.PI * 2) * (1 - progress) * 0.45;
-    translateX = direction * ((13 * thrust) + (4 * snap));
-    translateY = -3 * thrust;
-    scale = 1 + 0.045 * thrust;
+    translateX = direction * ((24 * thrust) + (8 * snap));
+    translateY = -7 * thrust;
+    scale = 1 + 0.07 * thrust;
     glow = "drop-shadow(0 0 8px rgba(251,191,36,0.26)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
     frameBoxShadow = `0 0 14px rgba(251,191,36,${(0.1 + thrust * 0.14).toFixed(3)})`;
     fxOuterStyle = {
@@ -2373,9 +2389,9 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
   } else if (effect === "skill") {
     const cast = Math.sin(progress * Math.PI);
     const snap = Math.sin(progress * Math.PI * 2) * (1 - progress) * 0.82;
-    translateX = direction * ((22 * cast) + (8 * snap));
-    translateY = -9 * cast;
-    scale = 1 + 0.08 * cast;
+    translateX = direction * ((30 * cast) + (12 * snap));
+    translateY = -12 * cast;
+    scale = 1 + 0.1 * cast;
     glow = "drop-shadow(0 0 18px rgba(250,204,21,0.92)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
     frameBoxShadow = `0 0 0 2px rgba(250,204,21,${(0.34 + cast * 0.34).toFixed(3)}), 0 0 30px rgba(234,179,8,${(0.28 + cast * 0.32).toFixed(3)})`;
     overlayStyle = {
@@ -2413,9 +2429,9 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
     };
   } else if (effect === "evade") {
     const dodge = Math.sin(progress * Math.PI);
-    translateX = direction * (-22 * dodge);
-    translateY = -7 * dodge;
-    scale = 1 - 0.03 * dodge;
+    translateX = direction * (-30 * dodge);
+    translateY = -10 * dodge;
+    scale = 1 - 0.05 * dodge;
     glow = "drop-shadow(0 0 12px rgba(196,181,253,0.66)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
     frameBoxShadow = `0 0 0 2px rgba(196,181,253,${(0.2 + dodge * 0.22).toFixed(3)}), 0 0 20px rgba(139,92,246,${(0.14 + dodge * 0.2).toFixed(3)})`;
     overlayStyle = {
@@ -2484,6 +2500,63 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
     fxOuterStyle,
     fxInnerStyle,
   };
+}
+
+function BattleMotionOverlay({ entry, participants = [], nowTick = Date.now() }) {
+  if (!entry) return null;
+  const appearedAt = Number(entry?.appearedAt || 0);
+  const age = Math.max(0, nowTick - appearedAt);
+  const duration = 860;
+  if (age > duration) return null;
+
+  const progress = Math.max(0, Math.min(1, age / duration));
+  const pulse = Math.sin(progress * Math.PI);
+  const participantNames = new Set((participants || []).map((participant) => String(participant?.name || "")).filter(Boolean));
+  const actor = String(entry?.actor || "");
+  const target = String(entry?.target || "");
+  const effect = String(entry?.effect || "");
+  const actorSide = participantNames.has(actor) ? "ally" : "enemy";
+  let targetSide = participantNames.has(target) ? "ally" : "enemy";
+
+  if (!target && ["guard", "shield", "buff", "heal", "item"].includes(effect)) {
+    targetSide = actorSide;
+  }
+
+  const startX = actorSide === "ally" ? 42 : 58;
+  const startY = actorSide === "ally" ? 76 : 24;
+  const endX = targetSide === "ally" ? 42 : 58;
+  const endY = targetSide === "ally" ? 76 : 24;
+  const orbX = startX + (endX - startX) * progress;
+  const orbY = startY + (endY - startY) * progress;
+
+  const palette = effect === "damage"
+    ? { glow: "rgba(248,113,113,0.98)", soft: "rgba(254,202,202,0.72)", text: "#fecaca" }
+    : effect === "heal"
+      ? { glow: "rgba(74,222,128,0.98)", soft: "rgba(187,247,208,0.72)", text: "#bbf7d0" }
+      : ["guard", "shield", "buff"].includes(effect)
+        ? { glow: "rgba(96,165,250,0.98)", soft: "rgba(191,219,254,0.72)", text: "#bfdbfe" }
+        : effect === "evade"
+          ? { glow: "rgba(196,181,253,0.98)", soft: "rgba(221,214,254,0.72)", text: "#ddd6fe" }
+          : effect === "item"
+            ? { glow: "rgba(103,232,249,0.98)", soft: "rgba(207,250,254,0.72)", text: "#cffafe" }
+            : { glow: "rgba(250,204,21,0.98)", soft: "rgba(254,240,138,0.72)", text: "#fde68a" };
+
+  const needsTravel = actorSide !== targetSide || ["attack", "skill", "damage", "drain", "evade"].includes(effect);
+  const orbSize = ["skill", "drain"].includes(effect) ? 30 : effect === "damage" ? 24 : 22;
+  const shieldPulse = 0.45 + pulse * 0.55;
+
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 7, overflow: "visible" }}>
+      <div style={{ position: "absolute", left: "50%", top: 0, transform: `translateX(-50%) translateY(${-4 + Math.sin(nowTick / 170) * 2}px)`, padding: "8px 14px", borderRadius: 999, background: "rgba(8,15,30,0.78)", border: `1px solid ${palette.soft}`, color: palette.text, fontSize: 12, fontWeight: 900, letterSpacing: "0.02em", boxShadow: `0 0 22px ${palette.glow.replace('0.98', '0.18')}` }}>
+        {entry.text}
+      </div>
+      <div style={{ position: "absolute", left: `${startX}%`, top: `${startY}%`, width: 18 + pulse * 18, height: 18 + pulse * 18, transform: "translate(-50%, -50%)", borderRadius: "50%", background: `radial-gradient(circle, ${palette.soft}, transparent 70%)`, opacity: 0.2 + pulse * 0.4, filter: "blur(1px)" }} />
+      {needsTravel ? (
+        <div style={{ position: "absolute", left: `${orbX}%`, top: `${orbY}%`, width: orbSize + pulse * 14, height: orbSize + pulse * 14, transform: `translate(-50%, -50%) scale(${(0.92 + pulse * 0.28).toFixed(3)})`, borderRadius: "50%", background: `radial-gradient(circle, rgba(255,255,255,0.98), ${palette.glow} 42%, transparent 74%)`, boxShadow: `0 0 18px ${palette.glow}, 0 0 34px ${palette.glow.replace('0.98', '0.42')}` }} />
+      ) : null}
+      <div style={{ position: "absolute", left: `${endX}%`, top: `${endY}%`, width: ["guard", "shield", "buff"].includes(effect) ? 86 + pulse * 46 : 34 + pulse * 54, height: ["guard", "shield", "buff"].includes(effect) ? 86 + pulse * 46 : 34 + pulse * 54, transform: "translate(-50%, -50%)", borderRadius: "50%", border: ["guard", "shield", "buff"].includes(effect) ? `3px solid ${palette.soft}` : "none", background: ["guard", "shield", "buff"].includes(effect) ? `radial-gradient(circle, transparent 56%, ${palette.soft} 66%, transparent 78%)` : `radial-gradient(circle, ${palette.soft}, transparent 72%)`, opacity: ["guard", "shield", "buff"].includes(effect) ? shieldPulse : 0.18 + pulse * 0.58, boxShadow: `0 0 26px ${palette.glow.replace('0.98', '0.34')}` }} />
+    </div>
+  );
 }
 
 function SceneVisualPanel({ currentNode, battleActive, leaders, participants, activeNpcScene, pendingReward, investigationBackgroundImage, nowTick, isDaily = false }) {
