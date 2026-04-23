@@ -238,11 +238,20 @@ function InvestigationLobby({
 
   const startInvestigation = async () => {
     if (!isAdmin) return;
-    if (selectedLeaders.length > 0) {
+
+    const participantsForStart = Array.isArray(participants) ? participants.filter((participant) => participant?.name) : [];
+    if (participantsForStart.length <= 0) {
+      alert("참여 인원이 있어야 조사를 시작할 수 있습니다.");
+      return;
+    }
+
+    const safeLeaders = selectedLeaders.length > 0 ? selectedLeaders : [participantsForStart[0].name];
+    if (safeLeaders.length > 0) {
+      setSelectedLeaders(safeLeaders);
       const leaderRes = await apiFetch("/setInvestigationLeaders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: investigationId, leaders: selectedLeaders }),
+        body: JSON.stringify({ id: investigationId, leaders: safeLeaders }),
       });
       let leaderData = {};
       try { leaderData = await leaderRes.json(); } catch { leaderData = {}; }
@@ -365,7 +374,7 @@ function InvestigationLobby({
   }
 
   const leaderNames = selectedLeaders.length > 0 ? selectedLeaders.join(", ") : "리더 없음";
-  const canStartLobby = investigation?.type === "daily" ? participants.length > 0 : (participants.length > 0 && selectedLeaders.length > 0);
+  const canStartLobby = investigation?.type === "daily" ? participants.length > 0 : participants.length > 0;
 
   return (
     <DesignPageFrame design={design} pageKey="investigations" handlers={{}} theme={theme} minHeight="100vh" contentStyle={{ padding: 0 }}>
