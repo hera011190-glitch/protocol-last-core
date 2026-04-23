@@ -62,7 +62,7 @@ function ensureRuntimeFile(filename, fallbackValue) {
 }
 
 ["users.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
-["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
+["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json", "roomChats.json"].forEach((filename) => ensureRuntimeFile(filename));
 
 const allowedOrigins = [
   "http://localhost:3000",
@@ -138,14 +138,55 @@ function writeRuntimeArray(filename, value) {
   }
 }
 
+function readRuntimeObject(filename, fallback = {}) {
+  try {
+    const filePath = resolveDataPath(filename);
+    if (!fs.existsSync(filePath)) return fallback;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
+  } catch (error) {
+    console.error(`readRuntimeObject failed: ${filename}`, error);
+    return fallback;
+  }
+}
+
+function writeRuntimeObject(filename, value) {
+  try {
+    const filePath = resolveDataPath(filename);
+    const payload = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    scheduleJsonWrite(filePath, payload);
+  } catch (error) {
+    console.error(`writeRuntimeObject failed: ${filename}`, error);
+  }
+}
+
+function normalizeRoomChats(source = {}) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  return Object.fromEntries(
+    Object.entries(source)
+      .filter(([roomId]) => !!roomId)
+      .map(([roomId, messages]) => [roomId, Array.isArray(messages) ? messages.slice(-160) : []])
+  );
+}
+
 let usersDB = readRuntimeArray("users.json");
 let charactersDB = readRuntimeArray("characters.json");
-let roomChats = {};
+let roomChats = normalizeRoomChats(readRuntimeObject("roomChats.json", {}));
 let socketUsers = {};
 let dailyInvestigationAttempts = {};
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function persistInvestigationsRuntime() {
+  writeRuntimeArray("investigations.json", investigationsDB);
+}
+
+function persistRoomChatsRuntime() {
+  roomChats = normalizeRoomChats(roomChats);
+  writeRuntimeObject("roomChats.json", roomChats);
 }
 
 
@@ -839,6 +880,7 @@ function emitUsers() {
 }
 function emitParticipantsUpdated() {
   investigationsDB.forEach((item) => syncInvestigationRoster(item));
+  persistInvestigationsRuntime();
   io.emit("participantsUpdated", investigationsDB.map(getInvestigationSummary));
 }
 
@@ -846,6 +888,7 @@ function emitInvestigationState(investigationId) {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return;
   syncInvestigationRoster(item);
+  persistInvestigationsRuntime();
   io.to(investigationId).emit("investigationStateUpdated", buildPublicInvestigationState(item));
 }
 
@@ -2107,6 +2150,7 @@ app.post("/investigationChat", (req, res) => {
   if (roomChats[investigationId].length > 160) {
     roomChats[investigationId] = roomChats[investigationId].slice(-160);
   }
+  persistRoomChatsRuntime();
   io.to(investigationId).emit("chat", safeMessage);
   res.json({ success: true });
 });
@@ -2173,6 +2217,7 @@ app.post("/startDailyInvestigation", (req, res) => {
     item.dailyResumeOwnerKey = "";
     ensureParticipantState(item, sourceCharacter);
     roomChats[id] = [];
+    persistRoomChatsRuntime();
     ensureRouteHistorySeed(item);
     item.endConfirmations = [];
     setEventBanner(item, "조사 시작", "normal", 2400);
@@ -2281,6 +2326,7 @@ app.post("/startInvestigation", (req, res) => {
     item.ended = false;
     item.endedReason = "";
     roomChats[id] = [];
+    persistRoomChatsRuntime();
     ensureRouteHistorySeed(item);
     item.endConfirmations = [];
     setEventBanner(item, "조사 시작", "normal", 2400);
@@ -2641,6 +2687,7 @@ io.on("connection", (socket) => {
     if (roomChats[roomId].length > 160) {
       roomChats[roomId] = roomChats[roomId].slice(-160);
     }
+    persistRoomChatsRuntime();
     io.to(roomId).emit("chat", message);
   });
 
@@ -2666,7 +2713,7 @@ app.get("/admin/users", (req, res) => {
 // Place it AFTER buildInvestigation / investigationDefinitions / investigationsDB are defined
 // and BEFORE server.listen(...)
 
-const customInvestigationsPath = path.join(__dirname, "customInvestigations.json");
+const customInvestigationsPath = resolveDataPath("customInvestigations.json");
 
 function serializeInvestigationForPersistence(item) {
   const templateSource = item?.originalTemplate?.data?.nodes ? clone(item.originalTemplate) : {
@@ -2724,7 +2771,7 @@ function readCustomInvestigationsFromFile() {
 
 function writeCustomInvestigationsToFile(list) {
   try {
-    fs.writeFileSync(customInvestigationsPath, JSON.stringify(list, null, 2), "utf-8");
+    scheduleJsonWrite(customInvestigationsPath, Array.isArray(list) ? list : []);
   } catch (err) {
     console.error("writeCustomInvestigationsToFile error", err);
   }
@@ -2765,6 +2812,13 @@ customInvestigationsDB.forEach((template) => {
 });
 
 rehydrateInvestigationsFromRuntime();
+
+const runtimeAutosaveTimer = setInterval(() => {
+  persistInvestigationsRuntime();
+  persistRoomChatsRuntime();
+  writeCustomInvestigationsToFile(customInvestigationsDB);
+}, 5000);
+if (typeof runtimeAutosaveTimer.unref === "function") runtimeAutosaveTimer.unref();
 
 app.get("/admin/customInvestigations", (req, res) => {
   res.json(customInvestigationsDB);
@@ -3707,6 +3761,7 @@ app.post("/deleteInvestigation", (req, res) => {
   if (index < 0) return res.json({ success: false, message: "조사를 찾지 못했습니다." });
   investigationsDB.splice(index, 1);
   delete roomChats[id];
+  persistRoomChatsRuntime();
   emitParticipantsUpdated();
   res.json({ success: true });
 });
