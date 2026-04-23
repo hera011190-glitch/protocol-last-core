@@ -53,21 +53,26 @@ function ScrollPanel({ title, children, minHeight = 280 }) {
 }
 
 export default function CharacterProfile({ character, goBack, theme, design, pageKey = "profileCharacter" }) {
-  const hpStat = getHpStatValue(character?.stats?.hp);
+  const [hydratedCharacter, setHydratedCharacter] = useState(null);
+  const viewCharacter = hydratedCharacter && String(hydratedCharacter.id) === String(character?.id)
+    ? { ...character, ...hydratedCharacter }
+    : character;
+
+  const hpStat = getHpStatValue(viewCharacter?.stats?.hp);
   const maxHp = getMaxHpFromStat(hpStat);
-  const hp = getCurrentHpDisplay(hpStat, character?.currentHp || character?.stats?.currentHp);
-  const level = Number(character?.level || 1);
-  const exp = Number(character?.exp || 0);
+  const hp = getCurrentHpDisplay(hpStat, viewCharacter?.currentHp || viewCharacter?.stats?.currentHp);
+  const level = Number(viewCharacter?.level || 1);
+  const exp = Number(viewCharacter?.exp || 0);
   const expLimit = Math.max(100, level * 100);
   const expPercent = Math.max(0, Math.min(100, ((exp % expLimit) / expLimit) * 100));
-  const corrosion = Math.max(0, Math.min(100, Number(character?.corrosion || 0)));
+  const corrosion = Math.max(0, Math.min(100, Number(viewCharacter?.corrosion || 0)));
   const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
-  const relations = Array.isArray(character?.relations) ? character.relations : [];
-  const skills = Array.isArray(character?.skills) ? character.skills : [];
+  const relations = Array.isArray(viewCharacter?.relations) ? viewCharacter.relations : [];
+  const skills = Array.isArray(viewCharacter?.skills) ? viewCharacter.skills : [];
   const skillNames = skills.map((skill) => (typeof skill === "string" ? skill : (skill?.name || skill?.key || ""))).filter(Boolean);
-  const itemNames = Array.isArray(character?.items) ? character.items : [];
-  const oneLine = String(character?.oneLine || "한마디가 없습니다.").trim();
-  const stats = character?.stats || {};
+  const itemNames = Array.isArray(viewCharacter?.items) ? viewCharacter.items : [];
+  const oneLine = String(viewCharacter?.oneLine || "한마디가 없습니다.").trim();
+  const stats = viewCharacter?.stats || {};
   const [audioMuted, setAudioMuted] = useState(() => {
     try {
       return localStorage.getItem("plc-audio-muted") === "1";
@@ -76,29 +81,52 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
     }
   });
   const [resolvedProfileAudio, setResolvedProfileAudio] = useState({
-    url: String(character?.profileBgm || ""),
-    volume: Math.max(0, Math.min(1, Number(character?.profileBgmVolume ?? 1) || 1)),
+    url: String(viewCharacter?.profileBgm || ""),
+    volume: Math.max(0, Math.min(1, Number(viewCharacter?.profileBgmVolume ?? 1) || 1)),
   });
   const rootRef = useRef(null);
   const pageDesign = design?.pages?.[pageKey] || defaultDesign.pages?.[pageKey] || {};
   const background = pageDesign.background || {};
   const pageOverlay = background.overlay || "none";
 
+  useEffect(() => {
+    const characterId = character?.id;
+    if (!characterId) {
+      setHydratedCharacter(null);
+      return undefined;
+    }
+    const needsFullProfile = character?.profile === undefined || character?.profileBgm === undefined || character?.relations === undefined;
+    if (!needsFullProfile) {
+      setHydratedCharacter(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetch(buildApiUrl(`/character-public/${characterId}?t=${Date.now()}`), { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setHydratedCharacter(data?.character || null);
+      })
+      .catch(() => {
+        if (!cancelled) setHydratedCharacter(null);
+      });
+    return () => { cancelled = true; };
+  }, [character?.id, character?.profile, character?.profileBgm, character?.relations]);
+
   useLayoutEffect(() => {
     applyDomOverrides(rootRef.current, pageDesign.domOverrides || {});
-  }, [pageDesign.domOverrides, character, pageKey]);
+  }, [pageDesign.domOverrides, viewCharacter, pageKey]);
 
   useEffect(() => {
     setResolvedProfileAudio({
-      url: String(character?.profileBgm || ""),
-      volume: Math.max(0, Math.min(1, Number(character?.profileBgmVolume ?? 1) || 1)),
+      url: String(viewCharacter?.profileBgm || ""),
+      volume: Math.max(0, Math.min(1, Number(viewCharacter?.profileBgmVolume ?? 1) || 1)),
     });
-  }, [character?.id, character?.profileBgm, character?.profileBgmVolume]);
+  }, [character?.id, viewCharacter?.profileBgm, viewCharacter?.profileBgmVolume]);
 
   useEffect(() => {
-    if (!character?.id || character?.profileBgm) return undefined;
+    if (!character?.id || viewCharacter?.profileBgm) return undefined;
     let cancelled = false;
-    fetch(buildApiUrl(`/character/${character.id}?t=${Date.now()}`), { cache: "no-store" })
+    fetch(buildApiUrl(`/character-public/${viewCharacter.id}?t=${Date.now()}`), { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
@@ -114,12 +142,12 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
     return () => {
       cancelled = true;
     };
-  }, [character?.id, character?.profileBgm]);
+  }, [character?.id, viewCharacter?.profileBgm]);
 
   const effectiveProfileBgm = useMemo(() => ({
-    url: String(resolvedProfileAudio?.url || character?.profileBgm || ""),
-    volume: Math.max(0, Math.min(1, Number(resolvedProfileAudio?.volume ?? character?.profileBgmVolume ?? 1) || 1)),
-  }), [resolvedProfileAudio, character?.profileBgm, character?.profileBgmVolume]);
+    url: String(resolvedProfileAudio?.url || viewCharacter?.profileBgm || ""),
+    volume: Math.max(0, Math.min(1, Number(resolvedProfileAudio?.volume ?? viewCharacter?.profileBgmVolume ?? 1) || 1)),
+  }), [resolvedProfileAudio, viewCharacter?.profileBgm, viewCharacter?.profileBgmVolume]);
 
   useEffect(() => {
     const profileBgm = String(effectiveProfileBgm?.url || "");
@@ -140,7 +168,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
     return () => {
       window.removeEventListener("plc-audio-muted-changed", handleMuted);
     };
-  }, [character?.id, effectiveProfileBgm]);
+  }, [viewCharacter?.id, effectiveProfileBgm]);
 
   return (
     <div
@@ -201,7 +229,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
             <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", display: "grid", gap: 10 }}>
               <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 26, overflow: "hidden", background: "rgba(255,255,255,0.82)", boxShadow: theme?.shadow || "0 20px 44px rgba(73,132,170,0.12)" }}>
-                {character?.image ? <img src={character.image} alt={`${character.name}-profile`} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
+                {viewCharacter?.image ? <img src={viewCharacter.image} alt={`${viewCharacter.name}-profile`} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
               </div>
               <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", display: "flex", justifyContent: "center", paddingTop: 6 }}>
                 <div style={{ position: "relative", width: "fit-content", maxWidth: "100%", minWidth: 180, padding: "16px 20px", borderRadius: 24, background: "rgba(255,255,255,0.96)", color: "#274561", fontWeight: 700, lineHeight: 1.7, boxShadow: "0 14px 26px rgba(73,132,170,0.08)", textAlign: "center" }}>
@@ -210,8 +238,8 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
                 </div>
               </div>
               <div style={{ display: "grid", gap: 4, textAlign: "left", alignItems: "start" }}>
-                <div style={{ display: "inline-flex", justifySelf: "start", padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(148,163,184,0.28)", background: "rgba(255,255,255,0.52)", fontSize: 12, fontWeight: 900, color: "#41617e" }}>{character?.rank || "대원"}</div>
-                <h2 style={{ margin: 0, fontSize: 28, lineHeight: 1.08, textAlign: "left" }}>{character?.name}</h2>
+                <div style={{ display: "inline-flex", justifySelf: "start", padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(148,163,184,0.28)", background: "rgba(255,255,255,0.52)", fontSize: 12, fontWeight: 900, color: "#41617e" }}>{viewCharacter?.rank || "대원"}</div>
+                <h2 style={{ margin: 0, fontSize: 28, lineHeight: 1.08, textAlign: "left" }}>{viewCharacter?.name}</h2>
                 <div style={{ fontSize: 18, fontWeight: 900, color: "#16324a" }}>Lv. {level}</div>
               </div>
             </div>
@@ -233,7 +261,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
 
             <div style={{ padding: "18px 20px", borderRadius: 24, background: "rgba(255,255,255,0.72)", display: "grid", gap: 8 }}>
               <div style={{ fontSize: 12, color: "#6a87a3", fontWeight: 800 }}>보유 코인</div>
-              <div style={{ fontSize: 32, fontWeight: 900, color: "#13324b" }}>{Number(character?.coins || 0).toLocaleString()}</div>
+              <div style={{ fontSize: 32, fontWeight: 900, color: "#13324b" }}>{Number(viewCharacter?.coins || 0).toLocaleString()}</div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, minHeight: 0 }}>
@@ -252,13 +280,13 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
         </div>
 
         <div style={{ display: "grid", placeItems: "center", minHeight: 540, overflow: "hidden" }}>
-          {character?.mainImage ? (
-            <img src={character.mainImage} alt={`${character.name}-full`} style={{ maxWidth: "100%", maxHeight: 820, width: "auto", height: "auto", objectFit: "contain", filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.14))", pointerEvents: "none", userSelect: "none" }} />
+          {viewCharacter?.mainImage ? (
+            <img src={viewCharacter.mainImage} alt={`${viewCharacter.name}-full`} style={{ maxWidth: "100%", maxHeight: 820, width: "auto", height: "auto", objectFit: "contain", filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.14))", pointerEvents: "none", userSelect: "none" }} />
           ) : <div style={{ color: "#7e94ae" }}>전신 이미지</div>}
         </div>
 
         <div style={{ padding: "6px 2px", color: "#4f7390", lineHeight: 1.95 }}>
-          {renderProfileRichContent(character?.profile || "프로필이 없습니다.")}
+          {renderProfileRichContent(viewCharacter?.profile || "프로필이 없습니다.")}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>

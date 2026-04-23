@@ -385,6 +385,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const [relationDescription, setRelationDescription] = useState("");
   const profileEditDirtyRef = useRef(false);
   const lastProfileSyncRef = useRef("");
+  const profileHydratedIdRef = useRef("");
 
   const setProfileEditDraft = useCallback((updater) => {
     profileEditDirtyRef.current = true;
@@ -501,6 +502,22 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   useEffect(() => {
     setDraftDelta({ hp: 0, def: 0, atk: 0, agi: 0 });
   }, [currentUser?.id, currentUser?.stats?.hp, currentUser?.stats?.def, currentUser?.stats?.atk, currentUser?.stats?.agi, currentUser?.statPoints]);
+
+  useEffect(() => {
+    const currentId = String(currentUser?.id || "");
+    if (!currentId) return undefined;
+    const needsProfileDetail = currentUser?.profile === undefined || currentUser?.profileBgm === undefined || currentUser?.relations === undefined;
+    if (!needsProfileDetail || profileEditDirtyRef.current || profileHydratedIdRef.current === currentId) return undefined;
+
+    let cancelled = false;
+    profileHydratedIdRef.current = currentId;
+    loadCharacterDetail(currentId).then((detail) => {
+      if (cancelled || !detail) return;
+      onUpdateUser({ ...currentUser, ...detail });
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [currentUser?.id, currentUser?.profile, currentUser?.profileBgm, currentUser?.relations]);
 
   useEffect(() => {
     const incomingId = String(currentUser?.id || "");
