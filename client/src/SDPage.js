@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
 
@@ -437,7 +437,7 @@ const FALLBACK_MAPS = [
   { id: "sector-02", name: "구역 2", background: "linear-gradient(180deg, #eaf7ff, #d8efff)", neighbors: { left: "sector-01" } },
 ];
 
-function CharacterSprite({ character, quote, moving, onClick }) {
+const CharacterSprite = memo(function CharacterSprite({ character, quote, moving, onClick }) {
   const spriteImage = getSpriteImage(character);
   if (!spriteImage) return null;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
@@ -446,7 +446,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
   const tintStart = Math.max(0, 100 - tintReveal - 18);
   const tintMid = Math.max(0, 100 - tintReveal - 6);
   return (
-    <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate(-50%, -50%)", transition: "left 0.18s linear, top 0.18s linear, transform 0.18s linear", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform" }}>
+    <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
         <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translate3d(-50%, 0, 0)", display: "inline-block", maxWidth: "220px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
@@ -454,7 +454,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
         </div>
       ) : null}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 138, fontSize: "16px", fontWeight: 900, color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
-      <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translateX(-50%) ${moving ? `rotate(${character.dx >= 0 ? 0.22 : -0.22}deg)` : "rotate(0deg)"}`, transition: "transform 0.28s linear", willChange: "transform", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
+      <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translate3d(-50%, 0, 0) ${moving ? `rotate(${character.dx >= 0 ? 0.22 : -0.22}deg)` : "rotate(0deg)"}`, transition: "transform 0.14s linear", willChange: "transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         <img
           src={spriteImage}
           alt=""
@@ -513,7 +513,7 @@ function CharacterSprite({ character, quote, moving, onClick }) {
       </div>
     </div>
   );
-}
+});
 
 export default function SDPage({ activeCharacter, design, theme }) {
   const [characters, setCharacters] = useState(() => readCachedSdCharacters());
@@ -699,11 +699,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
     const step = (timestamp) => {
       if (!lastFrameRef.current) lastFrameRef.current = timestamp;
       const rawDt = timestamp - lastFrameRef.current;
-      if (Number.isFinite(rawDt) && rawDt < 18) {
-        rafId = window.requestAnimationFrame(step);
-        return;
-      }
-      const dt = Math.min(48, Math.max(16, Number.isFinite(rawDt) ? rawDt : 16));
+      const dt = Math.min(32, Math.max(8, Number.isFinite(rawDt) ? rawDt : 16));
       lastFrameRef.current = timestamp;
 
       if (document.visibilityState === "visible") {

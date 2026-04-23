@@ -290,8 +290,11 @@ export default function AdminPage({
     corrosion: "",
     atk: "",
     hp: "",
+    currentHp: "",
     def: "",
     agi: "",
+    items: [],
+    itemInput: "",
     age: "",
     bodyInfo: "",
     rank: "대원",
@@ -460,8 +463,11 @@ export default function AdminPage({
       corrosion: String(selectedCharacter.corrosion ?? 0),
       atk: String(selectedCharacter.stats?.atk ?? 0),
       hp: String(selectedCharacter.stats?.hp ?? 0),
+      currentHp: String(selectedCharacter.currentHp ?? (100 + Math.max(0, Number(selectedCharacter.stats?.hp || 0)) * 10)),
       def: String(selectedCharacter.stats?.def ?? 0),
       agi: String(selectedCharacter.stats?.agi ?? 0),
+      items: Array.isArray(selectedCharacter.items) ? selectedCharacter.items : [],
+      itemInput: "",
       age: selectedCharacter.age || "",
       bodyInfo: selectedCharacter.bodyInfo || "",
       rank: selectedCharacter.rank || "대원",
@@ -531,6 +537,8 @@ export default function AdminPage({
         coins: Number(edit.coins || 0),
         exp: Number(edit.exp || 0),
         stats: { atk: Number(edit.atk || 0), hp: Number(edit.hp || 0), def: Number(edit.def || 0), agi: Number(edit.agi || 0) },
+        currentHp: Number(edit.currentHp || 0),
+        items: Array.isArray(edit.items) ? edit.items : [],
         age: edit.age,
         bodyInfo: edit.bodyInfo,
         rank: edit.rank,
@@ -547,6 +555,23 @@ export default function AdminPage({
     setMessage("캐릭터 저장 완료");
     window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     loadAll();
+  };
+
+  const addAdminItemToSelectedCharacter = () => {
+    const value = String(edit.itemInput || "").trim();
+    if (!value) return setMessage("추가할 아이템 이름을 입력해주세요.");
+    setEdit((prev) => ({
+      ...prev,
+      items: [...(Array.isArray(prev.items) ? prev.items : []), value],
+      itemInput: "",
+    }));
+  };
+
+  const removeAdminItemFromSelectedCharacter = (index) => {
+    setEdit((prev) => ({
+      ...prev,
+      items: (Array.isArray(prev.items) ? prev.items : []).filter((_, itemIndex) => itemIndex !== index),
+    }));
   };
 
   const deleteSelectedCharacter = async () => {
@@ -726,10 +751,36 @@ export default function AdminPage({
                 <label>일일조사 횟수<input value={edit.dailyAttemptsLeft} onChange={(e) => setEdit({ ...edit, dailyAttemptsLeft: e.target.value })} style={inputStyle} /></label>
                 <label>도박 횟수<input value={edit.gambleCountLeft} onChange={(e) => setEdit({ ...edit, gambleCountLeft: e.target.value })} style={inputStyle} /></label>
                 <label>ATK<input value={edit.atk} onChange={(e) => setEdit({ ...edit, atk: e.target.value })} style={inputStyle} /></label>
-                <label>HP<input value={edit.hp} onChange={(e) => setEdit({ ...edit, hp: e.target.value })} style={inputStyle} /></label>
+                <label>HP 스탯<input value={edit.hp} onChange={(e) => setEdit({ ...edit, hp: e.target.value })} style={inputStyle} /></label>
+                <label>현재 HP<input value={edit.currentHp} onChange={(e) => setEdit({ ...edit, currentHp: e.target.value })} style={inputStyle} /></label>
                 <label>DEF<input value={edit.def} onChange={(e) => setEdit({ ...edit, def: e.target.value })} style={inputStyle} /></label>
                 <label>DEX<input value={edit.agi} onChange={(e) => setEdit({ ...edit, agi: e.target.value })} style={inputStyle} /></label>
               </div>
+            </div>
+
+            <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
+              <div style={{ fontWeight: 900 }}>보유 아이템 수정</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  value={edit.itemInput || ""}
+                  onChange={(e) => setEdit({ ...edit, itemInput: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAdminItemToSelectedCharacter(); } }}
+                  placeholder="추가할 아이템 이름"
+                  style={{ ...inputStyle, flex: "1 1 220px" }}
+                />
+                <button type="button" className="home-primary-button" onClick={addAdminItemToSelectedCharacter}>아이템 추가</button>
+              </div>
+              <div style={{ display: "grid", gap: 8, maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
+                {(Array.isArray(edit.items) && edit.items.length > 0) ? edit.items.map((item, index) => (
+                  <div key={`${item}-${index}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 12, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(98,176,220,0.16)" }}>
+                    <span style={{ fontWeight: 800, color: "#16324a" }}>{item}</span>
+                    <button type="button" className="ghost-button" onClick={() => removeAdminItemFromSelectedCharacter(index)}>삭제</button>
+                  </div>
+                )) : (
+                  <div style={{ padding: "11px 12px", borderRadius: 12, background: "rgba(255,255,255,0.72)", color: "#5d7a95", fontWeight: 700 }}>보유 아이템이 없습니다.</div>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: "#5d7a95", lineHeight: 1.6 }}>아이템을 추가하거나 삭제한 뒤 아래 저장 버튼을 눌러야 반영됩니다.</div>
             </div>
           </div>
 

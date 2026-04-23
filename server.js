@@ -1863,7 +1863,7 @@ app.post("/createCharacter", (req, res) => {
     stats: { atk: 5, hp: 0, def: 5, agi: 5 },
     currentHp: 100,
     skills: [],
-    items: ["기본 지도"],
+    items: [],
     age: age || "",
     bodyInfo: bodyInfo || "",
     rank: rank || "대원",
