@@ -206,11 +206,13 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
 
   const applyInvestigation = (data, options = {}) => {
     if (!data) return;
-    const skipRoundPlayback = !!options?.skipRoundPlayback;
     if (data.type === "daily") setChat([]);
     const hasRoundPlayback = Array.isArray(data?.lastBattleRound) && data.lastBattleRound.length > 0;
+    const incomingRoundKey = hasRoundPlayback ? getBattleRoundKey(data) : "";
+    const alreadyHandledSameRound = !!incomingRoundKey && incomingRoundKey === handledBattleRoundKeyRef.current;
+    const skipRoundPlayback = !!options?.skipRoundPlayback || alreadyHandledSameRound;
     if (data?.ended && hasRoundPlayback) setShowResult(false);
-    handledBattleRoundKeyRef.current = hasRoundPlayback ? getBattleRoundKey(data) : "";
+    handledBattleRoundKeyRef.current = incomingRoundKey;
     const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
     if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || (data?.ended && !hasRoundPlayback)) {
       playbackSourceRef.current = null;

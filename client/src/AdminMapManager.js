@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import defaultDesign from "./defaultDesign";
 import ImageDropInput from "./ImageDropInput";
+import { buildApiUrl } from "./api";
 
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
@@ -86,7 +87,7 @@ export default function AdminMapManager({ goBack }) {
   const previewRef = useRef(null);
 
   useEffect(() => {
-    fetch("http://localhost:3001/designConfig")
+    fetch(buildApiUrl("/designConfig"))
       .then((res) => res.json())
       .then((data) => setDesign(ensureDesign(data)))
       .catch(() => setDesign(ensureDesign(defaultDesign)));
@@ -204,7 +205,7 @@ export default function AdminMapManager({ goBack }) {
       const nextDesign = ensureDesign(design);
       nextDesign.siteContent.maps.activeCollectionId = selectedCollectionId;
       nextDesign.siteContent.maps.presets = selectedCollection?.presets || [];
-      const res = await fetch("http://localhost:3001/designConfig", {
+      const res = await fetch(buildApiUrl("/designConfig"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextDesign),
@@ -227,7 +228,7 @@ export default function AdminMapManager({ goBack }) {
       nextDesign.siteContent.maps.activeCollectionId = selectedCollectionId;
       nextDesign.siteContent.maps.presets = selectedCollection?.presets || [];
       setDesign(nextDesign);
-      await fetch("http://localhost:3001/designConfig", {
+      await fetch(buildApiUrl("/designConfig"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextDesign),
