@@ -273,6 +273,11 @@ function writeCachedMapConfig(value) {
   try { localStorage.setItem(SD_MAP_CONFIG_CACHE_KEY, JSON.stringify(value || {})); } catch {}
 }
 
+function clearCachedMapConfig() {
+  try { sessionStorage.removeItem(SD_MAP_CONFIG_CACHE_KEY); } catch {}
+  try { localStorage.removeItem(SD_MAP_CONFIG_CACHE_KEY); } catch {}
+}
+
 function readCachedSdCharacters() {
   try {
     const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
@@ -576,33 +581,54 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   useEffect(() => {
     if (design?.siteContent?.maps && Object.keys(design.siteContent.maps || {}).length > 0) {
-      setRemoteMapRoot((prev) => (prev && Object.keys(prev || {}).length > 0 ? prev : design.siteContent.maps));
+      setRemoteMapRoot(design.siteContent.maps);
     }
   }, [design?.siteContent?.maps]);
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 5000);
-    fetch(buildApiUrl(`/designMapsPublic`), { cache: "default", signal: controller.signal })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (cancelled || !data || typeof data !== "object") return;
-        setRemoteMapRoot(data);
-        writeCachedMapConfig(data);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        const cached = readCachedMapConfig();
-        if (cached && typeof cached === "object") setRemoteMapRoot(cached);
-      })
-      .finally(() => {
-        window.clearTimeout(timeout);
-      });
+    let controller = null;
+    let timeout = null;
+
+    const loadMapConfig = (force = false) => {
+      if (controller) {
+        try { controller.abort(); } catch {}
+      }
+      if (timeout) window.clearTimeout(timeout);
+      controller = new AbortController();
+      timeout = window.setTimeout(() => controller.abort(), 5000);
+      const cacheBuster = force ? `?v=${Date.now()}` : "";
+      fetch(buildApiUrl(`/designMapsPublic${cacheBuster}`), { cache: "no-store", signal: controller.signal })
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          if (cancelled || !data || typeof data !== "object") return;
+          setRemoteMapRoot(data);
+          writeCachedMapConfig(data);
+        })
+        .catch(() => {
+          if (cancelled || force) return;
+          const cached = readCachedMapConfig();
+          if (cached && typeof cached === "object") setRemoteMapRoot(cached);
+        })
+        .finally(() => {
+          if (timeout) window.clearTimeout(timeout);
+        });
+    };
+
+    const handleDesignUpdated = () => {
+      clearCachedMapConfig();
+      loadMapConfig(true);
+    };
+
+    loadMapConfig(false);
+    window.addEventListener("plc-design-updated", handleDesignUpdated);
     return () => {
       cancelled = true;
-      window.clearTimeout(timeout);
-      try { controller.abort(); } catch {}
+      window.removeEventListener("plc-design-updated", handleDesignUpdated);
+      if (timeout) window.clearTimeout(timeout);
+      if (controller) {
+        try { controller.abort(); } catch {}
+      }
     };
   }, []);
 
