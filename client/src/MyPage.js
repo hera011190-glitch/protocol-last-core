@@ -377,6 +377,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const [letter, setLetter] = useState("");
   const [draftDelta, setDraftDelta] = useState({ hp: 0, def: 0, atk: 0, agi: 0 });
   const [profileEdit, setProfileEdit] = useState({ name: "", age: "", bodyInfo: "", rank: "대원", oneLine: "", profile: "", image: "", mainImage: "", mainImageFrame: { x: 50, y: 26, scale: 1.06 }, investigationImage: "", profileBgm: "", profileBgmVolume: 1 });
+  const [brokenProfileImageSrc, setBrokenProfileImageSrc] = useState("");
   const [saveNotice, setSaveNotice] = useState("");
   const profileTextareaRef = useRef(null);
   const [relationOpen, setRelationOpen] = useState(false);
@@ -406,6 +407,15 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const exp = Number(currentUser?.exp || 0);
   const corrosion = Math.max(0, Math.min(100, Number(currentUser?.corrosion || 0)));
   const inventory = Array.isArray(currentUser?.items) ? currentUser.items : [];
+  const rawProfileImageSrc = currentUser?.image || currentUser?.profileImage || currentUser?.mainImage || currentUser?.investigationImage || "";
+  const myProfileImageSrc = rawProfileImageSrc && rawProfileImageSrc !== brokenProfileImageSrc
+    ? withImageVersion(rawProfileImageSrc, currentUser?.assetVersion || currentUser?.updatedAt)
+    : "";
+
+  useEffect(() => {
+    setBrokenProfileImageSrc("");
+  }, [currentUser?.id, currentUser?.image, currentUser?.profileImage, currentUser?.mainImage, currentUser?.investigationImage, currentUser?.assetVersion, currentUser?.updatedAt]);
+
   const safeMyDesign = useMemo(() => ({
     ...(design || {}),
     pages: {
@@ -844,10 +854,11 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
               <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: "16px" }}>
                 <div>
                   <div style={{ height: "220px", borderRadius: "22px", overflow: "hidden", background: "rgba(255,255,255,0.72)", position: "relative" }}>
-                    {currentUser.profileImage || currentUser.image || currentUser.investigationImage ? (
+                    {myProfileImageSrc ? (
                       <img
-                        src={withImageVersion(currentUser.profileImage || currentUser.image || currentUser.investigationImage, currentUser.assetVersion || currentUser.updatedAt)}
+                        src={myProfileImageSrc}
                         alt={currentUser.name}
+                        onError={() => setBrokenProfileImageSrc(rawProfileImageSrc)}
                         style={{
                           width: "100%",
                           height: "100%",
@@ -987,7 +998,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                     <ImageDropInput key={`profile-${profileEdit.image?.length || 0}-${currentUser?.assetVersion || 0}`} label="프로필 이미지" value={profileEdit.image} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, image: value }))} previewHeight={112} compact />
                     <ImageDropInput key={`sd-${profileEdit.investigationImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="SD 이미지" value={profileEdit.investigationImage} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, investigationImage: value }))} previewHeight={112} previewFit="contain" compact />
                     <ImageDropInput key={`main-${profileEdit.mainImage?.length || 0}-${currentUser?.assetVersion || 0}`} label="전신 이미지" value={profileEdit.mainImage} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, mainImage: value }))} previewHeight={112} previewFit="contain" compact />
-                    <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEditDraft((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact helperText="프로필 화면에 들어가면 이 BGM이 자동으로 재생돼." />
+                    <AudioSourceInput label="프로필 BGM" value={profileEdit.profileBgm || ""} onChange={(value) => setProfileEditDraft((prev) => ({ ...prev, profileBgm: value }))} volume={profileEdit.profileBgmVolume ?? 1} onVolumeChange={(value) => setProfileEditDraft((prev) => ({ ...prev, profileBgmVolume: value }))} previewScope="my-profile-preview" previewPlacement="profile" compact />
                   </div>
                   <div style={{ display: "grid", gap: 10, justifyItems: "stretch", width: "100%", overflow: "hidden", margin: "0 auto" }}>
                     <FullBodyFrameEditor image={profileEdit.mainImage} frame={profileEdit.mainImageFrame} previewCharacter={{ name: profileEdit.name, rank: profileEdit.rank, oneLine: profileEdit.oneLine }} theme={theme} onChange={(frame) => setProfileEditDraft((prev) => ({ ...prev, mainImageFrame: frame }))} />

@@ -41,7 +41,6 @@ function shapeStyle(extra = {}) {
 export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
-  const displayOneLine = oneLine ?? character?.oneLine ?? character?.profile ?? "프로필 열기";
   const imageSrc = image ?? character?.mainImage ?? character?.cardImage ?? character?.profileImage ?? character?.image ?? "";
   const cardFrame = frame ?? character?.mainImageFrame;
 
@@ -103,7 +102,6 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       <div style={{ position: "absolute", left: 18, right: 14, bottom: 10, zIndex: 4, display: "grid", gap: 5, pointerEvents: "none" }}>
         <div style={{ display: "inline-flex", width: "fit-content", padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(125,211,252,0.22)", background: "rgba(255,255,255,0.76)", fontSize: rankFontSize, fontWeight: 800, color: "#31506c" }}>{displayRank}</div>
         <div style={{ fontSize: nameFontSize, fontWeight: 900, color: "#16324a", lineHeight: 1.08 }}>{displayName}</div>
-        <div style={{ fontSize: oneLineFontSize, lineHeight: 1.3, color: "#476885", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{displayOneLine}</div>
       </div>
     </button>
   );
