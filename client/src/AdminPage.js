@@ -296,6 +296,8 @@ export default function AdminPage({
     agi: "",
     items: [],
     itemInput: "",
+    skills: [],
+    skillInput: "",
     age: "",
     bodyInfo: "",
     rank: "대원",
@@ -480,6 +482,8 @@ export default function AdminPage({
       agi: String(selectedCharacter.stats?.agi ?? 0),
       items: Array.isArray(selectedCharacter.items) ? selectedCharacter.items : [],
       itemInput: "",
+      skills: Array.isArray(selectedCharacter.skills) ? selectedCharacter.skills : [],
+      skillInput: "",
       age: selectedCharacter.age || "",
       bodyInfo: selectedCharacter.bodyInfo || "",
       rank: selectedCharacter.rank || "대원",
@@ -562,6 +566,7 @@ export default function AdminPage({
         stats: { atk: Number(edit.atk || 0), hp: Number(edit.hp || 0), def: Number(edit.def || 0), agi: Number(edit.agi || 0) },
         currentHp: Number(edit.currentHp || 0),
         items: Array.isArray(edit.items) ? edit.items : (Array.isArray(latestDetail.items) ? latestDetail.items : []),
+        skills: Array.isArray(edit.skills) ? edit.skills : (Array.isArray(latestDetail.skills) ? latestDetail.skills : []),
         age: edit.age,
         bodyInfo: edit.bodyInfo,
         rank: edit.rank,
@@ -595,6 +600,29 @@ export default function AdminPage({
     setEdit((prev) => ({
       ...prev,
       items: (Array.isArray(prev.items) ? prev.items : []).filter((_, itemIndex) => itemIndex !== index),
+    }));
+  };
+
+  const getSkillDisplayName = (skill) => {
+    if (typeof skill === "string") return skill;
+    if (!skill || typeof skill !== "object") return "이름 없는 스킬";
+    return skill.name || skill.label || skill.key || "이름 없는 스킬";
+  };
+
+  const addAdminSkillToSelectedCharacter = () => {
+    const value = String(edit.skillInput || "").trim();
+    if (!value) return setMessage("추가할 스킬 이름을 입력해주세요.");
+    setEdit((prev) => ({
+      ...prev,
+      skills: [...(Array.isArray(prev.skills) ? prev.skills : []), { key: value, name: value }],
+      skillInput: "",
+    }));
+  };
+
+  const removeAdminSkillFromSelectedCharacter = (index) => {
+    setEdit((prev) => ({
+      ...prev,
+      skills: (Array.isArray(prev.skills) ? prev.skills : []).filter((_, skillIndex) => skillIndex !== index),
     }));
   };
 
@@ -797,7 +825,7 @@ export default function AdminPage({
               <div style={{ display: "grid", gap: 8, maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
                 {(Array.isArray(edit.items) && edit.items.length > 0) ? edit.items.map((item, index) => (
                   <div key={`${item}-${index}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 12, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(98,176,220,0.16)" }}>
-                    <span style={{ fontWeight: 800, color: "#16324a" }}>{item}</span>
+                    <span style={{ fontWeight: 800, color: "#16324a" }}>{typeof item === "string" ? item : (item?.name || item?.key || "이름 없는 아이템")}</span>
                     <button type="button" className="ghost-button" onClick={() => removeAdminItemFromSelectedCharacter(index)}>삭제</button>
                   </div>
                 )) : (
@@ -805,6 +833,31 @@ export default function AdminPage({
                 )}
               </div>
               <div style={{ fontSize: 12, color: "#5d7a95", lineHeight: 1.6 }}>아이템을 추가하거나 삭제한 뒤 아래 저장 버튼을 눌러야 반영됩니다.</div>
+            </div>
+
+            <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
+              <div style={{ fontWeight: 900 }}>보유 스킬 수정</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  value={edit.skillInput || ""}
+                  onChange={(e) => setEdit({ ...edit, skillInput: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAdminSkillToSelectedCharacter(); } }}
+                  placeholder="추가할 스킬 이름"
+                  style={{ ...inputStyle, flex: "1 1 220px" }}
+                />
+                <button type="button" className="home-primary-button" onClick={addAdminSkillToSelectedCharacter}>스킬 추가</button>
+              </div>
+              <div style={{ display: "grid", gap: 8, maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
+                {(Array.isArray(edit.skills) && edit.skills.length > 0) ? edit.skills.map((skill, index) => (
+                  <div key={`${getSkillDisplayName(skill)}-${index}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 12, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(98,176,220,0.16)" }}>
+                    <span style={{ fontWeight: 800, color: "#16324a" }}>{getSkillDisplayName(skill)}</span>
+                    <button type="button" className="ghost-button" onClick={() => removeAdminSkillFromSelectedCharacter(index)}>삭제</button>
+                  </div>
+                )) : (
+                  <div style={{ padding: "11px 12px", borderRadius: 12, background: "rgba(255,255,255,0.72)", color: "#5d7a95", fontWeight: 700 }}>보유 스킬이 없습니다.</div>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: "#5d7a95", lineHeight: 1.6 }}>스킬을 추가하거나 삭제한 뒤 아래 저장 버튼을 눌러야 반영됩니다.</div>
             </div>
           </div>
 
