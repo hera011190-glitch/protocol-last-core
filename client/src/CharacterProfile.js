@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import defaultDesign from "./defaultDesign";
 import { applyDomOverrides } from "./designDomUtils";
-import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
+import { getCombatStatTotal, getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
 import { renderProfileRichContent } from "./profileRichText";
 import { buildApiUrl } from "./api";
 
@@ -273,9 +273,9 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
               <StatCell label="HP" value={hpStat} />
-              <StatCell label="ATK" value={stats.atk ?? 0} />
-              <StatCell label="DEF" value={stats.def ?? 0} />
-              <StatCell label="DEX" value={stats.agi ?? 0} />
+              <StatCell label="ATK" value={getCombatStatTotal(stats.atk)} />
+              <StatCell label="DEF" value={getCombatStatTotal(stats.def)} />
+              <StatCell label="DEX" value={getCombatStatTotal(stats.agi)} />
             </div>
 
             <div style={{ padding: "18px 20px", borderRadius: 24, background: "rgba(255,255,255,0.72)", display: "grid", gap: 8 }}>

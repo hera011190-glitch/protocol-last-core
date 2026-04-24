@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import socket, { ensureSocketConnected } from "./socket";
 import { apiFetch } from "./api";
@@ -1099,14 +1099,18 @@ useEffect(() => {
     const snapshotTimers = scheduledEntries
       .filter((entry) => entry?.snapshot && Number(entry?.snapshotAt || 0) > 0)
       .map((entry) => setTimeout(() => {
+        const nextBattleState = {
+          ...(JSON.parse(JSON.stringify(baseBattle || {})) || {}),
+          hp: Number(entry.snapshot.battleHp ?? baseBattle?.hp ?? 0),
+          maxHp: Number(entry.snapshot.battleMaxHp ?? baseBattle?.maxHp ?? baseBattle?.hp ?? 0),
+        };
+        if (Array.isArray(entry.snapshot.battleEnemies)) {
+          nextBattleState.enemies = JSON.parse(JSON.stringify(entry.snapshot.battleEnemies));
+        }
         setPlaybackState({
           active: true,
           participantStates: JSON.parse(JSON.stringify(entry.snapshot.participantStates || baseParticipantStates)),
-          battle: {
-            ...(JSON.parse(JSON.stringify(baseBattle || {})) || {}),
-            hp: Number(entry.snapshot.battleHp ?? baseBattle?.hp ?? 0),
-            maxHp: Number(entry.snapshot.battleMaxHp ?? baseBattle?.maxHp ?? baseBattle?.hp ?? 0),
-          },
+          battle: nextBattleState,
         });
       }, Math.max(0, Number(entry.snapshotAt || 0) - now)));
     requestAnimationFrame(() => {
@@ -2602,7 +2606,73 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   );
 }
 
+
+function getBattleEnemyList(battle) {
+  if (!battle) return [];
+  const raw = Array.isArray(battle.enemies) && battle.enemies.length > 0 ? battle.enemies : [battle];
+  return raw.map((enemy, index) => ({
+    id: enemy?.id || `enemy-${index + 1}`,
+    name: enemy?.name || (raw.length > 1 ? `E-Beast ${index + 1}` : battle.name || "E-Beast"),
+    hp: Number(enemy?.hp ?? 0),
+    maxHp: Number(enemy?.maxHp ?? enemy?.hp ?? 1),
+    atk: Number(enemy?.atk ?? battle.atk ?? 0),
+    def: Number(enemy?.def ?? battle.def ?? 0),
+    agi: Number(enemy?.agi ?? battle.agi ?? 0),
+    aoe_chance: Number(enemy?.aoe_chance ?? battle.aoe_chance ?? 0),
+    finisher_chance: Number(enemy?.finisher_chance ?? battle.finisher_chance ?? 0),
+    image: enemy?.image || battle.image || "",
+  }));
+}
+
 function BattleHero({ node, investigation, rounds = [], compact = false, nowTick = Date.now(), battlePlaybackLocked = false }) {
+  const battle = node?.battle;
+  if (!battle) return null;
+  const enemies = getBattleEnemyList(battle);
+  const totalHp = enemies.reduce((sum, enemy) => sum + Math.max(0, Number(enemy.hp || 0)), 0);
+  const totalMaxHp = enemies.reduce((sum, enemy) => sum + Math.max(0, Number(enemy.maxHp || enemy.hp || 0)), 0) || 1;
+  const displayTurn = battlePlaybackLocked ? Math.max(1, Number(investigation?.battleTurn || 1) - 1) : (investigation?.battleTurn || 1);
+
+  return (
+    <div style={{ display: "grid", justifyItems: "center", gap: 10, textAlign: "center", padding: compact ? "8px 12px" : "12px 16px", width: "100%" }}>
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {displayTurn}</div>
+      <div style={{ display: "flex", gap: compact ? 12 : 18, justifyContent: "center", alignItems: "end", width: "100%", overflowX: "auto", padding: "4px 4px 8px" }}>
+        {enemies.map((enemy) => {
+          const hp = Number(enemy.hp || 0);
+          const maxHp = Number(enemy.maxHp || enemy.hp || 1);
+          const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
+          const effect = getRecentBattleEffect(enemy.name, rounds, {}, nowTick);
+          const visual = getBattleVisualState({ name: enemy.name, rounds, nowTick, side: "enemy" });
+          const imageSrc = enemy.image || investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || currentMonsterPlaceholder;
+          return (
+            <div key={enemy.id || enemy.name} style={{ minWidth: compact ? 132 : 180, maxWidth: compact ? 160 : 220, display: "grid", justifyItems: "center", gap: 7, opacity: hp <= 0 ? 0.42 : 1, filter: hp <= 0 ? "grayscale(0.8)" : "none" }}>
+              {imageSrc ? (
+                <div style={{ position: "relative", width: compact ? 108 : 168, height: compact ? 108 : 168, display: "grid", placeItems: "center", borderRadius: 24, ...visual.wrapperStyle }}>
+                  {visual.overlayStyle ? <div style={{ position: "absolute", inset: 8, borderRadius: 999, pointerEvents: "none", ...visual.overlayStyle }} /> : null}
+                  {visual.fxOuterStyle ? <div style={visual.fxOuterStyle} /> : null}
+                  {visual.fxInnerStyle ? <div style={visual.fxInnerStyle} /> : null}
+                  <img src={imageSrc} alt={enemy.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
+                </div>
+              ) : null}
+              <div style={{ fontSize: compact ? 16 : 22, fontWeight: 900, lineHeight: 1.1 }}>{enemy.name}</div>
+              <div style={{ width: "100%" }}>
+                <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>
+                <div style={{ marginTop: 5, color: "#fce7f3", fontWeight: 800, fontSize: 12 }}>HP {hp}/{maxHp}</div>
+              </div>
+              {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 11, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
+            </div>
+          );
+        })}
+      </div>
+      {enemies.length > 1 ? (
+        <div style={{ width: "min(560px, 100%)" }}>
+          <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${Math.max(0, Math.min(100, (totalHp / totalMaxHp) * 100))}%` }} /></div>
+          <div style={{ marginTop: 6, color: "#fecaca", fontWeight: 900, fontSize: 12 }}>적군 전체 HP {totalHp}/{totalMaxHp}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+) {
   const battle = node?.battle;
   if (!battle) return null;
   const hp = Number(battle.hp || 0);
@@ -2635,6 +2705,23 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
 }
 
 function BattleMonsterStats({ node }) {
+  const battle = node?.battle;
+  if (!battle) return null;
+  const enemies = getBattleEnemyList(battle);
+  return (
+    <div style={{ marginTop: "12px", display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+      {enemies.map((enemy) => (
+        <React.Fragment key={enemy.id || enemy.name}>
+          <div style={topChipStyle}>{enemy.name} HP {enemy.hp}/{enemy.maxHp || enemy.hp}</div>
+          <div style={topChipStyle}>ATK {enemy.atk || 0}</div>
+          <div style={topChipStyle}>DEF {enemy.def || 0}</div>
+          <div style={topChipStyle}>DEX {enemy.agi || 0}</div>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+) {
   const battle = node?.battle;
   if (!battle) return null;
   return (

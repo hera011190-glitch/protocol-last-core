@@ -6,7 +6,15 @@ import AudioSourceInput from "./AudioSourceInput";
 import { buildApiUrl } from "./api";
 import ProfileRichEditor from "./ProfileRichEditor";
 import { renderProfileRichContent } from "./profileRichText";
-import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
+import {
+  COMBAT_STAT_MAX,
+  getCombatStatPoint,
+  getCombatStatTotal,
+  getCurrentHpDisplay,
+  getHpStatValue,
+  getMaxHpFromStat,
+  HP_STAT_MAX,
+} from "./hpUtils";
 import { normalizeProfileCardFrame, ProfileCard } from "./profileCardShared";
 
 function card(base = {}) {
@@ -331,21 +339,23 @@ function FullBodyFrameEditor({ image, frame, onChange, previewCharacter = {}, th
   );
 }
 
-function StatEditorRow({ label, value, delta, availablePoints, onIncrease, onDecrease, previewMaxHp }) {
+function StatEditorRow({ label, value, total, max, delta, availablePoints, onIncrease, onDecrease, previewMaxHp }) {
   return (
     <div style={card({ padding: "14px 16px", borderRadius: "18px", background: "rgba(255,255,255,0.62)" })}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
         <div style={{ fontWeight: 900 }}>{label}</div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {delta > 0 ? <button type="button" className="ghost-button" onClick={onDecrease}>-</button> : null}
-          <div style={{ minWidth: 54, textAlign: "center", fontWeight: 800 }}>{value}</div>
-          <button type="button" className="ghost-button" onClick={onIncrease} disabled={availablePoints <= 0}>+</button>
+          <div style={{ minWidth: 86, textAlign: "center", fontWeight: 800 }}>{value} / {max}</div>
+          <button type="button" className="ghost-button" onClick={onIncrease} disabled={availablePoints <= 0 || Number(value || 0) >= Number(max || 0)}>+</button>
         </div>
       </div>
       <div style={{ height: "14px", borderRadius: "999px", background: "rgba(230,240,248,0.86)", overflow: "hidden" }}>
-        <div style={{ width: `${Math.min(100, Math.max(12, value * 8))}%`, height: "100%", background: "linear-gradient(90deg, #bfdbfe, #38bdf8)" }} />
+        <div style={{ width: `${Math.min(100, Math.max(12, (Number(value || 0) / Math.max(Number(max || 1), 1)) * 100))}%`, height: "100%", background: "linear-gradient(90deg, #bfdbfe, #38bdf8)" }} />
       </div>
-      {label === "HP" ? <div style={{ fontSize: "12px", color: "#5d7a95", marginTop: "6px" }}>최대 체력 {previewMaxHp}</div> : null}
+      <div style={{ fontSize: "12px", color: "#5d7a95", marginTop: "6px" }}>
+        {label === "HP" ? `최대 체력 ${previewMaxHp}` : `전투 적용 수치 ${total}`}
+      </div>
     </div>
   );
 }
@@ -396,10 +406,10 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const baseHpStat = getHpStatValue(currentUser?.stats?.hp);
   const effectiveHpStat = baseHpStat + Number(draftDelta.hp || 0);
   const effectiveStats = {
-    hp: effectiveHpStat,
-    def: Number(currentUser?.stats?.def || 0) + Number(draftDelta.def || 0),
-    atk: Number(currentUser?.stats?.atk || 0) + Number(draftDelta.atk || 0),
-    agi: Number(currentUser?.stats?.agi || 0) + Number(draftDelta.agi || 0),
+    hp: Math.min(HP_STAT_MAX, effectiveHpStat),
+    def: Math.min(COMBAT_STAT_MAX, getCombatStatPoint(currentUser?.stats?.def) + Number(draftDelta.def || 0)),
+    atk: Math.min(COMBAT_STAT_MAX, getCombatStatPoint(currentUser?.stats?.atk) + Number(draftDelta.atk || 0)),
+    agi: Math.min(COMBAT_STAT_MAX, getCombatStatPoint(currentUser?.stats?.agi) + Number(draftDelta.agi || 0)),
   };
   const previewMaxHp = getMaxHpFromStat(effectiveStats.hp);
   const currentHp = getCurrentHpDisplay(effectiveStats.hp, currentUser?.currentHp || currentUser?.stats?.currentHp);
@@ -705,6 +715,15 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     const useValue = Number(meta.useValue || meta.amount || 0);
     const statTarget = meta.statTarget || meta.targetStat || "atk";
     const maxHp = getMaxHpFromStat(stats.hp);
+    const isStatAtLimit = (key) => {
+      if (key === "hp") return getHpStatValue(stats.hp) >= HP_STAT_MAX;
+      return getCombatStatPoint(stats[key]) >= COMBAT_STAT_MAX;
+    };
+    const blockIfStatLimit = (key) => {
+      if (useValue <= 0 || !isStatAtLimit(key)) return false;
+      alert("이미 해당 스탯이 최대치입니다.");
+      return true;
+    };
 
     if (useType === "heal") {
       patch.currentHp = Math.min(maxHp, Number(currentUser.currentHp || maxHp) + useValue);
@@ -719,26 +738,29 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
       }
       patch.skills = skills;
     } else if (useType === "statBoost") {
+      if (blockIfStatLimit(statTarget)) return;
       const prevMaxHp = getMaxHpFromStat(stats.hp);
       if (statTarget === "hp") {
-        stats.hp = getHpStatValue(stats.hp) + useValue;
+        stats.hp = Math.min(HP_STAT_MAX, getHpStatValue(stats.hp) + useValue);
         const nextMaxHp = getMaxHpFromStat(stats.hp);
         const currentValue = Number(currentUser.currentHp || prevMaxHp);
         patch.currentHp = Math.min(nextMaxHp, currentValue + Math.max(0, nextMaxHp - prevMaxHp));
       }
-      if (statTarget === "def") stats.def = Number(stats.def || 0) + useValue;
-      if (statTarget === "atk") stats.atk = Number(stats.atk || 0) + useValue;
-      if (statTarget === "agi") stats.agi = Number(stats.agi || 0) + useValue;
+      if (statTarget === "def") stats.def = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats.def) + useValue);
+      if (statTarget === "atk") stats.atk = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats.atk) + useValue);
+      if (statTarget === "agi") stats.agi = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats.agi) + useValue);
       patch.stats = stats;
     } else if (useType === "hp") {
+      if (blockIfStatLimit("hp")) return;
       const prevMaxHp = getMaxHpFromStat(stats.hp);
-      stats.hp = getHpStatValue(stats.hp) + useValue;
+      stats.hp = Math.min(HP_STAT_MAX, getHpStatValue(stats.hp) + useValue);
       const nextMaxHp = getMaxHpFromStat(stats.hp);
       const currentValue = Number(currentUser.currentHp || prevMaxHp);
       patch.currentHp = Math.min(nextMaxHp, currentValue + Math.max(0, nextMaxHp - prevMaxHp));
       patch.stats = stats;
     } else if (useType === "atk" || useType === "def" || useType === "agi") {
-      stats[useType] = Number(stats[useType] || 0) + useValue;
+      if (blockIfStatLimit(useType)) return;
+      stats[useType] = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats[useType]) + useValue);
       patch.stats = stats;
     } else if (useType === "none" || useType === "unusable") {
       alert("이 아이템은 사용할 수 없습니다.");
@@ -830,10 +852,10 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   };
 
   const statRows = [
-    { key: "hp", label: "HP", value: effectiveStats.hp },
-    { key: "def", label: "DEF", value: effectiveStats.def },
-    { key: "atk", label: "ATK", value: effectiveStats.atk },
-    { key: "agi", label: "DEX", value: effectiveStats.agi },
+    { key: "hp", label: "HP", value: effectiveStats.hp, total: previewMaxHp, max: HP_STAT_MAX },
+    { key: "def", label: "DEF", value: effectiveStats.def, total: getCombatStatTotal(effectiveStats.def), max: COMBAT_STAT_MAX },
+    { key: "atk", label: "ATK", value: effectiveStats.atk, total: getCombatStatTotal(effectiveStats.atk), max: COMBAT_STAT_MAX },
+    { key: "agi", label: "DEX", value: effectiveStats.agi, total: getCombatStatTotal(effectiveStats.agi), max: COMBAT_STAT_MAX },
   ];
 
   return (
@@ -905,7 +927,12 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                         delta={draftDelta[row.key]}
                         availablePoints={availableStatPoints}
                         previewMaxHp={previewMaxHp}
-                        onIncrease={() => setDraftDelta((prev) => ({ ...prev, [row.key]: Number(prev[row.key] || 0) + 1 }))}
+                        total={row.total}
+                        max={row.max}
+                        onIncrease={() => {
+                          if (availableStatPoints <= 0 || Number(row.value || 0) >= Number(row.max || 0)) return;
+                          setDraftDelta((prev) => ({ ...prev, [row.key]: Number(prev[row.key] || 0) + 1 }));
+                        }}
                         onDecrease={() => setDraftDelta((prev) => ({ ...prev, [row.key]: Math.max(0, Number(prev[row.key] || 0) - 1) }))}
                       />
                     ))}

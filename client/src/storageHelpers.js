@@ -11,7 +11,7 @@ export function toLightCharacter(character) {
     corrosion: character.corrosion || 0,
     coins: character.coins || 0,
     exp: character.exp || 0,
-    stats: character.stats || { atk: 5, hp: 0, def: 5, agi: 5 },
+    stats: character.stats || { atk: 0, hp: 0, def: 0, agi: 0 },
     currentHp: character.currentHp,
     skills: Array.isArray(character.skills) ? character.skills : [],
     items: Array.isArray(character.items) ? character.items : [],

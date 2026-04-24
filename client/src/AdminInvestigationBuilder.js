@@ -403,7 +403,32 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const handleUp = () => endNodeDrag();
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
-    return () => {
+  
+  const createBattleEnemy = () => ({ id: `enemy-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: "새 E-Beast", hp: 40, maxHp: 40, atk: 8, def: 3, agi: 6, aoe_chance: 0.3, finisher_chance: 0.05, finisherType: "single", rewardPoints: 10, rewardItem: "", image: "" });
+
+  const getBattleEnemiesForEditor = (battle) => {
+    if (!battle) return [];
+    if (Array.isArray(battle.enemies) && battle.enemies.length > 0) return battle.enemies;
+    return [{ id: "enemy-1", name: battle.name || "새 E-Beast", hp: Number(battle.hp || 40), maxHp: Number(battle.maxHp || battle.hp || 40), atk: Number(battle.atk || 8), def: Number(battle.def || 3), agi: Number(battle.agi || 6), aoe_chance: Number(battle.aoe_chance ?? 0.3), finisher_chance: Number(battle.finisher_chance ?? 0.05), finisherType: battle.finisherType || "single", rewardPoints: Number(battle.rewardPoints || 10), rewardItem: battle.rewardItem || "", image: battle.image || "" }];
+  };
+
+  const updateBattleEnemy = (enemyIndex, patch) => {
+    updateNode(selectedNode.id, (node) => {
+      const enemies = getBattleEnemiesForEditor(node.battle || {}).map((enemy, index) => ({ ...enemy, id: enemy.id || `enemy-${index + 1}` }));
+      const nextEnemies = patch === null ? enemies.filter((_, index) => index !== enemyIndex) : enemies.map((enemy, index) => index === enemyIndex ? { ...enemy, ...patch } : enemy);
+      const safeEnemies = nextEnemies.length > 0 ? nextEnemies : [createBattleEnemy()];
+      return { ...node, battle: { ...(node.battle || {}), name: node.battle?.name || "적군", enemies: safeEnemies } };
+    });
+  };
+
+  const addBattleEnemy = () => {
+    updateNode(selectedNode.id, (node) => {
+      const enemies = getBattleEnemiesForEditor(node.battle || {}).map((enemy, index) => ({ ...enemy, id: enemy.id || `enemy-${index + 1}` }));
+      return { ...node, battle: { ...(node.battle || { name: "적군" }), enemies: [...enemies, createBattleEnemy()] } };
+    });
+  };
+
+  return () => {
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
@@ -671,33 +696,44 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           </div>
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>전투</div>
-          <div style={{ color: "#6a87a3", fontSize: 13 }}>전체공격 확률은 모든 아군을 때릴 확률, 필살기 확률은 강한 특수 공격 확률이야. 보상 아이템은 전투 승리 후 지급될 아이템이야.</div>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!selectedNode.battle} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: e.target.checked ? { name: "새 E-Beast", hp: 40, maxHp: 40, atk: 8, def: 3, agi: 6, aoe_chance: 0.3, finisher_chance: 0.05, finisherType: "single", rewardPoints: 10, rewardItem: "", image: "" } : null }))} />전투 사용</label>
-          {selectedNode.battle ? <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ color: "#6a87a3", fontSize: 13 }}>한 공간에 적군을 여러 명 넣을 수 있습니다. 적군 턴은 그대로 한 번이고, 등록된 적들이 차례로 행동합니다.</div>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!selectedNode.battle} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: e.target.checked ? { name: "적군", enemies: [createBattleEnemy()], rewardItem: "", rewardPoints: 0 } : null }))} />전투 사용</label>
+          {selectedNode.battle ? <div style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gap: 6 }}>
-              <div style={fieldLabelStyle}>몬스터 이름</div>
-              <input value={selectedNode.battle.name || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, name: e.target.value } }))} placeholder="몬스터 이름" style={inputStyle} />
+              <div style={fieldLabelStyle}>전투 이름</div>
+              <input value={selectedNode.battle.name || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, name: e.target.value } }))} placeholder="예: 오염체 무리" style={inputStyle} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>체력(HP)</div><input type="number" value={selectedNode.battle.hp || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, hp: Number(e.target.value || 0), maxHp: Number(e.target.value || 0) } }))} placeholder="HP" style={inputStyle} /></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>공격력(ATK)</div><input type="number" value={selectedNode.battle.atk || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, atk: Number(e.target.value || 0) } }))} placeholder="ATK" style={inputStyle} /></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>방어력(DEF)</div><input type="number" value={selectedNode.battle.def || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, def: Number(e.target.value || 0) } }))} placeholder="DEF" style={inputStyle} /></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>민첩(DEX)</div><input type="number" value={selectedNode.battle.agi || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, agi: Number(e.target.value || 0) } }))} placeholder="DEX" style={inputStyle} /></div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전체공격 확률</div><input type="number" step="0.05" value={selectedNode.battle.aoe_chance || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, aoe_chance: Number(e.target.value || 0) } }))} placeholder="전체공격 확률" style={inputStyle} /></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>필살기 확률</div><input type="number" step="0.05" value={selectedNode.battle.finisher_chance || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, finisher_chance: Number(e.target.value || 0) } }))} placeholder="필살기 확률" style={inputStyle} /></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>필살기 범위</div><select value={selectedNode.battle.finisherType || "single"} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, finisherType: e.target.value } }))} style={inputStyle}><option value="single">필살기 단일</option><option value="aoe">필살기 전체</option></select></div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 보상 아이템</div><select value={selectedNode.battle.rewardItem || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, rewardItem: e.target.value } }))} style={inputStyle}><option value="">보상 아이템 선택</option>{catalog.map((item) => <option key={item.id || item.name} value={item.id || item.name}>{item.name || item.id}</option>)}</select></div>
-              <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 보상 포인트</div><input type="number" value={selectedNode.battle.rewardPoints || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, rewardPoints: Number(e.target.value || 0) } }))} placeholder="보상 포인트" style={inputStyle} /></div>
-            </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              <div style={fieldLabelStyle}>몬스터 이미지</div>
-              <ImageDropInput label="몬스터 이미지" value={selectedNode.battle?.image || ""} onChange={(value) => updateNode(selectedNode.id, (node) => ({ ...node, battle: { ...node.battle, image: value } }))} previewHeight={140} previewFit="contain" compact />
-            </div>
+            {getBattleEnemiesForEditor(selectedNode.battle).map((enemy, enemyIndex) => (
+              <div key={enemy.id || enemyIndex} style={{ display: "grid", gap: 8, padding: 12, borderRadius: 18, border: "1px solid rgba(148,163,184,0.22)", background: "rgba(15,23,42,0.42)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <strong style={{ color: "#dbeafe" }}>적군 {enemyIndex + 1}</strong>
+                  <button type="button" className="ghost-button" onClick={() => updateBattleEnemy(enemyIndex, null)} disabled={getBattleEnemiesForEditor(selectedNode.battle).length <= 1}>삭제</button>
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={fieldLabelStyle}>적군 이름</div>
+                  <input value={enemy.name || ""} onChange={(e) => updateBattleEnemy(enemyIndex, { name: e.target.value })} placeholder="몬스터 이름" style={inputStyle} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>체력(HP)</div><input type="number" value={enemy.hp || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { hp: Number(e.target.value || 0), maxHp: Number(e.target.value || 0) })} placeholder="HP" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>공격력(ATK)</div><input type="number" value={enemy.atk || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { atk: Number(e.target.value || 0) })} placeholder="ATK" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>방어력(DEF)</div><input type="number" value={enemy.def || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { def: Number(e.target.value || 0) })} placeholder="DEF" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>민첩(DEX)</div><input type="number" value={enemy.agi || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { agi: Number(e.target.value || 0) })} placeholder="DEX" style={inputStyle} /></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전체공격 확률</div><input type="number" step="0.05" value={enemy.aoe_chance || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { aoe_chance: Number(e.target.value || 0) })} placeholder="전체공격 확률" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>필살기 확률</div><input type="number" step="0.05" value={enemy.finisher_chance || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { finisher_chance: Number(e.target.value || 0) })} placeholder="필살기 확률" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>필살기 범위</div><select value={enemy.finisherType || "single"} onChange={(e) => updateBattleEnemy(enemyIndex, { finisherType: e.target.value })} style={inputStyle}><option value="single">필살기 단일</option><option value="aoe">필살기 전체</option></select></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 보상 아이템</div><select value={enemy.rewardItem || ""} onChange={(e) => updateBattleEnemy(enemyIndex, { rewardItem: e.target.value })} style={inputStyle}><option value="">보상 아이템 선택</option>{catalog.map((item) => <option key={item.id || item.name} value={item.id || item.name}>{item.name || item.id}</option>)}</select></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 보상 포인트</div><input type="number" value={enemy.rewardPoints || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { rewardPoints: Number(e.target.value || 0) })} placeholder="보상 포인트" style={inputStyle} /></div>
+                </div>
+                <ImageDropInput label="몬스터 이미지" value={enemy.image || ""} onChange={(value) => updateBattleEnemy(enemyIndex, { image: value })} previewHeight={120} previewFit="contain" compact />
+              </div>
+            ))}
+            <button type="button" className="ghost-button" onClick={addBattleEnemy}>적군 추가</button>
           </div> : null}
+
         </section>
       </div>
     </div>
