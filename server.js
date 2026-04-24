@@ -8,11 +8,6 @@ const path = require("path");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
-
-app.get("/healthz", (req, res) => {
-  res.status(200).send("ok");
-});
-
 const REQUEST_BODY_LIMIT = "100mb";
 const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
@@ -99,6 +94,12 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+function setFastPublicCache(res, seconds = 5) {
+  res.set("Cache-Control", `public, max-age=${seconds}, stale-while-revalidate=30`);
+  res.removeHeader("Pragma");
+  res.removeHeader("Expires");
+}
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: corsOptions });
@@ -1952,9 +1953,15 @@ app.get("/designConfig", (req, res) => res.json(designConfig));
 
 app.get("/presetSkills", (req, res) => res.json(getPresetSkillList()));
 
-app.get("/designConfigPublic", (req, res) => res.json(getPublicDesignShellConfig()));
+app.get("/designConfigPublic", (req, res) => {
+  setFastPublicCache(res, 10);
+  res.json(getPublicDesignShellConfig());
+});
 
-app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig()));
+app.get("/designMapsPublic", (req, res) => {
+  setFastPublicCache(res, 10);
+  res.json(getPublicDesignMapsConfig());
+});
 
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
@@ -3662,16 +3669,22 @@ app.get("/characters-lite", (req, res) => {
 });
 
 app.get("/characters-public/:ownerId", (req, res) => {
+  setFastPublicCache(res, 5);
   res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(buildPublicCharacterSummary));
 });
 
 app.get("/characters-public", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
+  setFastPublicCache(res, 5);
   res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 
 app.get("/health", (req, res) => {
   res.json({ success: true, ok: true, ts: Date.now() });
+});
+
+app.get("/healthz", (req, res) => {
+  res.status(200).send("ok");
 });
 
 app.get("/admin/relationRequests", (req, res) => {

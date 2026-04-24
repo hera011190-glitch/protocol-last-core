@@ -60,15 +60,16 @@ export async function apiJson(path, options = {}) {
 
 export async function apiJsonCached(path, { ttlMs = 10000, force = false, storageKey = "" } = {}) {
   const key = storageKey || String(path || "");
+  const metaKey = storageKey ? `${storageKey}__meta` : key;
   const now = Date.now();
   const cached = __jsonCache.get(key);
   if (!force && cached && now - cached.at < ttlMs) return cached.value;
   try {
     if (!force && storageKey) {
-      const raw = sessionStorage.getItem(storageKey);
+      const raw = sessionStorage.getItem(metaKey) || sessionStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && now - Number(parsed.at || 0) < ttlMs) {
+        if (parsed && typeof parsed === "object" && Object.prototype.hasOwnProperty.call(parsed, "value") && now - Number(parsed.at || 0) < ttlMs) {
           __jsonCache.set(key, { at: Number(parsed.at || now), value: parsed.value });
           return parsed.value;
         }
@@ -78,7 +79,7 @@ export async function apiJsonCached(path, { ttlMs = 10000, force = false, storag
   const value = await apiJson(path);
   __jsonCache.set(key, { at: now, value });
   if (storageKey) {
-    try { sessionStorage.setItem(storageKey, JSON.stringify({ at: now, value })); } catch {}
+    try { sessionStorage.setItem(metaKey, JSON.stringify({ at: now, value })); } catch {}
   }
   return value;
 }

@@ -279,11 +279,17 @@ function clearCachedMapConfig() {
   try { localStorage.removeItem(SD_MAP_CONFIG_CACHE_KEY); } catch {}
 }
 
+function unwrapCachedArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray(value.value)) return value.value;
+  return [];
+}
+
 function readCachedSdCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
+    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY) || localStorage.getItem("plc-cache-characters") || sessionStorage.getItem("plc-cache-characters__meta") || sessionStorage.getItem("plc-cache-characters");
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return unwrapCachedArray(parsed);
   } catch {
     return [];
   }

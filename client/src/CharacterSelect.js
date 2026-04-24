@@ -10,14 +10,19 @@ function getUserCharacterCacheKey(userId) {
   return `plc-cache-user-characters-${userId}`;
 }
 
+function unwrapCachedArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray(value.value)) return value.value;
+  return [];
+}
+
 function readCachedUserCharacters(user) {
   try {
     const scoped = user?.id ? localStorage.getItem(getUserCharacterCacheKey(user.id)) : "";
     const warmRaw = sessionStorage.getItem(GLOBAL_WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(GLOBAL_WARM_CHARACTER_CACHE_KEY) || localStorage.getItem("plc-cache-characters");
-    const scopedRows = scoped ? JSON.parse(scoped) : null;
-    if (Array.isArray(scopedRows) && scopedRows.length > 0) return scopedRows;
-    const warmRows = warmRaw ? JSON.parse(warmRaw) : [];
-    if (!Array.isArray(warmRows)) return [];
+    const scopedRows = unwrapCachedArray(scoped ? JSON.parse(scoped) : null);
+    if (scopedRows.length > 0) return scopedRows;
+    const warmRows = unwrapCachedArray(warmRaw ? JSON.parse(warmRaw) : []);
     return warmRows.filter((character) => String(character?.ownerId || "") === String(user?.id || ""));
   } catch {
     return [];
@@ -37,7 +42,7 @@ async function fetchUserCharactersWithFallback(userId) {
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: "default" });
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) {

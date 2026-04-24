@@ -8,11 +8,17 @@ import { ProfileCard } from "./profileCardShared";
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 
+function unwrapCachedArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray(value.value)) return value.value;
+  return [];
+}
+
 function readCachedCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(CHARACTER_CACHE_KEY);
+    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(CHARACTER_CACHE_KEY) || sessionStorage.getItem(`${CHARACTER_CACHE_KEY}__meta`) || sessionStorage.getItem(CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return unwrapCachedArray(parsed);
   } catch {
     return [];
   }
@@ -50,7 +56,7 @@ async function fetchCharactersWithFallback() {
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: "default" });
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
