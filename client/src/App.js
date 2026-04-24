@@ -23,7 +23,8 @@ import { clearActiveCharacterStorage, readActiveCharacter, saveActiveCharacter }
 import socket, { ensureSocketConnected, ensureSocketDisconnected } from "./socket";
 import { applyDomOverrides } from "./designDomUtils";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
-import { buildApiUrl } from "./api";
+import { buildApiUrl, apiJsonCached } from "./api";
+import { collectImageUrls, preloadImages, scheduleImageWarmup, warmImageCache } from "./imagePreload";
 
 const DESIGN_CACHE_KEY = "plc-design-cache";
 const AUDIO_MUTE_KEY = "plc-audio-muted";
@@ -92,6 +93,18 @@ function writeCharacterCaches(rows) {
 function writeUserCharacterCache(userId, rows) {
   if (!userId) return;
   try { localStorage.setItem(`plc-cache-user-characters-${userId}`, JSON.stringify(Array.isArray(rows) ? rows : [])); } catch {}
+}
+
+
+function warmDesignImages(design) {
+  warmImageCache([design?.pages, design?.siteContent?.maps, design?.siteContent?.bgm], { highPriority: true, limit: 32 });
+}
+
+function warmVisibleCharacterImages(rows = [], activeCharacter = null) {
+  const activeUrls = collectImageUrls(activeCharacter).slice(0, 10);
+  if (activeUrls.length) preloadImages(activeUrls, { highPriority: true, limit: 10 });
+  const listUrls = collectImageUrls(rows).slice(0, 40);
+  if (listUrls.length) preloadImages(listUrls, { highPriority: false, limit: 40 });
 }
 
 function buildThemeVars(theme) {
@@ -470,6 +483,34 @@ function App() {
   }, [user?.id, user?.isAdmin]);
 
   useEffect(() => {
+    const cancel = scheduleImageWarmup(async () => {
+      try {
+        const cached = readLocalArray(CHARACTER_CACHE_KEY);
+        warmVisibleCharacterImages(cached, activeCharacter);
+      } catch {}
+      try {
+        const rows = await apiJsonCached("/characters-public", { ttlMs: 15000, storageKey: CHARACTER_CACHE_KEY });
+        if (Array.isArray(rows)) {
+          writeCharacterCaches(rows);
+          warmVisibleCharacterImages(rows, activeCharacter);
+          if (user?.id && !user?.isAdmin) {
+            writeUserCharacterCache(user.id, rows.filter((row) => String(row?.ownerId || "") === String(user.id)));
+          }
+        }
+      } catch {}
+      try {
+        const shopItems = await apiJsonCached("/shopItems", { ttlMs: 30000, storageKey: "plc-cache-shop-items" });
+        warmImageCache(shopItems, { highPriority: false, limit: 24 });
+      } catch {}
+      try {
+        const investigations = await apiJsonCached("/investigations", { ttlMs: 12000, storageKey: "plc-cache-investigations" });
+        warmImageCache(investigations, { highPriority: false, limit: 32 });
+      } catch {}
+    });
+    return cancel;
+  }, [user?.id, user?.isAdmin, activeCharacter?.id]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const applyDesign = (nextDesign, { persist = false } = {}) => {
@@ -477,6 +518,7 @@ function App() {
       if (cancelled) return;
       setDesignConfig(next);
       setDesignReady(true);
+      warmDesignImages(next);
       if (persist) {
         try {
           localStorage.setItem(DESIGN_CACHE_KEY, JSON.stringify(next));
@@ -668,6 +710,11 @@ function App() {
     };
   }, [audioOverride]);
 
+
+  useEffect(() => {
+    warmDesignImages(designConfig);
+    warmVisibleCharacterImages(readLocalArray(CHARACTER_CACHE_KEY), activeCharacter);
+  }, [activePage, designConfig, activeCharacter?.id]);
 
   const theme = designConfig?.theme || defaultDesign.theme;
   const siteBgmUrl = String(designConfig?.siteContent?.bgm?.site || designConfig?.siteContent?.bgm?.home || "");

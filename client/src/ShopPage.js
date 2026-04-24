@@ -447,8 +447,15 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
       onApplyCharacter(data.character);
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     }
-  const useItem = async (itemName, meta) => {
+    alert(`${item.name} 구매 완료`);
+  };
+
+  const useItem = async (itemName, meta = {}) => {
     if (!activeCharacter?.id) return alert("사용할 캐릭터를 찾을 수 없습니다.");
+
+    const itemKey = typeof itemName === "object" && itemName !== null
+      ? (itemName.id || itemName.name || itemName.itemId || itemName.itemName || "")
+      : itemName;
 
     const res = await fetch(buildApiUrl("/shop/use"), {
       method: "POST",
@@ -458,8 +465,8 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
         charId: activeCharacter.id,
         ownerId: activeCharacter.ownerId,
         characterName: activeCharacter.name,
-        itemId: meta?.id || itemName,
-        itemName,
+        itemId: meta?.id || itemKey,
+        itemName: meta?.name || itemKey,
       }),
     });
     const data = await res.json();
@@ -468,10 +475,8 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
       onApplyCharacter(data.character);
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     }
-    alert(`${meta.name || itemName} 사용 완료`);
-  };
-
-    alert(`${item.name} 구매 완료`);
+    setInventoryOpen(false);
+    alert(`${meta?.name || itemKey} 사용 완료`);
   };
 
   const sellItem = async (itemName, meta) => {

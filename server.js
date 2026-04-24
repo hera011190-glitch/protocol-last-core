@@ -3977,6 +3977,26 @@ function findShopItemByLooseId(itemIdOrName) {
   ) || null;
 }
 
+function getInventoryItemKey(value) {
+  if (value && typeof value === "object") {
+    return String(value.id || value.itemId || value.name || value.itemName || value.key || "").trim();
+  }
+  return String(value || "").trim();
+}
+
+function inventoryItemMatches(value, requestedKey) {
+  const ownedKey = getInventoryItemKey(value);
+  const key = String(requestedKey || "").trim();
+  if (!ownedKey || !key) return false;
+  if (ownedKey === key) return true;
+
+  const ownedMeta = findShopItemByLooseId(ownedKey);
+  const requestMeta = findShopItemByLooseId(key);
+  const ownedNames = [ownedKey, ownedMeta?.id, ownedMeta?.name].filter(Boolean).map(String);
+  const requestNames = [key, requestMeta?.id, requestMeta?.name].filter(Boolean).map(String);
+  return ownedNames.some((owned) => requestNames.includes(owned));
+}
+
 app.post("/shop/buy", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
   const { characterId, charId, ownerId, characterName, itemId, itemName } = req.body || {};
@@ -4013,11 +4033,12 @@ app.post("/shop/sell", (req, res) => {
   if (!key) return res.json({ success: false, message: "판매할 아이템을 찾을 수 없습니다." });
 
   char.items = Array.isArray(char.items) ? char.items : [];
-  const index = char.items.findIndex((value) => String(value) === key);
+  const index = char.items.findIndex((value) => inventoryItemMatches(value, key));
   if (index < 0) return res.json({ success: false, message: "보유 아이템에 없습니다." });
 
   const [removed] = char.items.splice(index, 1);
-  const item = findShopItemByLooseId(removed) || findShopItemByLooseId(key) || {};
+  const removedKey = getInventoryItemKey(removed);
+  const item = findShopItemByLooseId(removedKey) || findShopItemByLooseId(key) || {};
   char.coins = Number(char.coins || 0) + Math.max(0, Number(item.sellPrice || 0));
   char.updatedAt = Date.now();
   char.assetVersion = char.updatedAt;
@@ -4038,11 +4059,12 @@ app.post("/shop/use", (req, res) => {
   if (!key) return res.json({ success: false, message: "사용할 아이템을 찾을 수 없습니다." });
 
   syncShopItemsWithKnownItems();
-  const index = char.items.findIndex((value) => String(value) === key);
+  const index = char.items.findIndex((value) => inventoryItemMatches(value, key));
   if (index < 0) return res.json({ success: false, message: "보유 아이템에 없습니다." });
 
   const [removed] = char.items.splice(index, 1);
-  const item = findShopItemByLooseId(removed) || findShopItemByLooseId(key) || normalizeShopItem({ name: removed });
+  const removedKey = getInventoryItemKey(removed);
+  const item = findShopItemByLooseId(removedKey) || findShopItemByLooseId(key) || normalizeShopItem({ name: removedKey || key });
   const normalized = normalizeShopItem(item);
   const useType = String(normalized.useType || "none").toLowerCase();
   const useValue = Number(normalized.useValue || 0);
