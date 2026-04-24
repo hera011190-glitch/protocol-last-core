@@ -3857,6 +3857,72 @@ app.delete("/shopItems/:id", (req, res) => {
   res.json({ success: true });
 });
 
+function findShopItemForTransaction(payload = {}) {
+  const itemId = String(payload.itemId ?? payload.id ?? payload.item?.id ?? "").trim();
+  const itemName = String(payload.itemName ?? payload.name ?? payload.item?.name ?? "").trim();
+  return (shopItemsDB || []).find((item) => {
+    if (itemId && String(item?.id || "") === itemId) return true;
+    if (itemName && String(item?.name || "") === itemName) return true;
+    return false;
+  }) || null;
+}
+
+function normalizeInventoryItemName(item) {
+  return String(item?.name || item?.id || "").trim();
+}
+
+app.post("/shop/buy", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const charId = req.body?.charId ?? req.body?.characterId ?? req.body?.id;
+  const char = charactersDB.find((c) => String(c.id) === String(charId));
+  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
+
+  const item = findShopItemForTransaction(req.body || {});
+  if (!item) return res.json({ success: false, message: "아이템을 찾을 수 없습니다." });
+  if (item.hidden) return res.json({ success: false, message: "현재 구매할 수 없는 아이템입니다." });
+
+  const price = Math.max(0, Number(item.price || 0));
+  const currentCoins = Number(char.coins || 0);
+  if (currentCoins < price) return res.json({ success: false, message: "코인이 부족합니다." });
+
+  const itemName = normalizeInventoryItemName(item);
+  if (!itemName) return res.json({ success: false, message: "아이템 이름이 올바르지 않습니다." });
+
+  char.coins = currentCoins - price;
+  char.items = Array.isArray(char.items) ? [...char.items, itemName] : [itemName];
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
+
+  writeRuntimeArray("characters.json", charactersDB);
+  return res.json({ success: true, character: buildPublicCharacter(char), itemName, items: char.items, coins: char.coins });
+});
+
+app.post("/shop/sell", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const charId = req.body?.charId ?? req.body?.characterId ?? req.body?.id;
+  const char = charactersDB.find((c) => String(c.id) === String(charId));
+  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
+
+  const rawName = String(req.body?.itemName ?? req.body?.name ?? "").trim();
+  const item = findShopItemForTransaction(req.body || {}) || (shopItemsDB || []).find((entry) => String(entry?.name || "") === rawName || String(entry?.id || "") === rawName) || null;
+  const itemName = rawName || normalizeInventoryItemName(item);
+  if (!itemName) return res.json({ success: false, message: "판매할 아이템을 찾을 수 없습니다." });
+
+  const inventory = Array.isArray(char.items) ? [...char.items] : [];
+  const index = inventory.findIndex((value) => String(value) === String(itemName));
+  if (index < 0) return res.json({ success: false, message: "보유 중인 아이템이 아닙니다." });
+
+  inventory.splice(index, 1);
+  char.items = inventory;
+  char.coins = Number(char.coins || 0) + Math.max(0, Number(item?.sellPrice || 0));
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
+
+  writeRuntimeArray("characters.json", charactersDB);
+  return res.json({ success: true, character: buildPublicCharacter(char), items: char.items, coins: char.coins });
+});
+
+
 app.get("/shopConfig", (req, res) => {
   shopConfigDB = normalizeShopConfig(shopConfigDB);
   res.json(shopConfigDB);
