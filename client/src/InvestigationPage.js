@@ -2718,38 +2718,6 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
     </div>
   );
 }
-) {
-  const battle = node?.battle;
-  if (!battle) return null;
-  const hp = Number(battle.hp || 0);
-  const maxHp = Number(battle.maxHp || battle.hp || 1);
-  const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
-  const effect = getRecentBattleEffect(battle.name, rounds, {}, nowTick);
-  const visual = getBattleVisualState({ name: battle.name, rounds, nowTick, side: "enemy" });
-  const imageSrc = battle.image || investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || currentMonsterPlaceholder;
-  const displayTurn = battlePlaybackLocked ? Math.max(1, Number(investigation?.battleTurn || 1) - 1) : (investigation?.battleTurn || 1);
-
-  return (
-    <div style={{ display: "grid", justifyItems: "center", gap: 10, textAlign: "center", padding: compact ? "8px 12px" : "12px 16px" }}>
-      {imageSrc ? (
-        <div style={{ position: "relative", width: compact ? 140 : 200, height: compact ? 140 : 200, display: "grid", placeItems: "center", borderRadius: 28, ...visual.wrapperStyle }}>
-          {visual.overlayStyle ? <div style={{ position: "absolute", inset: 8, borderRadius: 999, pointerEvents: "none", ...visual.overlayStyle }} /> : null}
-          {visual.fxOuterStyle ? <div style={visual.fxOuterStyle} /> : null}
-          {visual.fxInnerStyle ? <div style={visual.fxInnerStyle} /> : null}
-          <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
-        </div>
-      ) : null}
-      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {displayTurn}</div>
-      <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
-      <div style={{ width: "min(520px, 100%)" }}>
-        <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>
-        <div style={{ marginTop: 8, color: "#fce7f3", fontWeight: 700 }}>HP {hp}/{maxHp}</div>
-      </div>
-      {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 12, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
-    </div>
-  );
-}
-
 function BattleMonsterStats({ node }) {
   const battle = node?.battle;
   if (!battle) return null;
@@ -2767,21 +2735,6 @@ function BattleMonsterStats({ node }) {
     </div>
   );
 }
-) {
-  const battle = node?.battle;
-  if (!battle) return null;
-  return (
-    <div style={{ marginTop: "12px", display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
-      <div style={topChipStyle}>HP {battle.hp}/{battle.maxHp || battle.hp}</div>
-      <div style={topChipStyle}>ATK {battle.atk || 0}</div>
-      <div style={topChipStyle}>DEF {battle.def || 0}</div>
-      <div style={topChipStyle}>DEX {battle.agi || 0}</div>
-      <div style={topChipStyle}>전체 {Math.round(Number(battle.aoe_chance || 0) * 100)}%</div>
-      <div style={topChipStyle}>필살기 {Math.round(Number(battle.finisher_chance || 0) * 100)}%</div>
-    </div>
-  );
-}
-
 function BattlePartyStrip({ participants, participantStates, pendingActions, rounds, nowTick, compact = false, battlePlaybackLocked = false }) {
   if (!participants?.length) return null;
   return (
