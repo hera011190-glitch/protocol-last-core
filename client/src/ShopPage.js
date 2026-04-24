@@ -374,8 +374,15 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [gameChoice, setGameChoice] = useState("");
   const [session, setSession] = useState(null);
-  const inventory = Array.isArray(activeCharacter?.items) ? activeCharacter.items : [];
-  const gambleLeft = Number(activeCharacter?.gambleCountLeft ?? 3);
+  const [localCharacter, setLocalCharacter] = useState(activeCharacter || null);
+
+  useEffect(() => {
+    setLocalCharacter(activeCharacter || null);
+  }, [activeCharacter?.id, activeCharacter?.updatedAt, activeCharacter?.assetVersion, JSON.stringify(activeCharacter?.items || [])]);
+
+  const displayCharacter = localCharacter || activeCharacter;
+  const inventory = Array.isArray(displayCharacter?.items) ? displayCharacter.items : [];
+  const gambleLeft = Number(displayCharacter?.gambleCountLeft ?? 3);
   const activePageKey = pageKeyOverride || (tab === "gamble" ? "gambling" : "shop");
 
   const loadItems = async () => {
@@ -405,53 +412,55 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
     setTab(initialTab || "shop");
   }, [initialTab]);
 
-  const saveCharacter = async (patch) => {
-    const res = await fetch(buildApiUrl("/updateCharacter"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        charId: activeCharacter?.id,
-        characterId: activeCharacter?.id,
-        ownerId: activeCharacter?.ownerId,
-        characterName: activeCharacter?.name,
-        ...patch,
-      }),
-    });
-    const data = await res.json();
-    if (data.success && data.character) {
-      onApplyCharacter(data.character);
+  const applyServerCharacter = (data) => {
+    if (data?.success && data.character) {
+      setLocalCharacter(data.character);
+      if (typeof onApplyCharacter === "function") onApplyCharacter(data.character);
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     }
     return data;
   };
 
+  const saveCharacter = async (patch) => {
+    const res = await fetch(buildApiUrl("/updateCharacter"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        charId: displayCharacter?.id,
+        characterId: displayCharacter?.id,
+        ownerId: displayCharacter?.ownerId,
+        characterName: displayCharacter?.name,
+        ...patch,
+      }),
+    });
+    const data = await res.json();
+    return applyServerCharacter(data);
+  };
+
   const buyItem = async (item) => {
-    if (!activeCharacter?.id) return alert("구매할 캐릭터를 찾을 수 없습니다.");
-    if (Number(activeCharacter?.coins || 0) < Number(item.price || 0)) return alert("코인이 부족합니다.");
+    if (!displayCharacter?.id) return alert("구매할 캐릭터를 찾을 수 없습니다.");
+    if (Number(displayCharacter?.coins || 0) < Number(item.price || 0)) return alert("코인이 부족합니다.");
 
     const res = await fetch(buildApiUrl("/shop/buy"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        characterId: activeCharacter.id,
-        charId: activeCharacter.id,
-        ownerId: activeCharacter.ownerId,
-        characterName: activeCharacter.name,
+        characterId: displayCharacter.id,
+        charId: displayCharacter.id,
+        ownerId: displayCharacter.ownerId,
+        characterName: displayCharacter.name,
         itemId: item.id,
         itemName: item.name,
       }),
     });
     const data = await res.json();
     if (!data.success) return alert(data.message || "구매에 실패했습니다.");
-    if (data.character) {
-      onApplyCharacter(data.character);
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
-    }
+    applyServerCharacter(data);
     alert(`${item.name} 구매 완료`);
   };
 
   const useItem = async (itemName, meta = {}) => {
-    if (!activeCharacter?.id) return alert("사용할 캐릭터를 찾을 수 없습니다.");
+    if (!displayCharacter?.id) return alert("사용할 캐릭터를 찾을 수 없습니다.");
 
     const itemKey = typeof itemName === "object" && itemName !== null
       ? (itemName.id || itemName.name || itemName.itemId || itemName.itemName || "")
@@ -461,59 +470,53 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        characterId: activeCharacter.id,
-        charId: activeCharacter.id,
-        ownerId: activeCharacter.ownerId,
-        characterName: activeCharacter.name,
+        characterId: displayCharacter.id,
+        charId: displayCharacter.id,
+        ownerId: displayCharacter.ownerId,
+        characterName: displayCharacter.name,
         itemId: meta?.id || itemKey,
         itemName: meta?.name || itemKey,
       }),
     });
     const data = await res.json();
     if (!data.success) return alert(data.message || "아이템 사용에 실패했습니다.");
-    if (data.character) {
-      onApplyCharacter(data.character);
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
-    }
+    applyServerCharacter(data);
     setInventoryOpen(false);
-    alert(`${meta?.name || itemKey} 사용 완료`);
+    alert("아이템이 사용되었습니다.");
   };
 
-  const sellItem = async (itemName, meta) => {
-    if (!activeCharacter?.id) return alert("판매할 캐릭터를 찾을 수 없습니다.");
+  const sellItem = async (itemName, meta = {}) => {
+    if (!displayCharacter?.id) return alert("판매할 캐릭터를 찾을 수 없습니다.");
 
     const res = await fetch(buildApiUrl("/shop/sell"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        characterId: activeCharacter.id,
-        charId: activeCharacter.id,
-        ownerId: activeCharacter.ownerId,
-        characterName: activeCharacter.name,
+        characterId: displayCharacter.id,
+        charId: displayCharacter.id,
+        ownerId: displayCharacter.ownerId,
+        characterName: displayCharacter.name,
         itemId: meta?.id || itemName,
         itemName,
       }),
     });
     const data = await res.json();
     if (!data.success) return alert(data.message || "판매에 실패했습니다.");
-    if (data.character) {
-      onApplyCharacter(data.character);
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
-    }
+    applyServerCharacter(data);
     setInventoryOpen(false);
     alert(`${meta.name || itemName} 판매 완료`);
   };
 
   const applyGambleResult = async (delta, text, closeImmediately = true) => {
     await saveCharacter({
-      coins: Math.max(0, Number(activeCharacter?.coins || 0) + Number(delta || 0)),
+      coins: Math.max(0, Number(displayCharacter?.coins || 0) + Number(delta || 0)),
       gambleCountLeft: Math.max(0, gambleLeft - 1),
     });
     if (closeImmediately) setSession(null);
   };
 
   const visibleItems = useMemo(() => catalog.filter((item) => !item.hidden), [catalog]);
-  const maxBet = Math.min(50, Number(activeCharacter?.coins || 0));
+  const maxBet = Math.min(50, Number(displayCharacter?.coins || 0));
 
   return (
     <DesignPageFrame design={design} pageKey={activePageKey} handlers={{}} theme={theme} minHeight="100vh">

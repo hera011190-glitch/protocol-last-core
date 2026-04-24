@@ -8,6 +8,11 @@ const path = require("path");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
+
+app.get("/healthz", (req, res) => {
+  res.status(200).send("ok");
+});
+
 const REQUEST_BODY_LIMIT = "100mb";
 const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
@@ -4050,7 +4055,7 @@ app.post("/shop/sell", (req, res) => {
 
 app.post("/shop/use", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
-  const { characterId, charId, ownerId, characterName, itemId, itemName } = req.body || {};
+  const { characterId, charId, ownerId, characterName, itemId, itemName, itemIndex } = req.body || {};
   const char = findCharacterByLooseIdentifiers({ charId: charId || characterId, characterId, ownerId, characterName });
   if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
 
@@ -4059,7 +4064,12 @@ app.post("/shop/use", (req, res) => {
   if (!key) return res.json({ success: false, message: "사용할 아이템을 찾을 수 없습니다." });
 
   syncShopItemsWithKnownItems();
-  const index = char.items.findIndex((value) => inventoryItemMatches(value, key));
+  const requestedIndex = Number(itemIndex);
+  let index = Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < char.items.length
+    ? requestedIndex
+    : -1;
+  if (index >= 0 && !inventoryItemMatches(char.items[index], key)) index = -1;
+  if (index < 0) index = char.items.findIndex((value) => inventoryItemMatches(value, key));
   if (index < 0) return res.json({ success: false, message: "보유 아이템에 없습니다." });
 
   const [removed] = char.items.splice(index, 1);

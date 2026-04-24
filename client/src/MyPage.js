@@ -169,7 +169,10 @@ function ItemUsePanel({ items, catalog, onUse, style = {} }) {
                       {isUsableItem(selected.meta) ? "사용 가능한 아이템입니다." : "사용할 수 없는 아이템입니다."}
                     </div>
                     {isUsableItem(selected.meta) ? (
-                      <button type="button" className="home-primary-button" onClick={() => onUse(selected.item, selected.meta, selected.index)}>사용</button>
+                      <button type="button" className="home-primary-button" onClick={async () => {
+                        const ok = await onUse(selected.item, selected.meta, selected.index);
+                        if (ok !== false) setSelectedKey("");
+                      }}>사용</button>
                     ) : null}
                   </div>
                 </div>
@@ -704,71 +707,44 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     alert("관계 신청을 보냈습니다.");
   };
 
-  const useItem = async (itemName, meta, itemIndex = -1) => {
-    const nextItems = [...inventory];
-    const index = itemIndex >= 0 ? itemIndex : nextItems.findIndex((v) => v === itemName || v === meta.id);
-    if (index < 0) return;
-    const patch = { items: nextItems.filter((_, i) => i !== index) };
-    const stats = { ...(currentUser.stats || {}) };
-    const skills = Array.isArray(currentUser.skills) ? [...currentUser.skills] : [];
-    const useType = meta.useType || "none";
-    const useValue = Number(meta.useValue || meta.amount || 0);
-    const statTarget = meta.statTarget || meta.targetStat || "atk";
-    const maxHp = getMaxHpFromStat(stats.hp);
-    const isStatAtLimit = (key) => {
-      if (key === "hp") return getHpStatValue(stats.hp) >= HP_STAT_MAX;
-      return getCombatStatPoint(stats[key]) >= COMBAT_STAT_MAX;
-    };
-    const blockIfStatLimit = (key) => {
-      if (useValue <= 0 || !isStatAtLimit(key)) return false;
-      alert("이미 해당 스탯이 최대치입니다.");
-      return true;
-    };
-
-    if (useType === "heal") {
-      patch.currentHp = Math.min(maxHp, Number(currentUser.currentHp || maxHp) + useValue);
-    } else if (useType === "corrosionHeal") {
-      patch.corrosion = Math.max(0, Number(currentUser.corrosion || 0) - useValue);
-    } else if (useType === "statPoint") {
-      patch.statPoints = Number(currentUser.statPoints || 0) + useValue;
-    } else if (useType === "skill") {
-      const nextSkill = meta.skillKey || meta.skillName || meta.useValue;
-      if (nextSkill && !skills.some((skill) => getSkillLabel(skill) === String(nextSkill))) {
-        skills.push(typeof nextSkill === "string" ? { key: nextSkill, name: meta.skillName || nextSkill } : nextSkill);
-      }
-      patch.skills = skills;
-    } else if (useType === "statBoost") {
-      if (blockIfStatLimit(statTarget)) return;
-      const prevMaxHp = getMaxHpFromStat(stats.hp);
-      if (statTarget === "hp") {
-        stats.hp = Math.min(HP_STAT_MAX, getHpStatValue(stats.hp) + useValue);
-        const nextMaxHp = getMaxHpFromStat(stats.hp);
-        const currentValue = Number(currentUser.currentHp || prevMaxHp);
-        patch.currentHp = Math.min(nextMaxHp, currentValue + Math.max(0, nextMaxHp - prevMaxHp));
-      }
-      if (statTarget === "def") stats.def = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats.def) + useValue);
-      if (statTarget === "atk") stats.atk = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats.atk) + useValue);
-      if (statTarget === "agi") stats.agi = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats.agi) + useValue);
-      patch.stats = stats;
-    } else if (useType === "hp") {
-      if (blockIfStatLimit("hp")) return;
-      const prevMaxHp = getMaxHpFromStat(stats.hp);
-      stats.hp = Math.min(HP_STAT_MAX, getHpStatValue(stats.hp) + useValue);
-      const nextMaxHp = getMaxHpFromStat(stats.hp);
-      const currentValue = Number(currentUser.currentHp || prevMaxHp);
-      patch.currentHp = Math.min(nextMaxHp, currentValue + Math.max(0, nextMaxHp - prevMaxHp));
-      patch.stats = stats;
-    } else if (useType === "atk" || useType === "def" || useType === "agi") {
-      if (blockIfStatLimit(useType)) return;
-      stats[useType] = Math.min(COMBAT_STAT_MAX, getCombatStatPoint(stats[useType]) + useValue);
-      patch.stats = stats;
-    } else if (useType === "none" || useType === "unusable") {
-      alert("이 아이템은 사용할 수 없습니다.");
-      return;
+  const useItem = async (itemName, meta = {}, itemIndex = -1) => {
+    if (!currentUser?.id) {
+      alert("사용할 캐릭터를 찾을 수 없습니다.");
+      return false;
     }
 
-    await saveCharacterPatch(patch);
-    alert(`${meta.name || itemName} 사용 완료`);
+    const itemKey = typeof itemName === "object" && itemName !== null
+      ? (itemName.id || itemName.name || itemName.itemId || itemName.itemName || "")
+      : itemName;
+
+    const res = await fetch(buildApiUrl("/shop/use"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: currentUser.id,
+        charId: currentUser.id,
+        ownerId: currentUser.ownerId,
+        characterName: currentUser.name,
+        itemId: meta?.id || itemKey,
+        itemName: meta?.name || itemKey,
+        itemIndex,
+      }),
+    });
+
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.message || "아이템 사용에 실패했습니다.");
+      return false;
+    }
+
+    let nextCharacter = data.character;
+    if (nextCharacter) {
+      onUpdateUser(nextCharacter);
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: nextCharacter } }));
+    }
+    await Promise.allSettled([loadMine(), loadAllCharacters()]);
+    alert("아이템이 사용되었습니다.");
+    return true;
   };
 
   const sendMail = async () => {
