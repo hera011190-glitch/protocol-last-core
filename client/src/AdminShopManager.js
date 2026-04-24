@@ -28,6 +28,18 @@ const EMPTY = {
   hidden: true,
 };
 
+const PRESET_SKILLS = ["일격", "연격", "축복", "저주", "희생", "가호", "구원", "격려"];
+const PRESET_SKILL_DESC = {
+  일격: "단일 공격 / 적 대상 선택 / 2.5배 데미지",
+  연격: "전체 공격 / 모든 적에게 일반 공격 75% 데미지",
+  축복: "버프 / 아군 대상 선택 / 공격력 50% 증가",
+  저주: "디버프 / 적 대상 선택 / 받는 피해 50% 증가",
+  희생: "단일 보호 / 선택 아군 공격을 대신 받음",
+  가호: "다중 보호 / 아군 전체 보호막",
+  구원: "단일 힐 / 아군 대상 선택 / 공격력의 2배 회복",
+  격려: "전체 힐 / 아군 전체 / 공격력의 절반 회복",
+};
+
 function makeSkillKey(name = "") {
   return String(name || "")
     .trim()
@@ -124,9 +136,11 @@ export default function AdminShopManager({ goBack }) {
       ...form,
       price: Number(form.price || 0),
       sellPrice: Number(form.sellPrice || 0),
-      useValue: form.useType === "skill" ? String(form.skillKey || makeSkillKey(form.skillName || form.name) || form.useValue || "").trim() : Number(form.useValue || 0),
-      skillEffect: form.useType === "skill" ? form.skillEffect : "damage",
-      skillPower: form.useType === "skill" ? Number(form.skillPower || 0) : Number(form.useValue || 0),
+      useValue: form.useType === "skill" ? String(form.skillKey || form.skillName || "일격").trim() : Number(form.useValue || 0),
+      skillName: form.useType === "skill" ? String(form.skillKey || form.skillName || "일격").trim() : form.skillName,
+      skillKey: form.useType === "skill" ? String(form.skillKey || form.skillName || "일격").trim() : form.skillKey,
+      skillEffect: form.useType === "skill" ? "preset" : "damage",
+      skillPower: form.useType === "skill" ? 0 : Number(form.useValue || 0),
       cooldownTurns: form.useType === "skill" ? Number(form.cooldownTurns || 0) : 0,
       hidden: form.hidden !== false,
       image: form.image || "",
@@ -309,18 +323,9 @@ export default function AdminShopManager({ goBack }) {
 
           {form.useType === "skill" ? (
             <>
-              <label>스킬 이름<input value={form.skillName} onChange={(e) => setForm({ ...form, skillName: e.target.value })} style={inputStyle} /></label>
-              <div style={{ color: "#5d7a95", fontSize: 13, lineHeight: 1.7, marginTop: -4 }}>
-                스킬 키는 따로 적지 않아도 돼. 스킬 이름을 기준으로 내부값이 자동 생성돼.
-              </div>
-              <label>효과 종류<select value={form.skillEffect} onChange={(e) => setForm({ ...form, skillEffect: e.target.value })} style={inputStyle}><option value="damage">공격력</option><option value="heal">치유량</option><option value="buff">버프</option><option value="shield">방어막</option><option value="debuff">디버프</option></select></label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <label>효과 값<input type="number" value={form.skillPower} onChange={(e) => setForm({ ...form, skillPower: e.target.value })} style={inputStyle} /></label>
-                <label>쿨타임(턴)<input type="number" value={form.cooldownTurns} onChange={(e) => setForm({ ...form, cooldownTurns: e.target.value })} style={inputStyle} /></label>
-              </div>
-              <div style={{ color: "#5d7a95", fontSize: 13, lineHeight: 1.7, marginTop: -4 }}>
-                효과 값은 공격력/치유량/버프 크기처럼 실제 전투에서 쓰이는 수치야. 쿨타임 1턴은 유저 턴 + 적 턴 한 번이 지난 뒤 다시 사용할 수 있어.
-              </div>
+              <label>스킬 선택<select value={form.skillKey || form.skillName || "일격"} onChange={(e) => setForm({ ...form, skillKey: e.target.value, skillName: e.target.value, useValue: e.target.value })} style={inputStyle}>{PRESET_SKILLS.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
+              <div style={{ color: "#5d7a95", fontSize: 13, lineHeight: 1.7, marginTop: -4 }}>{PRESET_SKILL_DESC[form.skillKey || form.skillName || "일격"] || "정해진 스킬 중 하나를 선택해주세요."}</div>
+              <label>쿨타임(턴)<input type="number" value={form.cooldownTurns} onChange={(e) => setForm({ ...form, cooldownTurns: e.target.value })} style={inputStyle} /></label>
             </>
           ) : null}
 
@@ -345,7 +350,7 @@ function itemTypeLabel(item) {
   if (type === "corrosionHeal") return `침식도 -${Number(item.useValue || 0)}`;
   if (type === "statBoost") return `${String(item.statTarget || "hp").toUpperCase()} +${Number(item.useValue || 0)}`;
   if (type === "statPoint") return `스탯 포인트 +${Number(item.useValue || 0)}`;
-  if (type === "skill") return `스킬 ${item.skillName || item.name || item.useValue || ""} · ${item.skillEffect || "damage"} · 쿨 ${Number(item.cooldownTurns || 0)}턴`;
+  if (type === "skill") return `스킬 ${item.skillName || item.skillKey || item.useValue || item.name || ""} · 쿨 ${Number(item.cooldownTurns || 0)}턴`;
   return "사용 불가";
 }
 

@@ -89,6 +89,18 @@ function OverlayPanel({ title, onClose, children }) {
 }
 
 const BATTLE_ACTIONS = ["공격", "방어", "스킬", "아이템"];
+const PRESET_BATTLE_SKILLS = {
+  "일격": { key: "일격", name: "일격", target: "enemy", desc: "단일 적에게 2.5배 데미지" },
+  "연격": { key: "연격", name: "연격", target: "enemyAll", desc: "모든 적에게 일반 공격 75% 데미지" },
+  "축복": { key: "축복", name: "축복", target: "ally", desc: "아군 1명의 공격력 50% 증가" },
+  "저주": { key: "저주", name: "저주", target: "enemy", desc: "적 1명이 받는 피해 50% 증가" },
+  "희생": { key: "희생", name: "희생", target: "ally", desc: "선택한 아군에게 가는 공격을 대신 받음" },
+  "가호": { key: "가호", name: "가호", target: "allyAll", desc: "아군 전체 보호막" },
+  "구원": { key: "구원", name: "구원", target: "ally", desc: "아군 1명 회복" },
+  "격려": { key: "격려", name: "격려", target: "allyAll", desc: "아군 전체 회복" },
+};
+function normalizeBattleSkillOption(skill) { const raw = typeof skill === "string" ? { key: skill, name: skill } : (skill || {}); const key = String(raw.key || raw.skillKey || raw.name || "").trim(); const preset = PRESET_BATTLE_SKILLS[key] || PRESET_BATTLE_SKILLS[String(raw.name || "").trim()] || null; return preset ? { ...raw, ...preset, key: preset.key, name: preset.name } : { ...raw, key, name: raw.name || key, target: raw.target || "enemy", desc: raw.desc || "" }; }
+function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => ({ ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, index })).filter((enemy) => Number(enemy?.hp ?? enemy?.maxHp ?? 1) > 0); }
 const BATTLE_TURN_LIMIT_MS = 5 * 60 * 1000;
 const CHAT_PANEL_WIDTH = 320;
 const RIGHT_PANEL_WIDTH = 278;
@@ -157,6 +169,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const [showNewLogCue, setShowNewLogCue] = useState(false);
   const [myBattleAction, setMyBattleAction] = useState("");
   const [actionPicker, setActionPicker] = useState("");
+  const [targetAction, setTargetAction] = useState(null);
   const [stagedBattleLogs, setStagedBattleLogs] = useState([]);
   const [battlePlaybackLocked, setBattlePlaybackLocked] = useState(false);
   const [playbackState, setPlaybackState] = useState(null);
@@ -813,8 +826,20 @@ useEffect(() => {
   const chooseBattleAction = (actionName) => {
     if (battleInputLocked || battleActionSubmitting || !actionName) return;
     skipAutoActionSyncRef.current = true;
+    setTargetAction(null);
     setMyBattleAction(actionName);
     saveMyBattleAction(actionName);
+  };
+
+  const openBattleTargetPicker = (baseAction, targetType, title) => {
+    if (battleInputLocked || battleActionSubmitting || !baseAction) return;
+    setTargetAction({ baseAction, targetType, title: title || "대상 선택" });
+    setActionPicker("target");
+  };
+
+  const chooseBattleTarget = (targetValue) => {
+    if (!targetAction?.baseAction) return;
+    chooseBattleAction(`${targetAction.baseAction}::${targetValue || ""}`);
   };
 
   const submitBattleTurn = async () => {
@@ -979,11 +1004,13 @@ useEffect(() => {
       });
   const battleSkillOptions = Array.isArray(character?.skills) && character.skills.length > 0
     ? character.skills.map((skill) => {
-        const normalized = typeof skill === "string" ? { key: skill, name: skill } : skill;
+        const normalized = normalizeBattleSkillOption(skill);
         const cooldownLeft = getSkillCooldown(selfState, normalized);
         return { ...normalized, cooldownLeft };
       })
     : [];
+  const aliveEnemyOptions = getNodeBattleEnemies(displayCurrentNode);
+  const aliveAllyOptions = aliveParticipants.map((participant) => ({ id: participant.name, name: participant.name }));
   useEffect(() => {
     if (!battleActive) {
       setBattleReadyUntil(0);
@@ -1406,6 +1433,19 @@ useEffect(() => {
           </OverlayPanel>
         )}
 
+        {actionPicker === "target" && targetAction ? (
+          <OverlayPanel title={targetAction.title || "대상 선택"} onClose={() => { setActionPicker(""); setTargetAction(null); }}>
+            <div style={{ display: "grid", gap: "10px" }}>
+              {(targetAction.targetType === "ally" ? aliveAllyOptions : aliveEnemyOptions).map((target, idx) => (
+                <button key={`${target.id || target.name}-${idx}`} type="button" className="ghost-button" onClick={() => chooseBattleTarget(target.id || target.name || idx)}>
+                  <div style={{ fontWeight: 900 }}>{target.name || target.id}</div>
+                  {targetAction.targetType !== "ally" ? <div style={{ color: "#9fb0c7", marginTop: 4, fontSize: 12 }}>HP {Number(target.hp || 0)} / {Number(target.maxHp || target.hp || 0)}</div> : null}
+                </button>
+              ))}
+            </div>
+          </OverlayPanel>
+        ) : null}
+
         {actionPicker === "skill" && (
           <OverlayPanel title="전투 스킬" onClose={() => setActionPicker("")}>
             {battleSkillOptions.length > 0 ? (
@@ -1417,7 +1457,13 @@ useEffect(() => {
                       key={`${skill.key || skill.name}-${idx}`}
                       type="button"
                       className="ghost-button"
-                      onClick={() => { if (disabled) return; chooseBattleAction(`스킬::${skill.key || skill.name}`); }}
+                      onClick={() => {
+                        if (disabled) return;
+                        const skillKey = skill.key || skill.name;
+                        if (skill.target === "enemy") return openBattleTargetPicker(`스킬::${skillKey}`, "enemy", `${skill.name || skillKey} 대상 선택`);
+                        if (skill.target === "ally") return openBattleTargetPicker(`스킬::${skillKey}`, "ally", `${skill.name || skillKey} 대상 선택`);
+                        chooseBattleAction(`스킬::${skillKey}`);
+                      }}
                       disabled={disabled}
                       style={disabled ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
                     >
@@ -1799,7 +1845,7 @@ useEffect(() => {
                     <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
                       {selfState && Number(selfState.hp || 0) > 0 ? (
                         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
-                          <button type="button" className={`ghost-button ${myBattleAction.startsWith("공격") ? "is-tab-active" : ""}`} onClick={() => chooseBattleAction("공격")} disabled={battleInputLocked}>공격</button>
+                          <button type="button" className={`ghost-button ${myBattleAction.startsWith("공격") ? "is-tab-active" : ""}`} onClick={() => { if (aliveEnemyOptions.length > 1) openBattleTargetPicker("공격::attack", "enemy", "공격 대상 선택"); else chooseBattleAction(aliveEnemyOptions[0]?.id ? `공격::attack::${aliveEnemyOptions[0].id}` : "공격"); }} disabled={battleInputLocked}>공격</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("방어") ? "is-tab-active" : ""}`} onClick={() => chooseBattleAction("방어")} disabled={battleInputLocked}>방어</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("아이템") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; setActionPicker("item"); }} disabled={battleInputLocked} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("스킬") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; if (!battleSkillOptions.length) { alert("보유한 스킬이 없어."); return; } setActionPicker("skill"); }} disabled={battleInputLocked || battleSkillOptions.length === 0}>스킬</button>
@@ -2672,6 +2718,37 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
     </div>
   );
 }
+) {
+  const battle = node?.battle;
+  if (!battle) return null;
+  const hp = Number(battle.hp || 0);
+  const maxHp = Number(battle.maxHp || battle.hp || 1);
+  const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
+  const effect = getRecentBattleEffect(battle.name, rounds, {}, nowTick);
+  const visual = getBattleVisualState({ name: battle.name, rounds, nowTick, side: "enemy" });
+  const imageSrc = battle.image || investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || currentMonsterPlaceholder;
+  const displayTurn = battlePlaybackLocked ? Math.max(1, Number(investigation?.battleTurn || 1) - 1) : (investigation?.battleTurn || 1);
+
+  return (
+    <div style={{ display: "grid", justifyItems: "center", gap: 10, textAlign: "center", padding: compact ? "8px 12px" : "12px 16px" }}>
+      {imageSrc ? (
+        <div style={{ position: "relative", width: compact ? 140 : 200, height: compact ? 140 : 200, display: "grid", placeItems: "center", borderRadius: 28, ...visual.wrapperStyle }}>
+          {visual.overlayStyle ? <div style={{ position: "absolute", inset: 8, borderRadius: 999, pointerEvents: "none", ...visual.overlayStyle }} /> : null}
+          {visual.fxOuterStyle ? <div style={visual.fxOuterStyle} /> : null}
+          {visual.fxInnerStyle ? <div style={visual.fxInnerStyle} /> : null}
+          <img src={imageSrc} alt={battle.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} />
+        </div>
+      ) : null}
+      <div style={{ fontSize: 13, color: "#fda4af", letterSpacing: "0.16em", fontWeight: 800 }}>TURN {displayTurn}</div>
+      <div style={{ fontSize: compact ? 24 : 30, fontWeight: 900, lineHeight: 1.1 }}>{battle.name}</div>
+      <div style={{ width: "min(520px, 100%)" }}>
+        <div style={bossHpTrackStyle}><div style={{ ...bossHpFillStyle, width: `${hpPercent}%` }} /></div>
+        <div style={{ marginTop: 8, color: "#fce7f3", fontWeight: 700 }}>HP {hp}/{maxHp}</div>
+      </div>
+      {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 12, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
+    </div>
+  );
+}
 
 function BattleMonsterStats({ node }) {
   const battle = node?.battle;
@@ -2687,6 +2764,20 @@ function BattleMonsterStats({ node }) {
           <div style={topChipStyle}>DEX {enemy.agi || 0}</div>
         </React.Fragment>
       ))}
+    </div>
+  );
+}
+) {
+  const battle = node?.battle;
+  if (!battle) return null;
+  return (
+    <div style={{ marginTop: "12px", display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+      <div style={topChipStyle}>HP {battle.hp}/{battle.maxHp || battle.hp}</div>
+      <div style={topChipStyle}>ATK {battle.atk || 0}</div>
+      <div style={topChipStyle}>DEF {battle.def || 0}</div>
+      <div style={topChipStyle}>DEX {battle.agi || 0}</div>
+      <div style={topChipStyle}>전체 {Math.round(Number(battle.aoe_chance || 0) * 100)}%</div>
+      <div style={topChipStyle}>필살기 {Math.round(Number(battle.finisher_chance || 0) * 100)}%</div>
     </div>
   );
 }
