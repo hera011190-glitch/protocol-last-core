@@ -237,7 +237,7 @@ function SDInfoModal({ character, onClose, theme }) {
         <h2 style={{ marginTop: 0, marginBottom: "18px" }}>{character.name}</h2>
         <div style={{ display: "grid", gridTemplateColumns: "108px 1fr", gap: "16px", alignItems: "center", marginBottom: "18px" }}>
           <div style={{ width: "108px", height: "108px", borderRadius: "24px", overflow: "hidden", background: "rgba(255,255,255,0.72)" }}>
-            {character.image ? <img src={character.image} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
+            {character.image ? <img src={resolveAssetUrl(character.image)} alt={character.name} onError={(event) => { event.currentTarget.style.display = "none"; }} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
           </div>
           <div>
             <div style={{ marginBottom: "8px", fontWeight: 800 }}>{character.rank || "대원"}</div>
@@ -348,6 +348,38 @@ function getSpriteImage(character) {
   return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
 }
 
+function resolveAssetUrl(value) {
+  const src = String(value || "").trim();
+  if (!src) return "";
+  if (/^(data:|blob:|https?:\/\/)/i.test(src)) return src;
+  if (src.startsWith("/")) return buildApiUrl(src);
+  return src;
+}
+
+function BrokenSdFallback({ name }) {
+  return (
+    <div
+      aria-label={name || "SD"}
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 1,
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "28px",
+        background: "linear-gradient(180deg, rgba(236,248,255,0.94), rgba(177,219,246,0.86))",
+        border: "1px solid rgba(93,173,226,0.35)",
+        color: "#24506c",
+        fontWeight: 900,
+        fontSize: "15px",
+        boxShadow: "inset 0 0 28px rgba(255,255,255,0.54)",
+      }}
+    >
+      SD
+    </div>
+  );
+}
+
 function getCharacterQuotePool(character) {
   const directQuotes = Array.isArray(character?.sdQuotes) ? character.sdQuotes.map((quote) => String(quote || "").trim()).filter(Boolean) : [];
   const fallbackQuotes = [String(character?.oneLine || "").trim()]
@@ -438,8 +470,15 @@ const FALLBACK_MAPS = [
 ];
 
 const CharacterSprite = memo(function CharacterSprite({ character, quote, moving, onClick }) {
-  const spriteImage = getSpriteImage(character);
-  if (!spriteImage) return null;
+  const rawSpriteImage = getSpriteImage(character);
+  const spriteImage = resolveAssetUrl(rawSpriteImage);
+  const [imageBroken, setImageBroken] = useState(false);
+
+  useEffect(() => {
+    setImageBroken(false);
+  }, [spriteImage]);
+
+  const showSpriteImage = !!spriteImage && !imageBroken;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
   const tintStrength = tintReveal / 100;
@@ -455,13 +494,19 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
       ) : null}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 138, fontSize: "16px", fontWeight: 900, color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
       <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translate3d(-50%, 0, 0) ${moving ? `rotate(${character.dx >= 0 ? 0.22 : -0.22}deg)` : "rotate(0deg)"}`, transition: "transform 0.14s linear", willChange: "transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
-        <img
-          src={spriteImage}
-          alt=""
-          loading="eager"
-          decoding="async"
-          style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
-        />
+        {showSpriteImage ? (
+          <img
+            src={spriteImage}
+            alt=""
+            loading="eager"
+            decoding="async"
+            onError={() => setImageBroken(true)}
+            style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
+          />
+        ) : (
+          <BrokenSdFallback name={character?.name} />
+        )}
+        {showSpriteImage ? (
         <div
           aria-hidden
           style={{
@@ -478,6 +523,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             alt=""
             loading="eager"
             decoding="async"
+            onError={() => setImageBroken(true)}
             style={{
               width: "100%",
               height: "100%",
@@ -496,6 +542,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             aria-hidden="true"
             loading="eager"
             decoding="async"
+            onError={() => setImageBroken(true)}
             style={{
               width: "100%",
               height: "100%",
@@ -510,6 +557,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             }}
           />
         </div>
+        ) : null}
       </div>
     </div>
   );
