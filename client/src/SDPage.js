@@ -529,7 +529,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
     setCandidateIndex(0);
   }, [spriteCandidates.join("|")]);
 
-  const spriteImage = resolveAssetUrl(spriteCandidates[candidateIndex] || getSpriteImage(character));
+  const rawSpriteCandidate = candidateIndex < spriteCandidates.length ? spriteCandidates[candidateIndex] : "";
+  const spriteImage = resolveAssetUrl(rawSpriteCandidate);
   const showSpriteImage = !!spriteImage;
   const handleSpriteError = () => {
     setCandidateIndex((prev) => {
@@ -545,12 +546,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
-        <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translate3d(-50%, 0, 0)", display: "inline-block", maxWidth: "320px",
-  minWidth: "60px",
-  whiteSpace: "pre-wrap",
-  wordBreak: "keep-all",
-  overflowWrap: "break-word",
- padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
+        <div style={{ position: "absolute", left: "50%", bottom: "164px", transform: "translate3d(-50%, 0, 0)", display: "inline-block", maxWidth: "320px", minWidth: "60px", padding: "11px 15px", borderRadius: "20px", background: "linear-gradient(180deg, rgba(246,251,255,0.98) 0%, rgba(225,241,255,0.98) 100%)", color: "#14344d", border: "1px solid rgba(91,170,224,0.30)", boxShadow: "0 10px 24px rgba(37,99,235,0.12)", fontSize: "13px", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "keep-all", backdropFilter: "blur(8px)" }}>
           {quote.text}
           <div style={{ position: "absolute", left: "50%", bottom: "-7px", width: "14px", height: "14px", transform: "translateX(-50%) rotate(45deg)", background: "linear-gradient(180deg, rgba(225,241,255,0.98) 0%, rgba(206,233,255,0.98) 100%)", borderRight: "1px solid rgba(91,170,224,0.22)", borderBottom: "1px solid rgba(91,170,224,0.22)" }} />
         </div>
@@ -1074,7 +1070,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
         <div style={{ position: "relative", height: "100%", overflow: "hidden", background: currentMap?.background || "#dff4ff", boxShadow: theme?.shadow || "0 24px 60px rgba(73,132,170,0.16)" }}>
           {currentMap?.backgroundImage ? (
             <img
-              src={currentMap.backgroundImage}
+              src={resolveAssetUrl(currentMap.backgroundImage)}
+              onError={(event) => { event.currentTarget.style.display = "none"; }}
               alt={currentMap?.name || "맵 배경"}
               style={{
                 position: "absolute",

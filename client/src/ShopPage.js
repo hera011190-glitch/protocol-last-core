@@ -406,7 +406,13 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
     const res = await fetch(buildApiUrl("/updateCharacter"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ charId: activeCharacter.id, ...patch }),
+      body: JSON.stringify({
+        charId: activeCharacter?.id,
+        characterId: activeCharacter?.id,
+        ownerId: activeCharacter?.ownerId,
+        characterName: activeCharacter?.name,
+        ...patch,
+      }),
     });
     const data = await res.json();
     if (data.success && data.character) {
@@ -417,39 +423,17 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
   };
 
   const buyItem = async (item) => {
-    if (!activeCharacter?.id) return alert("캐릭터를 먼저 선택해주세요.");
     if (Number(activeCharacter?.coins || 0) < Number(item.price || 0)) return alert("코인이 부족합니다.");
-
-    const res = await fetch(buildApiUrl("/shop/buy"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ charId: activeCharacter.id, itemId: item.id, itemName: item.name }),
-    });
-    const data = await res.json();
-    if (!data.success) return alert(data.message || "구매에 실패했습니다.");
-
-    if (data.character) {
-      onApplyCharacter(data.character);
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
-    }
+    await saveCharacter({ coins: Number(activeCharacter.coins || 0) - Number(item.price || 0), items: [...inventory, item.name] });
     alert(`${item.name} 구매 완료`);
   };
 
   const sellItem = async (itemName, meta) => {
-    if (!activeCharacter?.id) return alert("캐릭터를 먼저 선택해주세요.");
-
-    const res = await fetch(buildApiUrl("/shop/sell"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ charId: activeCharacter.id, itemId: meta?.id, itemName }),
-    });
-    const data = await res.json();
-    if (!data.success) return alert(data.message || "판매에 실패했습니다.");
-
-    if (data.character) {
-      onApplyCharacter(data.character);
-      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
-    }
+    const next = [...inventory];
+    const index = next.findIndex((v) => v === itemName);
+    if (index < 0) return;
+    next.splice(index, 1);
+    await saveCharacter({ coins: Number(activeCharacter.coins || 0) + Number(meta.sellPrice || 0), items: next });
     setInventoryOpen(false);
     alert(`${meta.name || itemName} 판매 완료`);
   };

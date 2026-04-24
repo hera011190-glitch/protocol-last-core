@@ -2085,15 +2085,82 @@ app.post("/createCharacter", (req, res) => {
   res.json({ success: true, character: buildPublicCharacter(newChar) });
 });
 
+
+function normalizeLookupKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findCharacterByLooseIdentifiers(payload = {}) {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const ids = [
+    payload.charId,
+    payload.characterId,
+    payload.id,
+    payload.activeCharacterId,
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+
+  for (const targetId of ids) {
+    const found = charactersDB.find((character) => String(character?.id || "") === targetId);
+    if (found) return found;
+  }
+
+  const ownerId = normalizeLookupKey(payload.ownerId || payload.userId || payload.accountId);
+  const name = normalizeLookupKey(payload.name || payload.characterName || payload.character_name);
+  if (ownerId && name) {
+    const found = charactersDB.find((character) =>
+      normalizeLookupKey(character?.ownerId) === ownerId &&
+      normalizeLookupKey(character?.name) === name
+    );
+    if (found) return found;
+  }
+
+  if (name) {
+    const matches = charactersDB.filter((character) => normalizeLookupKey(character?.name) === name);
+    if (matches.length === 1) return matches[0];
+  }
+
+  return null;
+}
+
+function isBlankIncomingString(value) {
+  return typeof value === "string" && value.trim() === "";
+}
+
+function assignCharacterStringFieldSafely(character, key, value, { protectExisting = false } = {}) {
+  if (!character || value === undefined) return;
+  if (protectExisting && isBlankIncomingString(value) && String(character[key] || "").trim()) return;
+  character[key] = value;
+}
+
+function assignCharacterArrayFieldSafely(character, key, value) {
+  if (!character || value === undefined) return;
+  if (Array.isArray(value)) {
+    character[key] = value;
+    return;
+  }
+  if (value === null) return;
+  if (!Array.isArray(character[key])) character[key] = [];
+}
+
 app.post("/updateCharacter", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
   const {
     charId,
+    characterId,
     id,
+    ownerId,
+    userId,
+    accountId,
+    characterName,
     image,
+    profileImage,
     mainImage,
+    cardImage,
     investigationImage,
+    spriteImage,
     profile,
+    profileText,
+    profileContent,
     level,
     statPoints,
     corrosion,
@@ -2106,6 +2173,7 @@ app.post("/updateCharacter", (req, res) => {
     rank,
     oneLine,
     profileBgm,
+    bgmUrl,
     profileBgmVolume,
     sdQuotes,
     dailyAttemptsLeft,
@@ -2122,32 +2190,38 @@ app.post("/updateCharacter", (req, res) => {
     approved,
     name,
     mainImageFrame,
-  } = req.body;
+  } = req.body || {};
 
-  const char = charactersDB.find((c) => String(c.id) === String(charId ?? id));
+  const char = findCharacterByLooseIdentifiers({ charId, characterId, id, ownerId, userId, accountId, name, characterName });
 
   if (!char) {
     return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
   }
 
   if (name !== undefined) char.name = name;
-  if (image !== undefined) char.image = image;
-  if (mainImage !== undefined) char.mainImage = mainImage;
-  if (investigationImage !== undefined) char.investigationImage = investigationImage;
-  if (profileBgm !== undefined) char.profileBgm = profileBgm;
+
+  // 중요: 이미지 / 프로필 글 / BGM은 빈 값으로 기존 데이터를 덮어쓰지 않게 보호합니다.
+  // 브라우저를 바꾸거나 캐시가 비어 있는 운영 화면에서 저장해도 기존 캐릭터 정보가 사라지지 않도록 합니다.
+  assignCharacterStringFieldSafely(char, "image", image ?? profileImage, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "mainImage", mainImage ?? cardImage, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "investigationImage", investigationImage ?? spriteImage, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "profileBgm", profileBgm ?? bgmUrl, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "profile", profile ?? profileText ?? profileContent, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "profileText", profileText ?? profile, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "profileContent", profileContent ?? profile, { protectExisting: true });
+
   if (profileBgmVolume !== undefined) char.profileBgmVolume = Math.max(0, Math.min(1, Number(profileBgmVolume) || 0));
-  if (profile !== undefined) char.profile = profile;
   if (level !== undefined) char.level = Number(level);
   if (statPoints !== undefined) char.statPoints = Number(statPoints);
   if (corrosion !== undefined) char.corrosion = Number(corrosion);
   if (coins !== undefined) char.coins = Number(coins);
   if (exp !== undefined) char.exp = Number(exp);
   if (stats !== undefined) char.stats = normalizeCharacterStats(stats);
-  if (items !== undefined) char.items = items;
+  if (items !== undefined) char.items = Array.isArray(items) ? items : (Array.isArray(char.items) ? char.items : []);
   if (age !== undefined) char.age = age;
   if (bodyInfo !== undefined) char.bodyInfo = bodyInfo;
   if (rank !== undefined) char.rank = rank;
-  if (oneLine !== undefined) char.oneLine = oneLine;
+  if (oneLine !== undefined && !(isBlankIncomingString(oneLine) && String(char.oneLine || "").trim())) char.oneLine = oneLine;
   if (mainImageFrame !== undefined) {
     char.mainImageFrame = {
       x: Number(mainImageFrame?.x ?? char.mainImageFrame?.x ?? 50),
@@ -2155,7 +2229,7 @@ app.post("/updateCharacter", (req, res) => {
       scale: Number(mainImageFrame?.scale ?? char.mainImageFrame?.scale ?? 1.06),
     };
   }
-  if (sdQuotes !== undefined) char.sdQuotes = Array.isArray(sdQuotes) ? sdQuotes : [];
+  assignCharacterArrayFieldSafely(char, "sdQuotes", sdQuotes);
   if (dailyAttemptsLeft !== undefined) char.dailyAttemptsLeft = Number(dailyAttemptsLeft);
   if (gambleCountLeft !== undefined) char.gambleCountLeft = Number(gambleCountLeft);
   if (currentMap !== undefined) char.currentMap = currentMap;
@@ -2166,20 +2240,23 @@ app.post("/updateCharacter", (req, res) => {
   if (waitMs !== undefined) char.waitMs = Number(waitMs);
   if (moveCooldownMs !== undefined) char.moveCooldownMs = Number(moveCooldownMs);
   if (currentHp !== undefined) char.currentHp = Number(currentHp);
-  if (skills !== undefined) char.skills = Array.isArray(skills) ? skills : [];
+  assignCharacterArrayFieldSafely(char, "skills", skills);
   if (approved !== undefined) char.approved = !!approved;
 
   const nextMaxHp = getCharacterMaxHp(char?.stats?.hp);
   if (!Number.isFinite(Number(char.currentHp))) char.currentHp = nextMaxHp;
   char.currentHp = Math.max(0, Math.min(nextMaxHp, Number(char.currentHp)));
   if (!Array.isArray(char.skills)) char.skills = [];
+  if (!Array.isArray(char.items)) char.items = [];
+  if (!Array.isArray(char.sdQuotes)) char.sdQuotes = [];
   if (!char.mainImageFrame || typeof char.mainImageFrame !== "object") {
     char.mainImageFrame = { x: 50, y: 26, scale: 1.06 };
   }
   char.updatedAt = Date.now();
   char.assetVersion = char.updatedAt;
 
-  writeRuntimeArray("characters.json", charactersDB);
+  const saved = writeRuntimeArray("characters.json", charactersDB);
+  if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
   return res.json({ success: true, character: buildPublicCharacter(char) });
 });
 
@@ -3856,72 +3933,6 @@ app.delete("/shopItems/:id", (req, res) => {
   syncShopItemsWithKnownItems();
   res.json({ success: true });
 });
-
-function findShopItemForTransaction(payload = {}) {
-  const itemId = String(payload.itemId ?? payload.id ?? payload.item?.id ?? "").trim();
-  const itemName = String(payload.itemName ?? payload.name ?? payload.item?.name ?? "").trim();
-  return (shopItemsDB || []).find((item) => {
-    if (itemId && String(item?.id || "") === itemId) return true;
-    if (itemName && String(item?.name || "") === itemName) return true;
-    return false;
-  }) || null;
-}
-
-function normalizeInventoryItemName(item) {
-  return String(item?.name || item?.id || "").trim();
-}
-
-app.post("/shop/buy", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
-  const charId = req.body?.charId ?? req.body?.characterId ?? req.body?.id;
-  const char = charactersDB.find((c) => String(c.id) === String(charId));
-  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
-
-  const item = findShopItemForTransaction(req.body || {});
-  if (!item) return res.json({ success: false, message: "아이템을 찾을 수 없습니다." });
-  if (item.hidden) return res.json({ success: false, message: "현재 구매할 수 없는 아이템입니다." });
-
-  const price = Math.max(0, Number(item.price || 0));
-  const currentCoins = Number(char.coins || 0);
-  if (currentCoins < price) return res.json({ success: false, message: "코인이 부족합니다." });
-
-  const itemName = normalizeInventoryItemName(item);
-  if (!itemName) return res.json({ success: false, message: "아이템 이름이 올바르지 않습니다." });
-
-  char.coins = currentCoins - price;
-  char.items = Array.isArray(char.items) ? [...char.items, itemName] : [itemName];
-  char.updatedAt = Date.now();
-  char.assetVersion = char.updatedAt;
-
-  writeRuntimeArray("characters.json", charactersDB);
-  return res.json({ success: true, character: buildPublicCharacter(char), itemName, items: char.items, coins: char.coins });
-});
-
-app.post("/shop/sell", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
-  const charId = req.body?.charId ?? req.body?.characterId ?? req.body?.id;
-  const char = charactersDB.find((c) => String(c.id) === String(charId));
-  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
-
-  const rawName = String(req.body?.itemName ?? req.body?.name ?? "").trim();
-  const item = findShopItemForTransaction(req.body || {}) || (shopItemsDB || []).find((entry) => String(entry?.name || "") === rawName || String(entry?.id || "") === rawName) || null;
-  const itemName = rawName || normalizeInventoryItemName(item);
-  if (!itemName) return res.json({ success: false, message: "판매할 아이템을 찾을 수 없습니다." });
-
-  const inventory = Array.isArray(char.items) ? [...char.items] : [];
-  const index = inventory.findIndex((value) => String(value) === String(itemName));
-  if (index < 0) return res.json({ success: false, message: "보유 중인 아이템이 아닙니다." });
-
-  inventory.splice(index, 1);
-  char.items = inventory;
-  char.coins = Number(char.coins || 0) + Math.max(0, Number(item?.sellPrice || 0));
-  char.updatedAt = Date.now();
-  char.assetVersion = char.updatedAt;
-
-  writeRuntimeArray("characters.json", charactersDB);
-  return res.json({ success: true, character: buildPublicCharacter(char), items: char.items, coins: char.coins });
-});
-
 
 app.get("/shopConfig", (req, res) => {
   shopConfigDB = normalizeShopConfig(shopConfigDB);
