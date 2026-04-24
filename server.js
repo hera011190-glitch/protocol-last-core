@@ -129,18 +129,89 @@ function readRuntimeArray(filename) {
   }
 }
 
-function writeRuntimeArray(filename, value) {
+const PROTECTED_RUNTIME_ARRAYS = new Set(["users.json", "characters.json"]);
+const RUNTIME_BACKUP_DIR = path.join(DATA_DIR, "_backups");
+
+function ensureRuntimeBackupDir() {
+  try {
+    fs.mkdirSync(RUNTIME_BACKUP_DIR, { recursive: true });
+  } catch (error) {
+    console.error("backup dir create failed", error);
+  }
+}
+
+function makeRuntimeBackup(filename, currentValue) {
+  try {
+    ensureRuntimeBackupDir();
+    const safeName = String(filename || "runtime").replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = path.join(RUNTIME_BACKUP_DIR, `${safeName}.${stamp}.bak.json`);
+    fs.writeFileSync(backupPath, JSON.stringify(Array.isArray(currentValue) ? currentValue : [], null, 2), "utf-8");
+
+    const backups = fs.readdirSync(RUNTIME_BACKUP_DIR)
+      .filter((name) => name.startsWith(`${safeName}.`) && name.endsWith(".bak.json"))
+      .sort();
+    while (backups.length > 20) {
+      const removeName = backups.shift();
+      try { fs.unlinkSync(path.join(RUNTIME_BACKUP_DIR, removeName)); } catch {}
+    }
+  } catch (error) {
+    console.error(`makeRuntimeBackup failed: ${filename}`, error);
+  }
+}
+
+function getRuntimeArrayFromDisk(filename) {
   try {
     const filePath = resolveDataPath(filename);
-    scheduleJsonWrite(filePath, Array.isArray(value) ? value : []);
+    if (!fs.existsSync(filePath)) return [];
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function shouldBlockDangerousEmptyWrite(filename, nextValue) {
+  if (!PROTECTED_RUNTIME_ARRAYS.has(filename)) return false;
+  if (!Array.isArray(nextValue) || nextValue.length > 0) return false;
+  const diskRows = getRuntimeArrayFromDisk(filename);
+  return diskRows.length > 0;
+}
+
+function writeRuntimeArray(filename, value) {
+  try {
+    const nextValue = Array.isArray(value) ? value : [];
+    const filePath = resolveDataPath(filename);
+
+    if (shouldBlockDangerousEmptyWrite(filename, nextValue)) {
+      console.error(`[data-protect] ${filename} 빈 배열 저장을 차단했습니다. 기존 데이터 보호 중입니다.`);
+      return false;
+    }
+
+    if (PROTECTED_RUNTIME_ARRAYS.has(filename)) {
+      const diskRows = getRuntimeArrayFromDisk(filename);
+      if (diskRows.length > 0) makeRuntimeBackup(filename, diskRows);
+    }
+
+    scheduleJsonWrite(filePath, nextValue);
+    return true;
   } catch (error) {
     console.error(`writeRuntimeArray failed: ${filename}`, error);
+    return false;
   }
 }
 
 let usersDB = readRuntimeArray("users.json");
 let charactersDB = readRuntimeArray("characters.json");
 let roomChats = {};
+
+function refreshProtectedRuntimeArraysIfNeeded() {
+  const diskUsers = getRuntimeArrayFromDisk("users.json");
+  const diskCharacters = getRuntimeArrayFromDisk("characters.json");
+  if (diskUsers.length > usersDB.length) usersDB = diskUsers;
+  if (diskCharacters.length > charactersDB.length) charactersDB = diskCharacters;
+}
+
 let socketUsers = {};
 let dailyInvestigationAttempts = {};
 
@@ -1940,6 +2011,7 @@ app.post("/register", (req, res) => {
 });
 
 app.post("/login", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
   const nextId = String(req.body?.id || "").trim();
   const nextPw = String(req.body?.pw || "").trim();
   if (!nextId || !nextPw) {
@@ -1954,6 +2026,7 @@ app.post("/login", (req, res) => {
 });
 
 app.post("/createCharacter", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
   const {
     ownerId,
     name,
@@ -2021,6 +2094,7 @@ app.post("/createCharacter", (req, res) => {
 });
 
 app.post("/updateCharacter", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
   const {
     charId,
     id,
@@ -2117,8 +2191,8 @@ app.post("/updateCharacter", (req, res) => {
   return res.json({ success: true, character: buildPublicCharacter(char) });
 });
 
-app.get("/characters/:ownerId", (req, res) => res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(attachRelationsToCharacter)));
-app.get("/characters", (req, res) => res.json(charactersDB.map(attachRelationsToCharacter)));
+app.get("/characters/:ownerId", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(attachRelationsToCharacter)); });
+app.get("/characters", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.map(attachRelationsToCharacter)); });
 app.delete("/admin/characters/:id", (req, res) => {
   const id = String(req.params.id || "");
   const target = charactersDB.find((character) => String(character.id) === id);
@@ -2787,11 +2861,27 @@ io.on("connection", (socket) => {
 // --- add these routes anywhere after app initialization and before server.listen ---
 
 app.get("/admin/users", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
   const safeUsers = usersDB.map((user) => ({
     id: user.id,
     type: user.type,
   }));
   res.json(safeUsers);
+});
+
+
+app.get("/admin/dataBackups", (req, res) => {
+  try {
+    ensureRuntimeBackupDir();
+    const files = fs.readdirSync(RUNTIME_BACKUP_DIR)
+      .filter((name) => name.endsWith(".bak.json"))
+      .sort()
+      .reverse()
+      .slice(0, 80);
+    res.json({ success: true, backups: files });
+  } catch (error) {
+    res.json({ success: false, backups: [], message: "백업 목록을 불러오지 못했습니다." });
+  }
 });
 
 // ===== custom investigation publish routes =====
@@ -3469,6 +3559,7 @@ app.get("/characters-lite/:ownerId", (req, res) => {
 });
 
 app.get("/characters-lite", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
   res.json(charactersDB.map(summarizeCharacter));
 });
 
@@ -3477,6 +3568,7 @@ app.get("/characters-public/:ownerId", (req, res) => {
 });
 
 app.get("/characters-public", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
   res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 

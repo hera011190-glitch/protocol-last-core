@@ -156,6 +156,7 @@ const PROFILE_FONT_OPTIONS = [
 ];
 
 const API_BASE = window.location.hostname === "localhost" ? "http://localhost:3001" : "";
+const adminApi = (path) => `${API_BASE}${path}`;
 
 const inputStyle = {
   width: "100%",
@@ -331,7 +332,7 @@ export default function AdminPage({
 
   const loadSiteBgm = async () => {
     try {
-      const res = await fetch(`${API_BASE}/designConfig?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(adminApi(`/designConfig?t=${Date.now()}`), { cache: "no-store" });
       const data = await res.json();
       setSiteBgm(String(data?.siteContent?.bgm?.site || data?.siteContent?.bgm?.home || ""));
       setSiteBgmVolume(Math.max(0, Math.min(1, Number(data?.siteContent?.bgm?.siteVolume ?? data?.siteContent?.bgm?.volume ?? 1) || 1)));
@@ -348,7 +349,7 @@ export default function AdminPage({
 
   const saveSiteBgm = async () => {
     try {
-      const currentRes = await fetch(`${API_BASE}/designConfig?t=${Date.now()}`, { cache: "no-store" });
+      const currentRes = await fetch(adminApi(`/designConfig?t=${Date.now()}`), { cache: "no-store" });
       const current = await currentRes.json();
       const next = {
         ...(current || {}),
@@ -361,7 +362,7 @@ export default function AdminPage({
           },
         },
       };
-      const saveRes = await fetch(`${API_BASE}/designConfig`, {
+      const saveRes = await fetch(adminApi("/designConfig"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),
@@ -382,18 +383,29 @@ export default function AdminPage({
   };
 
   const loadAll = async () => {
-    const userRes = await fetch(`${API_BASE}/admin/users`);
+    const userRes = await fetch(adminApi("/admin/users"), { cache: "no-store" });
     const userData = await userRes.json();
-    setUsers(Array.isArray(userData) ? userData : []);
-    const charRes = await fetch(`${API_BASE}/characters-lite?t=${Date.now()}`, { cache: "no-store" });
+    if (Array.isArray(userData)) {
+      setUsers((prev) => (userData.length > 0 || prev.length === 0 ? userData : prev));
+    }
+
+    const charRes = await fetch(adminApi(`/characters-lite?t=${Date.now()}`), { cache: "no-store" });
     const charData = await charRes.json();
-    setCharacters(Array.isArray(charData) ? charData : []);
+    if (Array.isArray(charData)) {
+      setCharacters((prev) => {
+        if (charData.length === 0 && prev.length > 0) {
+          setMessage("서버에서 빈 캐릭터 목록이 내려와 기존 화면 데이터를 보호했습니다. 새로고침 전 서버 저장소를 확인해주세요.");
+          return prev;
+        }
+        return charData;
+      });
+    }
   };
 
   const loadCharacterDetail = async (characterId) => {
     if (!characterId) return null;
     try {
-      const res = await fetch(`${API_BASE}/character/${characterId}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(adminApi(`/character/${characterId}?t=${Date.now()}`), { cache: "no-store" });
       const data = await res.json();
       return data?.character || null;
     } catch {
@@ -492,7 +504,7 @@ export default function AdminPage({
   const createCharacterForUser = async () => {
     if (!selectedUserId) return setMessage("먼저 계정을 선택해주세요.");
     if (!form.charName.trim()) return setMessage("캐릭터 이름을 입력해주세요.");
-    const res = await fetch(`${API_BASE}/createCharacter`, {
+    const res = await fetch(adminApi("/createCharacter"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -525,19 +537,22 @@ export default function AdminPage({
     try {
       latestDetail = await loadCharacterDetail(selectedCharacter.id);
     } catch {}
+    if (!latestDetail) {
+      return setMessage("서버의 최신 캐릭터 데이터를 불러오지 못해서 저장을 중단했습니다. 데이터 보호를 위해 새로고침 후 다시 시도해주세요.");
+    }
     const preservedProfile = String(edit.profile || "").trim()
       ? edit.profile
       : (latestDetail?.profile ?? selectedCharacter?.profile ?? "");
 
-    const res = await fetch(`${API_BASE}/updateCharacter`, {
+    const res = await fetch(adminApi("/updateCharacter"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         charId: selectedCharacter.id,
         name: edit.name,
-        image: edit.image,
-        mainImage: edit.mainImage,
-        investigationImage: edit.investigationImage,
+        image: edit.image || latestDetail.image || "",
+        mainImage: edit.mainImage || latestDetail.mainImage || "",
+        investigationImage: edit.investigationImage || latestDetail.investigationImage || "",
         profile: preservedProfile,
         level: Number(edit.level || 1),
         statPoints: Number(edit.statPoints || 0),
@@ -546,12 +561,12 @@ export default function AdminPage({
         exp: Number(edit.exp || 0),
         stats: { atk: Number(edit.atk || 0), hp: Number(edit.hp || 0), def: Number(edit.def || 0), agi: Number(edit.agi || 0) },
         currentHp: Number(edit.currentHp || 0),
-        items: Array.isArray(edit.items) ? edit.items : [],
+        items: Array.isArray(edit.items) ? edit.items : (Array.isArray(latestDetail.items) ? latestDetail.items : []),
         age: edit.age,
         bodyInfo: edit.bodyInfo,
         rank: edit.rank,
         oneLine: edit.oneLine,
-        profileBgm: edit.profileBgm,
+        profileBgm: edit.profileBgm || latestDetail.profileBgm || "",
         profileBgmVolume: Math.max(0, Math.min(1, Number(edit.profileBgmVolume ?? 1) || 1)),
         dailyAttemptsLeft: Number(edit.dailyAttemptsLeft || 1),
         gambleCountLeft: Number(edit.gambleCountLeft || 3),
@@ -587,7 +602,7 @@ export default function AdminPage({
     if (!selectedCharacter) return setMessage("캐릭터를 선택해주세요.");
     const ok = window.confirm(`${selectedCharacter.name} 캐릭터를 삭제하겠습니까?`);
     if (!ok) return;
-    const res = await fetch(`${API_BASE}/admin/characters/${selectedCharacter.id}`, { method: "DELETE" });
+    const res = await fetch(adminApi(`/admin/characters/${selectedCharacter.id}`), { method: "DELETE" });
     const data = await res.json();
     if (!data.success) return setMessage(data.message || "캐릭터 삭제 실패");
     setSelectedCharacterId("");
