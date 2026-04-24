@@ -398,12 +398,18 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   };
 
   useEffect(() => {
-    if (!draggingNodeId) return;
+    if (!draggingNodeId) return undefined;
     const handleMove = (event) => applyPreviewPointerPosition(event, draggingNodeId);
     const handleUp = () => endNodeDrag();
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
-  
+
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingNodeId]);
+
   const createBattleEnemy = () => ({ id: `enemy-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: "새 E-Beast", hp: 40, maxHp: 40, atk: 8, def: 3, agi: 6, aoe_chance: 0.3, finisher_chance: 0.05, finisherType: "single", rewardPoints: 10, rewardItem: "", image: "" });
 
   const getBattleEnemiesForEditor = (battle) => {
@@ -428,11 +434,6 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     });
   };
 
-  return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-  }, [draggingNodeId]);
 
   if (!selectedNode) return null;
 
