@@ -521,6 +521,14 @@ export default function AdminPage({
 
   const saveSelectedCharacter = async () => {
     if (!selectedCharacter) return setMessage("캐릭터를 선택해주세요.");
+    let latestDetail = null;
+    try {
+      latestDetail = await loadCharacterDetail(selectedCharacter.id);
+    } catch {}
+    const preservedProfile = String(edit.profile || "").trim()
+      ? edit.profile
+      : (latestDetail?.profile ?? selectedCharacter?.profile ?? "");
+
     const res = await fetch(`${API_BASE}/updateCharacter`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -530,7 +538,7 @@ export default function AdminPage({
         image: edit.image,
         mainImage: edit.mainImage,
         investigationImage: edit.investigationImage,
-        profile: edit.profile,
+        profile: preservedProfile,
         level: Number(edit.level || 1),
         statPoints: Number(edit.statPoints || 0),
         corrosion: Number(edit.corrosion || 0),
@@ -552,6 +560,7 @@ export default function AdminPage({
     });
     const data = await res.json();
     if (!data.success) return setMessage(data.message || "캐릭터 수정 실패");
+    setEdit((prev) => ({ ...prev, profile: data.character?.profile ?? preservedProfile }));
     setMessage("캐릭터 저장 완료");
     window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     loadAll();

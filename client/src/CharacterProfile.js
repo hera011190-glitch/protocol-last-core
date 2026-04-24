@@ -267,8 +267,8 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
           <div style={{ display: "grid", gridTemplateRows: "auto auto auto minmax(220px, 1fr)", gap: 14, minHeight: "100%" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
               <ProfileInfoCell label="나이" value={profileAge} />
-              <ProfileInfoCell label="계급" value={profileRank} />
               <ProfileInfoCell label="키 / 몸무게" value={profileBodyInfo} />
+              <ProfileInfoCell label="계급" value={profileRank} />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>

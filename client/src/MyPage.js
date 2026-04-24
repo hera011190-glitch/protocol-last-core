@@ -613,13 +613,22 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   };
 
   const saveProfileEdit = async () => {
+    let latestDetail = null;
+    try {
+      latestDetail = await loadCharacterDetail(currentUser?.id);
+    } catch {}
+
+    const preservedProfile = String(profileEdit.profile || "").trim()
+      ? profileEdit.profile
+      : (latestDetail?.profile ?? currentUser?.profile ?? "");
+
     const data = await saveCharacterPatch({
       name: profileEdit.name,
       age: profileEdit.age,
       bodyInfo: profileEdit.bodyInfo,
       rank: profileEdit.rank,
       oneLine: profileEdit.oneLine,
-      profile: profileEdit.profile,
+      profile: preservedProfile,
       image: profileEdit.image,
       mainImage: profileEdit.mainImage,
       mainImageFrame: normalizeProfileCardFrame(profileEdit.mainImageFrame),
@@ -629,6 +638,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     });
     if (data.success) {
       profileEditDirtyRef.current = false;
+      setProfileEdit((prev) => ({ ...prev, profile: data.character?.profile ?? preservedProfile }));
       setSaveNotice("프로필 저장 완료");
     }
   };
