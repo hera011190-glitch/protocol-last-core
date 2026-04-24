@@ -258,6 +258,7 @@ const SD_ACTIVE_MAP_KEY = "plc-sd-active-map";
 const SD_MAP_CONFIG_CACHE_KEY = "plc-sd-map-config";
 const SD_POSITIONS_KEY = "plc-sd-positions";
 const SD_CHARACTERS_KEY = SD_CHARACTER_CACHE_KEY;
+const SD_IMAGE_CACHE_TOKEN = Date.now();
 
 function readCachedMapConfig() {
   try {
@@ -344,16 +345,67 @@ function dedupeCharacters(rows) {
   return Array.from(new Map(Array.from(merged.values()).map((character) => [getCharacterKey(character) || getCharacterAliases(character)[0], character])).values());
 }
 
+function normalizeImageValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    return String(value.url || value.src || value.path || value.fileUrl || value.image || "").trim();
+  }
+  return String(value || "").trim();
+}
+
+function getSpriteImageCandidates(character) {
+  const candidates = [
+    character?.spriteImage,
+    character?.sdImage,
+    character?.sdImageUrl,
+    character?.sdUrl,
+    character?.sd,
+    character?.characterSdImage,
+    character?.investigationImage,
+    character?.profileImage,
+    character?.image,
+    character?.mainImage,
+    character?.cardImage,
+    character?.fullBodyImage,
+    character?.portraitImage,
+    character?.avatar,
+    character?.thumbnail,
+  ].map(normalizeImageValue).filter(Boolean);
+  return Array.from(new Set(candidates));
+}
+
 function getSpriteImage(character) {
-  return character?.spriteImage || character?.investigationImage || character?.image || character?.mainImage || "";
+  return getSpriteImageCandidates(character)[0] || "";
+}
+
+function appendImageCacheBuster(url) {
+  if (!url || /^(data:|blob:)/i.test(url)) return url || "";
+  return url + (url.includes("?") ? "&" : "?") + "sdv=" + SD_IMAGE_CACHE_TOKEN;
 }
 
 function resolveAssetUrl(value) {
-  const src = String(value || "").trim();
+  let src = normalizeImageValue(value).replace(/\\/g, "/").trim();
   if (!src) return "";
-  if (/^(data:|blob:|https?:\/\/)/i.test(src)) return src;
-  if (src.startsWith("/")) return buildApiUrl(src);
-  return src;
+  if (/^(data:|blob:|https?:\/\/)/i.test(src)) return appendImageCacheBuster(src);
+  if (src.startsWith("./")) src = src.slice(2);
+  if (src.startsWith("/")) return appendImageCacheBuster(buildApiUrl(src));
+  return appendImageCacheBuster(buildApiUrl("/" + src));
+}
+
+function isAdminCharacter(character) {
+  if (!character) return false;
+  if (character.isAdmin || character.admin || character.isOperator || character.operator) return true;
+  const roleFields = [character.role, character.userRole, character.accountRole, character.ownerRole, character.permission, character.type]
+    .map((value) => normalizeKeyPart(value));
+  if (roleFields.some((value) => ["admin", "operator", "owner", "manager", "운영", "운영자", "관리자"].includes(value))) return true;
+  const idFields = [character.id, character.ownerId, character.userId, character.accountId, character.loginId, character.username]
+    .map((value) => normalizeKeyPart(value));
+  return idFields.some((value) => value === "admin" || value === "operator" || value === "master" || value === "owner" || value === "운영자" || value === "관리자");
+}
+
+function filterVisibleSdCharacters(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((character) => !isAdminCharacter(character));
 }
 
 function BrokenSdFallback({ name }) {
@@ -470,15 +522,21 @@ const FALLBACK_MAPS = [
 ];
 
 const CharacterSprite = memo(function CharacterSprite({ character, quote, moving, onClick }) {
-  const rawSpriteImage = getSpriteImage(character);
-  const spriteImage = resolveAssetUrl(rawSpriteImage);
-  const [imageBroken, setImageBroken] = useState(false);
+  const spriteCandidates = useMemo(() => getSpriteImageCandidates(character), [character]);
+  const [candidateIndex, setCandidateIndex] = useState(0);
 
   useEffect(() => {
-    setImageBroken(false);
-  }, [spriteImage]);
+    setCandidateIndex(0);
+  }, [spriteCandidates.join("|")]);
 
-  const showSpriteImage = !!spriteImage && !imageBroken;
+  const spriteImage = resolveAssetUrl(spriteCandidates[candidateIndex] || getSpriteImage(character));
+  const showSpriteImage = !!spriteImage;
+  const handleSpriteError = () => {
+    setCandidateIndex((prev) => {
+      const nextIndex = prev + 1;
+      return nextIndex < spriteCandidates.length ? nextIndex : spriteCandidates.length;
+    });
+  };
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
   const tintStrength = tintReveal / 100;
@@ -500,7 +558,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             alt=""
             loading="eager"
             decoding="async"
-            onError={() => setImageBroken(true)}
+            onError={handleSpriteError}
             style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
           />
         ) : (
@@ -523,7 +581,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             alt=""
             loading="eager"
             decoding="async"
-            onError={() => setImageBroken(true)}
+            onError={handleSpriteError}
             style={{
               width: "100%",
               height: "100%",
@@ -542,7 +600,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             aria-hidden="true"
             loading="eager"
             decoding="async"
-            onError={() => setImageBroken(true)}
+            onError={handleSpriteError}
             style={{
               width: "100%",
               height: "100%",
@@ -979,7 +1037,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
   }, [activeMapId]);
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
-  const stableCharacters = useMemo(() => stabilizeCharacterRows(characters, activeCharacter, maps), [characters, activeCharacter, maps]);
+  const stableCharacters = useMemo(() => filterVisibleSdCharacters(stabilizeCharacterRows(characters, activeCharacter, maps)), [characters, activeCharacter, maps]);
   const canonicalActiveCharacter = useMemo(() => {
     if (!activeCharacter) return null;
     return stableCharacters.find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
