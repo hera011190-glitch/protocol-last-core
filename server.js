@@ -100,13 +100,25 @@ const io = new Server(server, { cors: corsOptions });
 
 const pendingJsonWrites = new Map();
 
+function writeJsonAtomicSync(filePath, value) {
+  const payload = JSON.stringify(value, null, 2);
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tempPath, payload, "utf-8");
+  fs.renameSync(tempPath, filePath);
+}
+
 function scheduleJsonWrite(filePath, value, { delay = 12 } = {}) {
   const payload = JSON.stringify(value, null, 2);
   const existing = pendingJsonWrites.get(filePath);
   if (existing?.timer) clearTimeout(existing.timer);
   const timer = setTimeout(async () => {
     try {
-      await fs.promises.writeFile(filePath, payload, "utf-8");
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+      await fs.promises.writeFile(tempPath, payload, "utf-8");
+      await fs.promises.rename(tempPath, filePath);
     } catch (error) {
       console.error("scheduleJsonWrite failed", filePath, error);
     } finally {
@@ -191,6 +203,9 @@ function writeRuntimeArray(filename, value) {
     if (PROTECTED_RUNTIME_ARRAYS.has(filename)) {
       const diskRows = getRuntimeArrayFromDisk(filename);
       if (diskRows.length > 0) makeRuntimeBackup(filename, diskRows);
+      // 캐릭터/계정 데이터는 홈페이지 수정 중 서버가 꺼져도 유실되지 않도록 즉시 원자 저장합니다.
+      writeJsonAtomicSync(filePath, nextValue);
+      return true;
     }
 
     scheduleJsonWrite(filePath, nextValue);
@@ -2217,10 +2232,19 @@ app.post("/updateCharacter", (req, res) => {
   if (coins !== undefined) char.coins = Number(coins);
   if (exp !== undefined) char.exp = Number(exp);
   if (stats !== undefined) char.stats = normalizeCharacterStats(stats);
-  if (items !== undefined) char.items = Array.isArray(items) ? items : (Array.isArray(char.items) ? char.items : []);
-  if (age !== undefined) char.age = age;
-  if (bodyInfo !== undefined) char.bodyInfo = bodyInfo;
-  if (rank !== undefined) char.rank = rank;
+  if (items !== undefined) {
+    if (Array.isArray(items)) {
+      const allowEmptyItems = req.body?.replaceItems === true || req.body?.__replaceItems === true;
+      if (items.length > 0 || allowEmptyItems || !Array.isArray(char.items) || char.items.length === 0) {
+        char.items = items;
+      }
+    } else if (!Array.isArray(char.items)) {
+      char.items = [];
+    }
+  }
+  assignCharacterStringFieldSafely(char, "age", age, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "bodyInfo", bodyInfo, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "rank", rank, { protectExisting: true });
   if (oneLine !== undefined && !(isBlankIncomingString(oneLine) && String(char.oneLine || "").trim())) char.oneLine = oneLine;
   if (mainImageFrame !== undefined) {
     char.mainImageFrame = {
@@ -3942,6 +3966,65 @@ app.post("/shopConfig", (req, res) => {
   shopConfigDB = normalizeShopConfig(req.body || {});
   writeJsonFileSafe(shopConfigPath, shopConfigDB);
   res.json({ success: true, shopConfig: shopConfigDB });
+});
+
+
+function findShopItemByLooseId(itemIdOrName) {
+  const key = String(itemIdOrName || "").trim();
+  if (!key) return null;
+  return (shopItemsDB || []).map(normalizeShopItem).find((item) =>
+    String(item.id || "") === key || String(item.name || "") === key
+  ) || null;
+}
+
+app.post("/shop/buy", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const { characterId, charId, ownerId, characterName, itemId, itemName } = req.body || {};
+  const char = findCharacterByLooseIdentifiers({ charId: charId || characterId, characterId, ownerId, characterName });
+  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
+
+  syncShopItemsWithKnownItems();
+  const item = findShopItemByLooseId(itemId || itemName);
+  if (!item) return res.json({ success: false, message: "상점 아이템을 찾을 수 없습니다." });
+
+  const price = Math.max(0, Number(item.price || 0));
+  const currentCoins = Number(char.coins || 0);
+  if (currentCoins < price) return res.json({ success: false, message: "코인이 부족합니다." });
+
+  char.coins = currentCoins - price;
+  char.items = Array.isArray(char.items) ? char.items : [];
+  char.items.push(item.name || item.id);
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
+
+  const saved = writeRuntimeArray("characters.json", charactersDB);
+  if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
+  return res.json({ success: true, character: buildPublicCharacter(char), item: normalizeShopItem(item) });
+});
+
+app.post("/shop/sell", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const { characterId, charId, ownerId, characterName, itemId, itemName } = req.body || {};
+  const char = findCharacterByLooseIdentifiers({ charId: charId || characterId, characterId, ownerId, characterName });
+  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
+
+  syncShopItemsWithKnownItems();
+  const key = String(itemName || itemId || "").trim();
+  if (!key) return res.json({ success: false, message: "판매할 아이템을 찾을 수 없습니다." });
+
+  char.items = Array.isArray(char.items) ? char.items : [];
+  const index = char.items.findIndex((value) => String(value) === key);
+  if (index < 0) return res.json({ success: false, message: "보유 아이템에 없습니다." });
+
+  const [removed] = char.items.splice(index, 1);
+  const item = findShopItemByLooseId(removed) || findShopItemByLooseId(key) || {};
+  char.coins = Number(char.coins || 0) + Math.max(0, Number(item.sellPrice || 0));
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
+
+  const saved = writeRuntimeArray("characters.json", charactersDB);
+  if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
+  return res.json({ success: true, character: buildPublicCharacter(char), item: normalizeShopItem(item) });
 });
 
 app.get("/mails/unreadCount/:characterId", (req, res) => {

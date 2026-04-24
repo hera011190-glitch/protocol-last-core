@@ -423,17 +423,51 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
   };
 
   const buyItem = async (item) => {
+    if (!activeCharacter?.id) return alert("구매할 캐릭터를 찾을 수 없습니다.");
     if (Number(activeCharacter?.coins || 0) < Number(item.price || 0)) return alert("코인이 부족합니다.");
-    await saveCharacter({ coins: Number(activeCharacter.coins || 0) - Number(item.price || 0), items: [...inventory, item.name] });
+
+    const res = await fetch(buildApiUrl("/shop/buy"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: activeCharacter.id,
+        charId: activeCharacter.id,
+        ownerId: activeCharacter.ownerId,
+        characterName: activeCharacter.name,
+        itemId: item.id,
+        itemName: item.name,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) return alert(data.message || "구매에 실패했습니다.");
+    if (data.character) {
+      onApplyCharacter(data.character);
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
+    }
     alert(`${item.name} 구매 완료`);
   };
 
   const sellItem = async (itemName, meta) => {
-    const next = [...inventory];
-    const index = next.findIndex((v) => v === itemName);
-    if (index < 0) return;
-    next.splice(index, 1);
-    await saveCharacter({ coins: Number(activeCharacter.coins || 0) + Number(meta.sellPrice || 0), items: next });
+    if (!activeCharacter?.id) return alert("판매할 캐릭터를 찾을 수 없습니다.");
+
+    const res = await fetch(buildApiUrl("/shop/sell"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: activeCharacter.id,
+        charId: activeCharacter.id,
+        ownerId: activeCharacter.ownerId,
+        characterName: activeCharacter.name,
+        itemId: meta?.id || itemName,
+        itemName,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) return alert(data.message || "판매에 실패했습니다.");
+    if (data.character) {
+      onApplyCharacter(data.character);
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
+    }
     setInventoryOpen(false);
     alert(`${meta.name || itemName} 판매 완료`);
   };
