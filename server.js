@@ -4027,6 +4027,72 @@ app.post("/shop/sell", (req, res) => {
   return res.json({ success: true, character: buildPublicCharacter(char), item: normalizeShopItem(item) });
 });
 
+app.post("/shop/use", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const { characterId, charId, ownerId, characterName, itemId, itemName } = req.body || {};
+  const char = findCharacterByLooseIdentifiers({ charId: charId || characterId, characterId, ownerId, characterName });
+  if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
+
+  char.items = Array.isArray(char.items) ? char.items : [];
+  const key = String(itemName || itemId || "").trim();
+  if (!key) return res.json({ success: false, message: "사용할 아이템을 찾을 수 없습니다." });
+
+  syncShopItemsWithKnownItems();
+  const index = char.items.findIndex((value) => String(value) === key);
+  if (index < 0) return res.json({ success: false, message: "보유 아이템에 없습니다." });
+
+  const [removed] = char.items.splice(index, 1);
+  const item = findShopItemByLooseId(removed) || findShopItemByLooseId(key) || normalizeShopItem({ name: removed });
+  const normalized = normalizeShopItem(item);
+  const useType = String(normalized.useType || "none").toLowerCase();
+  const useValue = Number(normalized.useValue || 0);
+
+  if (useType === "heal" || useType === "hp") {
+    const maxHp = getCharacterMaxHp(char?.stats?.hp);
+    const currentHp = Number.isFinite(Number(char.currentHp)) ? Number(char.currentHp) : maxHp;
+    char.currentHp = Math.max(0, Math.min(maxHp, currentHp + Math.max(0, useValue || 10)));
+  }
+
+  if (useType === "corrosion" || useType === "corrosiondown" || useType === "reducecorrosion") {
+    char.corrosion = Math.max(0, Number(char.corrosion || 0) - Math.max(0, useValue || 5));
+  }
+
+  if (useType === "coin" || useType === "coins") {
+    char.coins = Math.max(0, Number(char.coins || 0) + useValue);
+  }
+
+  if (useType === "stat") {
+    const statTarget = String(normalized.statTarget || "").trim();
+    if (statTarget) {
+      char.stats = normalizeCharacterStats(char.stats || {});
+      char.stats[statTarget] = Number(char.stats?.[statTarget] || 0) + useValue;
+    }
+  }
+
+  if (useType === "skill") {
+    char.skills = Array.isArray(char.skills) ? char.skills : [];
+    const skillKey = String(normalized.skillKey || normalized.useValue || normalized.name || "").trim();
+    const skillName = String(normalized.skillName || normalized.name || skillKey || "스킬").trim();
+    const alreadyLearned = char.skills.some((skill) => String(skill?.key || skill?.name || skill) === skillKey || String(skill?.name || skill) === skillName);
+    if (!alreadyLearned) {
+      char.skills.push({
+        key: skillKey || `skill-${Date.now()}`,
+        name: skillName,
+        effect: normalized.skillEffect || "damage",
+        power: Number(normalized.skillPower || 0),
+        cooldownTurns: Number(normalized.cooldownTurns || 0),
+      });
+    }
+  }
+
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
+
+  const saved = writeRuntimeArray("characters.json", charactersDB);
+  if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
+  return res.json({ success: true, character: buildPublicCharacter(char), item: normalized });
+});
+
 app.get("/mails/unreadCount/:characterId", (req, res) => {
   const count = mailsDB.filter((mail) => String(mail.toCharacterId) === String(req.params.characterId) && !mail.read).length;
   res.json({ count });

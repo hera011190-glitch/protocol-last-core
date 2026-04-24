@@ -31,7 +31,7 @@ function box(theme, extra = {}) {
   };
 }
 
-function InventoryModal({ items, catalog, onClose, onSell }) {
+function InventoryModal({ items, catalog, onClose, onSell, onUse }) {
   if (!items) return null;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.56)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "24px" }}>
@@ -49,7 +49,10 @@ function InventoryModal({ items, catalog, onClose, onSell }) {
                 <div style={{ color: "#5d7a95", fontSize: "14px", marginTop: "6px" }}>{meta.description || ""}</div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
                   <span style={{ color: "#5d7a95" }}>{meta.sellPrice ? `판매가 ${meta.sellPrice}` : "판매가 없음"}</span>
-                  <button type="button" className="ghost-button" onClick={() => onSell(item, meta)}>판매</button>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button type="button" className="ghost-button" onClick={() => onUse(item, meta)}>사용</button>
+                    <button type="button" className="ghost-button" onClick={() => onSell(item, meta)}>판매</button>
+                  </div>
                 </div>
               </div>
             );
@@ -444,6 +447,30 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
       onApplyCharacter(data.character);
       window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
     }
+  const useItem = async (itemName, meta) => {
+    if (!activeCharacter?.id) return alert("사용할 캐릭터를 찾을 수 없습니다.");
+
+    const res = await fetch(buildApiUrl("/shop/use"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: activeCharacter.id,
+        charId: activeCharacter.id,
+        ownerId: activeCharacter.ownerId,
+        characterName: activeCharacter.name,
+        itemId: meta?.id || itemName,
+        itemName,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) return alert(data.message || "아이템 사용에 실패했습니다.");
+    if (data.character) {
+      onApplyCharacter(data.character);
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
+    }
+    alert(`${meta.name || itemName} 사용 완료`);
+  };
+
     alert(`${item.name} 구매 완료`);
   };
 
@@ -522,7 +549,7 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
         )}
       </div>
 
-      {inventoryOpen ? <InventoryModal items={inventory} catalog={catalog} onClose={() => setInventoryOpen(false)} onSell={sellItem} /> : null}
+      {inventoryOpen ? <InventoryModal items={inventory} catalog={catalog} onClose={() => setInventoryOpen(false)} onSell={sellItem} onUse={useItem} /> : null}
       {gameChoice ? <BetModal title={gameLabel(gameChoice)} maxBet={maxBet} onClose={() => setGameChoice("")} onConfirm={(bet) => { setSession({ type: gameChoice, bet }); setGameChoice(""); }} /> : null}
       {session?.type === "oddEven" ? <OddEvenGame bet={session.bet} onClose={() => setSession(null)} onResolve={applyGambleResult} /> : null}
       {session?.type === "blackjack" ? <BlackJackGame bet={session.bet} onClose={() => setSession(null)} onResolve={applyGambleResult} dealerImage={shopConfig?.blackjackDealerImage || ""} playerImage={activeCharacter?.image || activeCharacter?.profileImage || ""} /> : null}
