@@ -279,17 +279,11 @@ function clearCachedMapConfig() {
   try { localStorage.removeItem(SD_MAP_CONFIG_CACHE_KEY); } catch {}
 }
 
-function unwrapCachedArray(value) {
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object" && Array.isArray(value.value)) return value.value;
-  return [];
-}
-
 function readCachedSdCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY) || localStorage.getItem("plc-cache-characters") || sessionStorage.getItem("plc-cache-characters__meta") || sessionStorage.getItem("plc-cache-characters");
+    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return unwrapCachedArray(parsed);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -563,7 +557,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
           <img
             src={spriteImage}
             alt=""
-            loading="eager"
+            loading="lazy"
             decoding="async"
             onError={handleSpriteError}
             style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
@@ -586,7 +580,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
           <img
             src={spriteImage}
             alt=""
-            loading="eager"
+            loading="lazy"
             decoding="async"
             onError={handleSpriteError}
             style={{
@@ -605,7 +599,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             src={spriteImage}
             alt=""
             aria-hidden="true"
-            loading="eager"
+            loading="lazy"
             decoding="async"
             onError={handleSpriteError}
             style={{
@@ -1077,6 +1071,9 @@ export default function SDPage({ activeCharacter, design, theme }) {
           {currentMap?.backgroundImage ? (
             <img
               src={resolveAssetUrl(currentMap.backgroundImage)}
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
               onError={(event) => { event.currentTarget.style.display = "none"; }}
               alt={currentMap?.name || "맵 배경"}
               style={{

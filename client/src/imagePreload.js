@@ -2,12 +2,12 @@ import { buildApiUrl } from "./api";
 
 const PRELOADED_IMAGES = new Set();
 const FAILED_IMAGES = new Set();
-const MAX_PRELOAD_AT_ONCE = 18;
+const MAX_PRELOAD_AT_ONCE = 4;
 
 function normalizeUrl(rawUrl) {
   const url = String(rawUrl || "").trim();
   if (!url) return "";
-  if (url.startsWith("data:image/")) return url;
+  if (url.startsWith("data:image/")) return "";
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/")) return buildApiUrl(url);
   return url;
 }
@@ -65,9 +65,9 @@ export function preloadImages(urls = [], { highPriority = false, limit = MAX_PRE
   unique.forEach((url) => {
     PRELOADED_IMAGES.add(url);
     const img = new Image();
-    img.decoding = highPriority ? "sync" : "async";
+    img.decoding = "async";
     img.loading = highPriority ? "eager" : "lazy";
-    if (highPriority) img.fetchPriority = "high";
+    img.fetchPriority = highPriority ? "high" : "low";
     img.onerror = () => FAILED_IMAGES.add(url);
     img.src = url;
   });
