@@ -99,3 +99,12 @@ export function scheduleImageWarmup(callback) {
     window.clearTimeout(id);
   };
 }
+
+// 호환용: 이전 패치/컴포넌트가 이 이름으로 import해도 빌드가 깨지지 않게 유지합니다.
+export function preloadImageManifest(manifestOrImages = [], options = {}) {
+  if (typeof window === "undefined") return;
+  const urls = Array.isArray(manifestOrImages)
+    ? collectImageUrls(manifestOrImages)
+    : collectImageUrls(manifestOrImages);
+  preloadImages(urls, { highPriority: true, limit: 120, ...options });
+}
