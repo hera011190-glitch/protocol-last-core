@@ -2001,15 +2001,30 @@ app.get("/asset/design", (req, res) => {
 });
 
 app.get("/asset/character/:id", (req, res) => {
-  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
+  refreshProtectedRuntimeArraysIfNeeded();
+  const requestedId = String(req.params.id || "");
+  const character =
+    charactersDB.find((item) => String(item.id) === requestedId) ||
+    charactersDB.find((item) => String(item.name || "") === requestedId);
   if (!character) return res.status(404).end();
+
   let pathKey = String(req.query.path || "");
-  if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["image"]);
-  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "image"]);
-  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
-  const value = getValueByPath(character, pathKey || "");
-  if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(req, res, value);
+  const fallbackGroups = {
+    image: ["image", "profileImage", "mainImage", "cardImage", "investigationImage"],
+    profileImage: ["image", "profileImage", "mainImage", "cardImage", "investigationImage"],
+    mainImage: ["mainImage", "cardImage", "image", "profileImage", "investigationImage"],
+    cardImage: ["mainImage", "cardImage", "image", "profileImage", "investigationImage"],
+    investigationImage: ["investigationImage", "spriteImage", "mainImage", "cardImage", "image"],
+    spriteImage: ["investigationImage", "spriteImage", "mainImage", "cardImage", "image"],
+  };
+
+  const candidates = fallbackGroups[pathKey] || [pathKey, "mainImage", "image", "investigationImage"];
+  for (const candidate of candidates.filter(Boolean)) {
+    const value = getValueByPath(character, candidate);
+    if (isDataImage(value)) return sendDataImage(req, res, value);
+  }
+
+  return res.status(404).end();
 });
 
 app.get("/asset/investigation/:id", (req, res) => {

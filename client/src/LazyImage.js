@@ -23,6 +23,7 @@ export default function LazyImage({
   fit = "cover",
   eager = false,
   placeholder = null,
+  fallbackSrcs = [],
   onLoad,
   onError,
   retry = 2,
@@ -30,17 +31,32 @@ export default function LazyImage({
 }) {
   const wrapperRef = useRef(null);
   const resolvedSrc = useMemo(() => resolveImageUrl(src), [src]);
+  const resolvedFallbacks = useMemo(() => {
+    const list = Array.isArray(fallbackSrcs) ? fallbackSrcs : [fallbackSrcs];
+    const seen = new Set([resolvedSrc]);
+    return list
+      .map(resolveImageUrl)
+      .filter((value) => {
+        if (!value || seen.has(value)) return false;
+        seen.add(value);
+        return true;
+      });
+  }, [fallbackSrcs, resolvedSrc]);
+  const sourceList = useMemo(() => [resolvedSrc, ...resolvedFallbacks].filter(Boolean), [resolvedSrc, resolvedFallbacks]);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const activeSrc = sourceList[sourceIndex] || resolvedSrc;
   const [visible, setVisible] = useState(eager || loadedCache.has(resolvedSrc));
   const [loaded, setLoaded] = useState(loadedCache.has(resolvedSrc));
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    setLoaded(loadedCache.has(resolvedSrc));
+    setSourceIndex(0);
+    setLoaded(sourceList.some((value) => loadedCache.has(value)));
     setFailed(false);
     setAttempt(0);
-    setVisible(eager || loadedCache.has(resolvedSrc));
-  }, [resolvedSrc, eager]);
+    setVisible(eager || sourceList.some((value) => loadedCache.has(value)));
+  }, [resolvedSrc, eager, sourceList]);
 
   useEffect(() => {
     if (!resolvedSrc || visible || eager) return undefined;
@@ -63,11 +79,11 @@ export default function LazyImage({
   }, [resolvedSrc, visible, eager]);
 
   const srcWithRetry = useMemo(() => {
-    if (!resolvedSrc) return "";
-    if (!attempt) return resolvedSrc;
-    const sep = resolvedSrc.includes("?") ? "&" : "?";
-    return `${resolvedSrc}${sep}retry=${attempt}`;
-  }, [resolvedSrc, attempt]);
+    if (!activeSrc) return "";
+    if (!attempt) return activeSrc;
+    const sep = activeSrc.includes("?") ? "&" : "?";
+    return `${activeSrc}${sep}retry=${attempt}`;
+  }, [activeSrc, attempt]);
 
   if (!resolvedSrc) return placeholder || null;
 
@@ -109,16 +125,23 @@ export default function LazyImage({
           decoding="async"
           fetchPriority={eager ? "high" : "auto"}
           onLoad={(event) => {
+            loadedCache.add(activeSrc);
             loadedCache.add(resolvedSrc);
             setLoaded(true);
             setFailed(false);
             if (typeof onLoad === "function") onLoad(event);
           }}
           onError={(event) => {
-            const previous = failedOnce.get(resolvedSrc) || 0;
-            failedOnce.set(resolvedSrc, previous + 1);
+            const previous = failedOnce.get(activeSrc) || 0;
+            failedOnce.set(activeSrc, previous + 1);
             if (attempt < retry) {
               window.setTimeout(() => setAttempt((value) => value + 1), 350 + attempt * 650);
+              return;
+            }
+            if (sourceIndex < sourceList.length - 1) {
+              setSourceIndex((value) => value + 1);
+              setAttempt(0);
+              setLoaded(false);
               return;
             }
             setFailed(true);

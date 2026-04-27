@@ -158,6 +158,22 @@ const PROFILE_FONT_OPTIONS = [
 const API_BASE = window.location.hostname === "localhost" ? "http://localhost:3001" : "";
 const adminApi = (path) => `${API_BASE}${path}`;
 
+function normalizeSavedCharacterPayload(character) {
+  if (!character || typeof character !== "object") return character;
+  const version = Number(character.assetVersion || character.updatedAt || Date.now());
+  return {
+    ...character,
+    assetVersion: version,
+    updatedAt: version,
+    image: character.image || character.profileImage || "",
+    profileImage: character.profileImage || character.image || "",
+    mainImage: character.mainImage || character.cardImage || character.image || character.profileImage || "",
+    cardImage: character.cardImage || character.mainImage || character.image || character.profileImage || "",
+    investigationImage: character.investigationImage || character.spriteImage || character.mainImage || character.image || "",
+    spriteImage: character.spriteImage || character.investigationImage || character.mainImage || character.image || "",
+  };
+}
+
 const inputStyle = {
   width: "100%",
   marginTop: 6,
@@ -580,9 +596,30 @@ export default function AdminPage({
     });
     const data = await res.json();
     if (!data.success) return setMessage(data.message || "캐릭터 수정 실패");
-    setEdit((prev) => ({ ...prev, profile: data.character?.profile ?? preservedProfile }));
+    const savedCharacter = normalizeSavedCharacterPayload(data.character || latestDetail || selectedCharacter);
+    setSelectedCharacterDetail(savedCharacter);
+    setCharacters((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.map((item) => String(item.id) === String(savedCharacter?.id) ? { ...item, ...savedCharacter } : item);
+    });
+    setEdit((prev) => ({
+      ...prev,
+      profile: savedCharacter?.profile ?? preservedProfile,
+      image: savedCharacter?.image || prev.image,
+      mainImage: savedCharacter?.mainImage || prev.mainImage,
+      investigationImage: savedCharacter?.investigationImage || prev.investigationImage,
+      frameX: Number(savedCharacter?.mainImageFrame?.x ?? prev.frameX ?? 50),
+      frameY: Number(savedCharacter?.mainImageFrame?.y ?? prev.frameY ?? 28),
+      frameScale: Number(savedCharacter?.mainImageFrame?.scale ?? prev.frameScale ?? 1.12),
+    }));
+    try {
+      localStorage.removeItem("plc-cache-characters");
+      sessionStorage.removeItem("plc-warm-characters");
+      sessionStorage.removeItem("plc-cache-characters");
+      sessionStorage.removeItem("plc-cache-characters__meta");
+    } catch {}
     setMessage("캐릭터 저장 완료");
-    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: data.character } }));
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { character: savedCharacter } }));
     loadAll();
   };
 
@@ -869,7 +906,7 @@ export default function AdminPage({
                 <label>상하<input type="range" min="-1200" max="1200" step="1" value={edit.frameY} onChange={(e) => setEdit({ ...edit, frameY: Number(e.target.value) })} style={{ width: "100%" }} /><div style={{ fontSize: 12, color: "#5d7a95" }}>{Number(edit.frameY).toFixed(0)}</div></label>
                 <label>확대<input type="range" min="0.4" max="11.5" step="0.01" value={edit.frameScale} onChange={(e) => setEdit({ ...edit, frameScale: Number(e.target.value) })} style={{ width: "100%" }} /><div style={{ fontSize: 12, color: "#5d7a95" }}>{Number(edit.frameScale).toFixed(2)}</div></label>
               </div>
-              <PreviewCharacterCard name={edit.name || selectedCharacter?.name || selectedCharacterLite?.name} rank={edit.rank || selectedCharacter?.rank || selectedCharacterLite?.rank} image={edit.mainImage || selectedCharacter?.mainImage || selectedCharacterLite?.image || ""} oneLine={edit.oneLine || selectedCharacter?.oneLine || selectedCharacterLite?.oneLine} frame={editFrame} onFrameChange={(next) => setEdit((prev) => ({ ...prev, frameX: next.x, frameY: next.y, frameScale: next.scale }))} />
+              <PreviewCharacterCard name={edit.name || selectedCharacter?.name || selectedCharacterLite?.name} rank={edit.rank || selectedCharacter?.rank || selectedCharacterLite?.rank} image={edit.mainImage || selectedCharacter?.mainImage || selectedCharacter?.cardImage || selectedCharacterLite?.mainImage || selectedCharacterLite?.cardImage || selectedCharacterLite?.image || ""} oneLine={edit.oneLine || selectedCharacter?.oneLine || selectedCharacterLite?.oneLine} frame={editFrame} onFrameChange={(next) => setEdit((prev) => ({ ...prev, frameX: next.x, frameY: next.y, frameScale: next.scale }))} />
             </div>
           ) : null}
 

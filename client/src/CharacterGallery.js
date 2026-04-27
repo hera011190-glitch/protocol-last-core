@@ -52,7 +52,7 @@ function CharacterCard({ character, onClick, theme }) {
 
 async function fetchCharactersWithFallback() {
   const urls = [
-    buildApiUrl(`/characters-public`),
+    buildApiUrl(`/characters-public?t=${Date.now()}`),
   ];
   for (const url of urls) {
     try {
@@ -66,7 +66,7 @@ async function fetchCharactersWithFallback() {
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
+  const res = await fetch(buildApiUrl(`/character-public/${characterId}?t=${Date.now()}`), { cache: "no-store" });
   const data = await res.json();
   return data?.character || null;
 }
@@ -163,7 +163,20 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
         requestLoad();
       }
     };
-    const handleCharacterUpdated = () => requestLoad(true);
+    const handleCharacterUpdated = (event) => {
+      const updated = event?.detail?.character;
+      if (updated?.id) {
+        setCharacters((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          const next = list.some((item) => String(item.id) === String(updated.id))
+            ? list.map((item) => String(item.id) === String(updated.id) ? { ...item, ...updated } : item)
+            : [updated, ...list];
+          writeCachedCharacters(next);
+          return next;
+        });
+      }
+      requestLoad(true);
+    };
     requestLoad(true);
     ensureSocketConnected();
     socket.on("users", handleUsers);
