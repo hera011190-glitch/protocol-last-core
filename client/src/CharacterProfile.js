@@ -299,9 +299,28 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
           </div>
         </div>
 
-        <div style={{ display: "grid", placeItems: "center", minHeight: 540, overflow: "hidden" }}>
+        <div style={{ display: "grid", placeItems: "center", minHeight: 540, overflow: "visible", padding: "18px 0 8px" }}>
           {viewCharacter?.mainImage ? (
-            <LazyImage src={viewCharacter.mainImage} alt={`${viewCharacter.name}-full`} eager fit="contain" style={{ maxWidth: "100%", maxHeight: 820, width: "100%", height: 820, filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.14))", pointerEvents: "none", userSelect: "none", background: "transparent" }} />
+            <LazyImage
+              src={viewCharacter.mainImage}
+              fallbackSrcs={[viewCharacter?.profileImage, viewCharacter?.image, viewCharacter?.cardImage].filter(Boolean)}
+              alt={`${viewCharacter.name}-full`}
+              eager
+              highPriority
+              placeholder={false}
+              style={{
+                display: "block",
+                maxWidth: "min(100%, 920px)",
+                maxHeight: "min(88vh, 980px)",
+                width: "auto",
+                height: "auto",
+                objectFit: "contain",
+                filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.14))",
+                pointerEvents: "none",
+                userSelect: "none",
+                background: "transparent",
+              }}
+            />
           ) : <div style={{ color: "#7e94ae" }}>전신 이미지</div>}
         </div>
 
