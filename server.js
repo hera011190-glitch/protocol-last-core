@@ -261,13 +261,56 @@ function mapDataImages(source, makeUrl, currentPath = "") {
   return source;
 }
 
-function sendDataImage(res, value) {
-  const match = String(value || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) return res.status(404).end();
+const dataImageBufferCache = new Map();
+const MAX_DATA_IMAGE_CACHE_ITEMS = 80;
+
+function getCachedDataImage(value) {
+  const raw = String(value || "");
+  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
   const [, mime, payload] = match;
+  const cacheKey = `${mime}:${payload.length}:${payload.slice(0, 64)}:${payload.slice(-64)}`;
+  const cached = dataImageBufferCache.get(cacheKey);
+  if (cached) return cached;
+
+  const buffer = Buffer.from(payload, "base64");
+  const entry = { mime, buffer, size: buffer.length };
+  dataImageBufferCache.set(cacheKey, entry);
+  if (dataImageBufferCache.size > MAX_DATA_IMAGE_CACHE_ITEMS) {
+    const firstKey = dataImageBufferCache.keys().next().value;
+    if (firstKey) dataImageBufferCache.delete(firstKey);
+  }
+  return entry;
+}
+
+function sendDataImage(req, res, value) {
+  const entry = getCachedDataImage(value);
+  if (!entry) return res.status(404).end();
+
   res.set("Cache-Control", "public, max-age=31536000, immutable");
-  res.type(mime);
-  return res.send(Buffer.from(payload, "base64"));
+  res.set("Accept-Ranges", "bytes");
+  res.set("X-Content-Type-Options", "nosniff");
+  res.type(entry.mime);
+
+  const range = req.headers.range;
+  if (range) {
+    const match = String(range).match(/bytes=(\d*)-(\d*)/);
+    if (match) {
+      const start = match[1] ? Number(match[1]) : 0;
+      const end = match[2] ? Math.min(Number(match[2]), entry.size - 1) : entry.size - 1;
+      if (Number.isFinite(start) && Number.isFinite(end) && start <= end && start < entry.size) {
+        res.status(206);
+        res.set("Content-Range", `bytes ${start}-${end}/${entry.size}`);
+        res.set("Content-Length", String(end - start + 1));
+        if (req.method === "HEAD") return res.end();
+        return res.end(entry.buffer.subarray(start, end + 1));
+      }
+    }
+  }
+
+  res.set("Content-Length", String(entry.size));
+  if (req.method === "HEAD") return res.end();
+  return res.end(entry.buffer);
 }
 
 function toCharacterAssetUrl(characterId, pathKey, version = "") {
@@ -1954,7 +1997,7 @@ app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig())
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
   if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(res, value);
+  return sendDataImage(req, res, value);
 });
 
 app.get("/asset/character/:id", (req, res) => {
@@ -1966,7 +2009,7 @@ app.get("/asset/character/:id", (req, res) => {
   if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
   const value = getValueByPath(character, pathKey || "");
   if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(res, value);
+  return sendDataImage(req, res, value);
 });
 
 app.get("/asset/investigation/:id", (req, res) => {
@@ -1974,7 +2017,7 @@ app.get("/asset/investigation/:id", (req, res) => {
   if (!item) return res.status(404).end();
   const value = getValueByPath(item, req.query.path || "");
   if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(res, value);
+  return sendDataImage(req, res, value);
 });
 app.post("/designConfig", (req, res) => {
   const payload = req.body && typeof req.body === "object" ? req.body : {};

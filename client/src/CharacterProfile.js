@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import LazyImage from "./LazyImage";
 import defaultDesign from "./defaultDesign";
 import { applyDomOverrides } from "./designDomUtils";
 import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils";
@@ -242,7 +243,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
             <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", display: "grid", gap: 10 }}>
               <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 26, overflow: "hidden", background: "rgba(255,255,255,0.82)", boxShadow: theme?.shadow || "0 20px 44px rgba(73,132,170,0.12)" }}>
-                {viewCharacter?.image ? <img src={viewCharacter.image} alt={`${viewCharacter.name}-profile`} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
+                {viewCharacter?.image ? <LazyImage src={viewCharacter.image} alt={`${viewCharacter.name}-profile`} eager fit="cover" style={{ width: "100%", height: "100%" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
               </div>
               <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", display: "flex", justifyContent: "center", paddingTop: 6 }}>
                 <div style={{ position: "relative", width: "fit-content", maxWidth: "100%", minWidth: 180, padding: "16px 20px", borderRadius: 24, background: "rgba(255,255,255,0.96)", color: "#274561", fontWeight: 700, lineHeight: 1.7, boxShadow: "0 14px 26px rgba(73,132,170,0.08)", textAlign: "center" }}>
@@ -300,7 +301,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
 
         <div style={{ display: "grid", placeItems: "center", minHeight: 540, overflow: "hidden" }}>
           {viewCharacter?.mainImage ? (
-            <img src={viewCharacter.mainImage} alt={`${viewCharacter.name}-full`} style={{ maxWidth: "100%", maxHeight: 820, width: "auto", height: "auto", objectFit: "contain", filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.14))", pointerEvents: "none", userSelect: "none" }} />
+            <LazyImage src={viewCharacter.mainImage} alt={`${viewCharacter.name}-full`} eager fit="contain" style={{ maxWidth: "100%", maxHeight: 820, width: "100%", height: 820, filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.14))", pointerEvents: "none", userSelect: "none", background: "transparent" }} />
           ) : <div style={{ color: "#7e94ae" }}>전신 이미지</div>}
         </div>
 

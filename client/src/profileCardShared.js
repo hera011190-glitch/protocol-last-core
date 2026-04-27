@@ -1,4 +1,5 @@
 import React from "react";
+import LazyImage from "./LazyImage";
 
 export const PROFILE_CARD_ASPECT = "0.33 / 1";
 const PROFILE_CARD_CLIP = "polygon(14% 0, 100% 0, 86% 100%, 0 100%)";
@@ -87,7 +88,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       />
       <div style={shapeStyle({ position: "absolute", inset: 0 })}>
         {imageSrc ? (
-          <img src={imageSrc} alt={`${displayName}-full`} draggable={false} loading="eager" decoding="async" fetchPriority="high" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
+          <LazyImage src={imageSrc} alt={`${displayName}-full`} draggable={false} eager fit="cover" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
         ) : null}
       </div>
       <div

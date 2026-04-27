@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import LazyImage from "./LazyImage";
 import { buildApiUrl } from "./api";
 
 function rand(min, max) { return Math.random() * (max - min) + min; }
@@ -557,7 +558,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
           <img
             src={spriteImage}
             alt=""
-            loading="lazy"
+            loading="eager"
             decoding="async"
             onError={handleSpriteError}
             style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
@@ -580,7 +581,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
           <img
             src={spriteImage}
             alt=""
-            loading="lazy"
+            loading="eager"
             decoding="async"
             onError={handleSpriteError}
             style={{
@@ -599,7 +600,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             src={spriteImage}
             alt=""
             aria-hidden="true"
-            loading="lazy"
+            loading="eager"
             decoding="async"
             onError={handleSpriteError}
             style={{
@@ -1069,19 +1070,16 @@ export default function SDPage({ activeCharacter, design, theme }) {
       <div style={{ color: theme?.textMain || "#13324b", height: "calc(100vh - 94px)", display: "grid" }}>
         <div style={{ position: "relative", height: "100%", overflow: "hidden", background: currentMap?.background || "#dff4ff", boxShadow: theme?.shadow || "0 24px 60px rgba(73,132,170,0.16)" }}>
           {currentMap?.backgroundImage ? (
-            <img
+            <LazyImage
               src={resolveAssetUrl(currentMap.backgroundImage)}
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-              onError={(event) => { event.currentTarget.style.display = "none"; }}
               alt={currentMap?.name || "맵 배경"}
+              eager
+              fit="cover"
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
-                objectFit: "cover",
                 objectPosition: `${Number(currentMap.backgroundPositionX ?? 50)}% ${Number(currentMap.backgroundPositionY ?? 50)}%`,
                 transform: `scale(${Math.max(1, Number(currentMap.backgroundScale ?? 100) / 100)})`,
                 transformOrigin: "center center",

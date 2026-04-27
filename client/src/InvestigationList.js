@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import LazyImage from "./LazyImage";
 import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
@@ -7,28 +8,15 @@ const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
 const PRELOADED_INVESTIGATION_IMAGES = new Set();
 
 function preloadInvestigationImages(urls = []) {
-  if (typeof window === "undefined") return;
-  const run = () => {
-    (Array.isArray(urls) ? urls : [])
-      .map((rawUrl) => String(rawUrl || "").trim())
-      .filter(Boolean)
-      .filter((url) => !url.startsWith("data:image/"))
-      .filter((url) => !PRELOADED_INVESTIGATION_IMAGES.has(url))
-      .slice(0, 3)
-      .forEach((url) => {
-        PRELOADED_INVESTIGATION_IMAGES.add(url);
-        const img = new Image();
-        img.decoding = "async";
-        img.loading = "lazy";
-        img.fetchPriority = "low";
-        img.src = url;
-      });
-  };
-  if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(run, { timeout: 1200 });
-  } else {
-    window.setTimeout(run, 300);
-  }
+  (Array.isArray(urls) ? urls : []).forEach((rawUrl) => {
+    const url = String(rawUrl || "").trim();
+    if (!url || PRELOADED_INVESTIGATION_IMAGES.has(url)) return;
+    PRELOADED_INVESTIGATION_IMAGES.add(url);
+    const img = new Image();
+    img.decoding = "sync";
+    img.loading = "eager";
+    img.src = url;
+  });
 }
 
 function withImageVersion(src = "", version = 0) {
@@ -64,12 +52,11 @@ function CardImageLayer({ src = "", alt = "", grayscale = false, frame = null, v
   const url = withImageVersion(src, version);
   if (!url) return null;
   return (
-    <img
+    <LazyImage
       src={url}
       alt={alt}
-      loading="lazy"
-      decoding="async"
-      fetchPriority="low"
+      eager={false}
+      fit="cover"
       draggable={false}
       style={getCoverImageStyle(frame || { x: 50, y: 50, scale: 1 }, grayscale)}
     />

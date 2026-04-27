@@ -2,12 +2,12 @@ import { buildApiUrl } from "./api";
 
 const PRELOADED_IMAGES = new Set();
 const FAILED_IMAGES = new Set();
-const MAX_PRELOAD_AT_ONCE = 4;
+const MAX_PRELOAD_AT_ONCE = 6;
 
 function normalizeUrl(rawUrl) {
   const url = String(rawUrl || "").trim();
   if (!url) return "";
-  if (url.startsWith("data:image/")) return "";
+  if (url.startsWith("data:image/")) return url;
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/")) return buildApiUrl(url);
   return url;
 }
@@ -67,9 +67,18 @@ export function preloadImages(urls = [], { highPriority = false, limit = MAX_PRE
     const img = new Image();
     img.decoding = "async";
     img.loading = highPriority ? "eager" : "lazy";
-    img.fetchPriority = highPriority ? "high" : "low";
-    img.onerror = () => FAILED_IMAGES.add(url);
-    img.src = url;
+    if (highPriority) img.fetchPriority = "high";
+    img.onload = () => PRELOADED_IMAGES.add(url);
+    img.onerror = () => {
+      PRELOADED_IMAGES.delete(url);
+      FAILED_IMAGES.add(url);
+      window.setTimeout(() => FAILED_IMAGES.delete(url), 10000);
+    };
+    if (typeof window.requestIdleCallback === "function" && !highPriority) {
+      window.requestIdleCallback(() => { img.src = url; }, { timeout: 1800 });
+    } else {
+      window.setTimeout(() => { img.src = url; }, highPriority ? 0 : 120);
+    }
   });
 }
 

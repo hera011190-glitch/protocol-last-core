@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import LazyImage from "./LazyImage";
 import socket, { ensureSocketConnected } from "./socket";
 import { apiFetch } from "./api";
 
@@ -2636,14 +2637,17 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   const bubble = getSceneBubble({ battleActive, activeNpcScene, pendingReward });
   const wobble = pendingReward ? Math.abs(Math.sin(nowTick / 220)) * -10 : battleActive ? Math.sin(nowTick / 220) * 8 : 0;
 
+  const sceneBackgroundImage = currentNode?.image || investigationBackgroundImage || "";
+
   return (
-    <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: currentNode?.image ? `url(${currentNode.image}) center/cover no-repeat` : investigationBackgroundImage ? `linear-gradient(rgba(2,6,23,0.18), rgba(2,6,23,0.42)), url(${investigationBackgroundImage}) center/cover no-repeat` : "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
-      <div style={{ position: "absolute", inset: 0, background: battleActive ? "rgba(48,10,18,0.42)" : "rgba(2,6,23,0.26)" }} />
-      {!activeNpcScene && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <img src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, objectFit: "contain", pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
+    <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
+      {sceneBackgroundImage ? <LazyImage src={sceneBackgroundImage} alt="조사 배경" eager fit="cover" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} /> : null}
+      <div style={{ position: "absolute", inset: 0, background: battleActive ? "rgba(48,10,18,0.42)" : currentNode?.image ? "rgba(2,6,23,0.26)" : "linear-gradient(rgba(2,6,23,0.18), rgba(2,6,23,0.42))" }} />
+      {!activeNpcScene && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} fit="contain" style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
       {leader && !battleActive ? (
         <div style={{ position: "absolute", left: "50%", bottom: 188, transform: `translateX(-50%) translateY(${wobble}px)`, transition: "transform 0.18s ease", textAlign: "center" }}>
           {bubble ? <div style={{ position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)", minWidth: 36, height: 36, padding: "0 12px", borderRadius: 999, background: battleActive ? "rgba(127,29,29,0.88)" : pendingReward ? "rgba(120,53,15,0.88)" : "rgba(30,64,175,0.88)", color: "white", display: "grid", placeItems: "center", fontWeight: 900, boxShadow: "0 10px 22px rgba(0,0,0,0.28)" }}>{bubble}</div> : null}
-          {(leader.investigationImage || leader.image) ? <img src={leader.investigationImage || leader.image} alt={leader.name} style={{ width: 156, height: 156, objectFit: "contain", filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))" }} /> : null}
+          {(leader.investigationImage || leader.image) ? <LazyImage src={leader.investigationImage || leader.image} alt={leader.name} eager fit="contain" style={{ width: 156, height: 156, filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))", background: "transparent" }} /> : null}
           <div style={{ marginTop: 8, textAlign: "center", color: "white", fontWeight: 900 }}>{leader.name}</div>
         </div>
       ) : null}
