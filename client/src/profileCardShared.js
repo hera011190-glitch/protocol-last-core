@@ -1,6 +1,14 @@
-import React from "react";
-import LazyImage from "./LazyImage";
+import React, { useMemo, useState } from "react";
 import { buildApiUrl } from "./api";
+
+function resolveCardImageUrl(src) {
+  const value = String(src || "").trim();
+  if (!value) return "";
+  if (value.startsWith("data:image/")) return value;
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  if (value.startsWith("/")) return buildApiUrl(value);
+  return value;
+}
 
 export const PROFILE_CARD_ASPECT = "0.33 / 1";
 const PROFILE_CARD_CLIP = "polygon(14% 0, 100% 0, 86% 100%, 0 100%)";
@@ -52,11 +60,43 @@ function shapeStyle(extra = {}) {
   };
 }
 
+function InlineCardImage({ src, fallbackSrcs = [], alt, style }) {
+  const candidates = useMemo(() => uniqueList([src, ...fallbackSrcs]).map(resolveCardImageUrl).filter(Boolean), [src, fallbackSrcs]);
+  const [index, setIndex] = useState(0);
+  const currentSrc = candidates[index] || "";
+
+  React.useEffect(() => {
+    setIndex(0);
+  }, [candidates.join("|")]);
+
+  if (!currentSrc) return null;
+
+  return (
+    <img
+      src={currentSrc}
+      alt={alt || ""}
+      loading="eager"
+      decoding="async"
+      fetchPriority="high"
+      draggable={false}
+      onError={() => {
+        setIndex((prev) => (prev + 1 < candidates.length ? prev + 1 : prev));
+      }}
+      style={{
+        ...style,
+        opacity: 1,
+        visibility: "visible",
+      }}
+    />
+  );
+}
+
 export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
   const imageSrc = image ?? character?.cardImage ?? character?.mainImage ?? character?.profileImage ?? character?.image ?? "";
   const fallbackSrcs = uniqueList([
+    ...(Array.isArray(character?.imageCandidates) ? character.imageCandidates : []),
     character?.cardImage,
     character?.mainImage,
     character?.profileImage,
@@ -111,7 +151,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       />
       <div style={shapeStyle({ position: "absolute", inset: 0 })}>
         {imageSrc ? (
-          <LazyImage src={imageSrc} fallbackSrcs={fallbackSrcs} alt={`${displayName}-full`} eager highPriority style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
+          <InlineCardImage src={imageSrc} fallbackSrcs={fallbackSrcs} alt={`${displayName}-full`} style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
         ) : null}
       </div>
       <div

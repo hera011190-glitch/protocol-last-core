@@ -3433,12 +3433,29 @@ function buildPublicCharacterSummary(character) {
   const mainImage = mainPath ? toUrl(mainPath, summary.mainImage || cardImage) : (summary.mainImage || cardImage);
   const investigationImage = spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage;
 
+  const safeCardImage = cardImage || mainImage || profileImage || summary.cardImage || "";
+  const candidates = [
+    safeCardImage,
+    mainImage,
+    profileImage,
+    summary.cardImage,
+    summary.mainImage,
+    summary.profileImage,
+    summary.image,
+    toCharacterAssetUrl(characterId, "cardImage", version),
+    toCharacterAssetUrl(characterId, "mainImage", version),
+    toCharacterAssetUrl(characterId, "image", version),
+    toCharacterAssetUrl(characterId, "profileImage", version),
+  ].filter(Boolean);
+
   return {
     ...summary,
     image: profileImage,
     profileImage,
     mainImage,
-    cardImage: cardImage || mainImage || profileImage || summary.cardImage,
+    cardImage: safeCardImage,
+    cardImageUrl: safeCardImage,
+    imageCandidates: [...new Set(candidates)],
     investigationImage,
     spriteImage: investigationImage || mainImage || profileImage || summary.spriteImage,
   };
@@ -3754,11 +3771,13 @@ app.get("/characters-lite", (req, res) => {
 });
 
 app.get("/characters-public/:ownerId", (req, res) => {
+  res.set("Cache-Control", "no-store");
   res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(buildPublicCharacterSummary));
 });
 
 app.get("/characters-public", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
+  res.set("Cache-Control", "no-store");
   res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 

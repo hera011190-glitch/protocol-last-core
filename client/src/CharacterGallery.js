@@ -6,24 +6,50 @@ import { buildApiUrl } from "./api";
 import { ProfileCard } from "./profileCardShared";
 import { preloadImageManifest, warmImageCache, scheduleImageWarmup } from "./imagePreload";
 
-const CHARACTER_CACHE_KEY = "plc-cache-characters";
-const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
+const CHARACTER_CACHE_KEY = "plc-cache-characters-v3-card-images";
+const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters-v3-card-images";
 
 function normalizeCharacterForCard(character) {
   if (!character || typeof character !== "object") return character;
-  const cardImage = character.cardImage || character.mainImage || character.profileImage || character.image || "";
-  const mainImage = character.mainImage || character.cardImage || character.profileImage || character.image || "";
-  const profileImage = character.profileImage || character.image || character.mainImage || character.cardImage || "";
+  const id = character.id || character.characterId || character.name || "";
+  const version = character.assetVersion || character.updatedAt || character.imageUpdatedAt || Date.now();
+  const assetUrl = (pathKey) => {
+    if (!id || !pathKey) return "";
+    return buildApiUrl(`/asset/character/${encodeURIComponent(String(id))}?path=${encodeURIComponent(String(pathKey))}&v=${encodeURIComponent(String(version))}`);
+  };
+  const first = (...values) => values.find((value) => typeof value === "string" && value.trim()) || "";
+  const cardImage = first(
+    character.cardImage,
+    character.cardImageUrl,
+    character.mainImage,
+    character.profileImage,
+    character.image,
+    assetUrl("cardImage"),
+    assetUrl("mainImage"),
+    assetUrl("image")
+  );
+  const mainImage = first(character.mainImage, character.mainImageUrl, character.cardImage, character.profileImage, character.image, assetUrl("mainImage"), assetUrl("cardImage"), assetUrl("image"));
+  const profileImage = first(character.profileImage, character.image, character.mainImage, character.cardImage, assetUrl("image"), assetUrl("profileImage"));
+  const spriteImage = first(character.spriteImage, character.investigationImage, character.sdImage, character.mainImage, character.cardImage, character.image, assetUrl("investigationImage"), assetUrl("mainImage"));
   return {
     ...character,
     cardImage,
     mainImage,
     profileImage,
     image: character.image || profileImage,
-    spriteImage: character.spriteImage || character.investigationImage || character.sdImage || character.mainImage || character.cardImage || character.image || "",
+    spriteImage,
+    imageCandidates: [
+      cardImage,
+      mainImage,
+      profileImage,
+      character.image,
+      assetUrl("cardImage"),
+      assetUrl("mainImage"),
+      assetUrl("image"),
+      assetUrl("profileImage"),
+    ].filter(Boolean),
   };
 }
-
 function normalizeCharacterList(rows) {
   return (Array.isArray(rows) ? rows : []).map(normalizeCharacterForCard).filter(Boolean);
 }
@@ -183,6 +209,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
     };
     const handleCharacterUpdated = () => {
       try { sessionStorage.removeItem("plc-image-manifest-v2"); } catch {}
+      try { localStorage.removeItem("plc-cache-characters"); sessionStorage.removeItem("plc-warm-characters"); } catch {}
       requestLoad(true);
       preloadImageManifest({ highPriority: true, limit: 180 });
     };
