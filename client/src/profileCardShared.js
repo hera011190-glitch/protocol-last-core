@@ -50,7 +50,7 @@ function shapeStyle(extra = {}) {
   };
 }
 
-export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
+export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, eager = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
   const imageSources = uniqueImageSources([
@@ -107,7 +107,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       />
       <div style={shapeStyle({ position: "absolute", inset: 0 })}>
         {imageSrc ? (
-          <LazyImage src={imageSrc} fallbackSrcs={fallbackImageSources} alt={`${displayName}-full`} draggable={false} eager fit="contain" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
+          <LazyImage src={imageSrc} fallbackSrcs={fallbackImageSources} alt={`${displayName}-full`} draggable={false} eager={eager} fit="contain" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
         ) : null}
       </div>
       <div

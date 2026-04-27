@@ -4,6 +4,7 @@ import DesignPageFrame from "./DesignPageFrame";
 import socket, { ensureSocketConnected } from "./socket";
 import { buildApiUrl } from "./api";
 import { ProfileCard } from "./profileCardShared";
+import { preloadImages } from "./imagePreload";
 
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
@@ -34,13 +35,14 @@ function writeCachedCharacters(rows) {
   } catch {}
 }
 
-function CharacterCard({ character, onClick, theme }) {
+function CharacterCard({ character, onClick, theme, eager = false }) {
   return (
     <ProfileCard
       character={character}
       image={character?.mainImage || character?.cardImage || character?.profileImage || character?.image || ""}
       onClick={onClick}
       theme={theme}
+      eager={eager}
       isOnline={!!character.isOnline}
       rankFontSize={11}
       nameFontSize={15.5}
@@ -219,6 +221,16 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
     });
   }, [characters, search, onlineKeys]);
 
+
+
+  useEffect(() => {
+    const firstImages = filteredCharacters
+      .slice(0, 8)
+      .flatMap((character) => [character?.mainImage, character?.cardImage, character?.profileImage, character?.image])
+      .filter(Boolean);
+    preloadImages(firstImages, { highPriority: true, limit: 8 });
+  }, [filteredCharacters]);
+
   return (
     <DesignPageFrame design={design} pageKey="characters" handlers={{}} theme={theme} minHeight="100vh" contentStyle={{ padding: 0 }}>
       {selectedCharacter ? (
@@ -234,7 +246,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
             <div className="status-chip">등록 인원 {filteredCharacters.length}명</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "14px" }}>
-            {filteredCharacters.map((character) => <CharacterCard key={character.id} character={character} onClick={async () => {
+            {filteredCharacters.map((character, index) => <CharacterCard key={character.id} character={character} eager={index < 8} onClick={async () => {
               if (!character?.id || detailPendingId) return;
               setDetailPendingId(String(character.id));
               try {

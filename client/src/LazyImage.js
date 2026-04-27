@@ -15,6 +15,36 @@ function resolveImageUrl(src) {
 const loadedCache = new Set();
 const failedOnce = new Map();
 
+const MAX_PARALLEL_LAZY_IMAGES = 4;
+let activeLazyImageLoads = 0;
+const lazyImageQueue = [];
+
+function runNextLazyImage() {
+  while (activeLazyImageLoads < MAX_PARALLEL_LAZY_IMAGES && lazyImageQueue.length > 0) {
+    const task = lazyImageQueue.shift();
+    if (!task || task.cancelled) continue;
+    activeLazyImageLoads += 1;
+    task.start();
+  }
+}
+
+function reserveLazyImageSlot(start, priority = false) {
+  if (priority) {
+    start();
+    return () => {};
+  }
+  const task = { start, cancelled: false };
+  lazyImageQueue.push(task);
+  runNextLazyImage();
+  return () => { task.cancelled = true; };
+}
+
+function releaseLazyImageSlot(priority = false) {
+  if (priority) return;
+  activeLazyImageLoads = Math.max(0, activeLazyImageLoads - 1);
+  runNextLazyImage();
+}
+
 export default function LazyImage({
   src,
   alt = "",
@@ -49,6 +79,8 @@ export default function LazyImage({
   const [loaded, setLoaded] = useState(loadedCache.has(resolvedSrc));
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [canLoad, setCanLoad] = useState(false);
+  const releasedRef = useRef(false);
 
   useEffect(() => {
     setSourceIndex(0);
@@ -56,6 +88,8 @@ export default function LazyImage({
     setFailed(false);
     setAttempt(0);
     setVisible(eager || sourceList.some((value) => loadedCache.has(value)));
+    setCanLoad(false);
+    releasedRef.current = false;
   }, [resolvedSrc, eager, sourceList]);
 
   useEffect(() => {
@@ -77,6 +111,22 @@ export default function LazyImage({
     observer.observe(node);
     return () => observer.disconnect();
   }, [resolvedSrc, visible, eager]);
+
+  useEffect(() => {
+    if (!activeSrc || !visible) return undefined;
+    if (loadedCache.has(activeSrc) || loadedCache.has(resolvedSrc)) {
+      setCanLoad(true);
+      return undefined;
+    }
+    releasedRef.current = false;
+    return reserveLazyImageSlot(() => setCanLoad(true), eager);
+  }, [activeSrc, resolvedSrc, visible, eager]);
+
+  const releaseSlotOnce = () => {
+    if (releasedRef.current) return;
+    releasedRef.current = true;
+    releaseLazyImageSlot(eager);
+  };
 
   const srcWithRetry = useMemo(() => {
     if (!activeSrc) return "";
@@ -116,19 +166,20 @@ export default function LazyImage({
           IMAGE
         </span>
       ))}
-      {visible ? (
+      {visible && canLoad ? (
         <img
           {...props}
           src={srcWithRetry}
           alt={alt}
           loading={eager ? "eager" : "lazy"}
           decoding="async"
-          fetchPriority={eager ? "high" : "auto"}
+          fetchPriority={eager ? "high" : "low"}
           onLoad={(event) => {
             loadedCache.add(activeSrc);
             loadedCache.add(resolvedSrc);
             setLoaded(true);
             setFailed(false);
+            releaseSlotOnce();
             if (typeof onLoad === "function") onLoad(event);
           }}
           onError={(event) => {
@@ -144,6 +195,7 @@ export default function LazyImage({
               setLoaded(false);
               return;
             }
+            releaseSlotOnce();
             setFailed(true);
             if (typeof onError === "function") onError(event);
           }}

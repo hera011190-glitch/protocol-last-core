@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import CharacterProfile from "./CharacterProfile";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
+import LazyImage from "./LazyImage";
+import { preloadImages } from "./imagePreload";
 
 
 const GLOBAL_WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
@@ -10,19 +12,14 @@ function getUserCharacterCacheKey(userId) {
   return `plc-cache-user-characters-${userId}`;
 }
 
-function unwrapCachedArray(value) {
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object" && Array.isArray(value.value)) return value.value;
-  return [];
-}
-
 function readCachedUserCharacters(user) {
   try {
     const scoped = user?.id ? localStorage.getItem(getUserCharacterCacheKey(user.id)) : "";
     const warmRaw = sessionStorage.getItem(GLOBAL_WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(GLOBAL_WARM_CHARACTER_CACHE_KEY) || localStorage.getItem("plc-cache-characters");
-    const scopedRows = unwrapCachedArray(scoped ? JSON.parse(scoped) : null);
-    if (scopedRows.length > 0) return scopedRows;
-    const warmRows = unwrapCachedArray(warmRaw ? JSON.parse(warmRaw) : []);
+    const scopedRows = scoped ? JSON.parse(scoped) : null;
+    if (Array.isArray(scopedRows) && scopedRows.length > 0) return scopedRows;
+    const warmRows = warmRaw ? JSON.parse(warmRaw) : [];
+    if (!Array.isArray(warmRows)) return [];
     return warmRows.filter((character) => String(character?.ownerId || "") === String(user?.id || ""));
   } catch {
     return [];
@@ -42,7 +39,7 @@ async function fetchUserCharactersWithFallback(userId) {
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "default" });
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -57,7 +54,7 @@ function CharacterCard({ character, onSelect, onProfile, current }) {  const saf
   return (
     <div style={{ display: "grid", gridTemplateColumns: "72px 1fr auto auto", gap: "12px", alignItems: "center", padding: "14px", borderRadius: "20px", background: current ? "rgba(125,211,252,0.16)" : "rgba(255,255,255,0.78)", border: `1px solid ${current ? "rgba(56,189,248,0.38)" : "rgba(98,176,220,0.18)"}` }}>
       <div style={{ width: "72px", height: "72px", borderRadius: "18px", overflow: "hidden", background: "rgba(255,255,255,0.65)" }}>
-        {safeCharacter.image ? <img src={safeCharacter.image} alt={safeCharacter.name || "character"} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
+        {safeCharacter.image ? <LazyImage src={safeCharacter.image} alt={safeCharacter.name || "character"} fit="cover" eager={current} style={{ width: "100%", height: "100%" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
       </div>
       <div>
         <div style={{ fontWeight: 900, fontSize: "18px" }}>{safeCharacter.name || "-"}</div>
@@ -111,6 +108,12 @@ export default function CharacterSelect({ user, setCharacter, goBack, design, th
     () => chars.filter((character) => character && character.id != null && String(character.name || "").trim()),
     [chars]
   );
+
+
+
+  useEffect(() => {
+    preloadImages(filteredChars.slice(0, 6).map((character) => character?.image).filter(Boolean), { highPriority: true, limit: 6 });
+  }, [filteredChars]);
 
   return (
     <DesignPageFrame design={design} pageKey="my" handlers={{ goHome: goBack }} theme={theme} minHeight="100vh">
