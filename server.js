@@ -3,6 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const compression = require("compression");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const defaultDesign = require("./defaultDesign");
@@ -13,6 +14,8 @@ const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
 const LEGACY_DATA_DIR = __dirname;
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, "..", "protocol-last-core-data"));
+const IMAGE_CACHE_MAX_ITEMS = Number(process.env.IMAGE_CACHE_MAX_ITEMS || 240);
+const DATA_IMAGE_BUFFER_CACHE = new Map();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -261,56 +264,41 @@ function mapDataImages(source, makeUrl, currentPath = "") {
   return source;
 }
 
-const dataImageBufferCache = new Map();
-const MAX_DATA_IMAGE_CACHE_ITEMS = 80;
-
-function getCachedDataImage(value) {
-  const raw = String(value || "");
-  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) return null;
-  const [, mime, payload] = match;
-  const cacheKey = `${mime}:${payload.length}:${payload.slice(0, 64)}:${payload.slice(-64)}`;
-  const cached = dataImageBufferCache.get(cacheKey);
-  if (cached) return cached;
-
-  const buffer = Buffer.from(payload, "base64");
-  const entry = { mime, buffer, size: buffer.length };
-  dataImageBufferCache.set(cacheKey, entry);
-  if (dataImageBufferCache.size > MAX_DATA_IMAGE_CACHE_ITEMS) {
-    const firstKey = dataImageBufferCache.keys().next().value;
-    if (firstKey) dataImageBufferCache.delete(firstKey);
-  }
-  return entry;
+function reqConditionalNoneMatch(req, etag) {
+  const value = req?.headers?.["if-none-match"];
+  return !!value && String(value).split(",").map((item) => item.trim()).includes(etag);
 }
 
-function sendDataImage(req, res, value) {
-  const entry = getCachedDataImage(value);
-  if (!entry) return res.status(404).end();
+function getDataImageCacheKey(value) {
+  const text = String(value || "");
+  return crypto.createHash("sha1").update(text.length + ":" + text.slice(0, 4096) + ":" + text.slice(-4096)).digest("hex");
+}
 
-  res.set("Cache-Control", "public, max-age=31536000, immutable");
-  res.set("Accept-Ranges", "bytes");
-  res.set("X-Content-Type-Options", "nosniff");
-  res.type(entry.mime);
-
-  const range = req.headers.range;
-  if (range) {
-    const match = String(range).match(/bytes=(\d*)-(\d*)/);
-    if (match) {
-      const start = match[1] ? Number(match[1]) : 0;
-      const end = match[2] ? Math.min(Number(match[2]), entry.size - 1) : entry.size - 1;
-      if (Number.isFinite(start) && Number.isFinite(end) && start <= end && start < entry.size) {
-        res.status(206);
-        res.set("Content-Range", `bytes ${start}-${end}/${entry.size}`);
-        res.set("Content-Length", String(end - start + 1));
-        if (req.method === "HEAD") return res.end();
-        return res.end(entry.buffer.subarray(start, end + 1));
-      }
-    }
+function rememberDataImageBuffer(key, entry) {
+  if (!DATA_IMAGE_BUFFER_CACHE.has(key) && DATA_IMAGE_BUFFER_CACHE.size >= IMAGE_CACHE_MAX_ITEMS) {
+    const oldestKey = DATA_IMAGE_BUFFER_CACHE.keys().next().value;
+    if (oldestKey) DATA_IMAGE_BUFFER_CACHE.delete(oldestKey);
   }
+  DATA_IMAGE_BUFFER_CACHE.set(key, entry);
+}
 
-  res.set("Content-Length", String(entry.size));
-  if (req.method === "HEAD") return res.end();
-  return res.end(entry.buffer);
+function sendDataImage(res, value) {
+  const raw = String(value || "");
+  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return res.status(404).end();
+  const [, mime, payload] = match;
+  const key = getDataImageCacheKey(raw);
+  let entry = DATA_IMAGE_BUFFER_CACHE.get(key);
+  if (!entry) {
+    entry = { mime, buffer: Buffer.from(payload, "base64"), etag: 'W/"' + key + '"' };
+    rememberDataImageBuffer(key, entry);
+  }
+  if (reqConditionalNoneMatch(res.req, entry.etag)) return res.status(304).end();
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.set("ETag", entry.etag);
+  res.set("X-PLC-Image-Cache", "memory");
+  res.type(entry.mime);
+  return res.send(entry.buffer);
 }
 
 function toCharacterAssetUrl(characterId, pathKey, version = "") {
@@ -1997,34 +1985,19 @@ app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig())
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
   if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(req, res, value);
+  return sendDataImage(res, value);
 });
 
 app.get("/asset/character/:id", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
-  const requestedId = String(req.params.id || "");
-  const character =
-    charactersDB.find((item) => String(item.id) === requestedId) ||
-    charactersDB.find((item) => String(item.name || "") === requestedId);
+  const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).end();
-
   let pathKey = String(req.query.path || "");
-  const fallbackGroups = {
-    image: ["image", "profileImage", "mainImage", "cardImage", "investigationImage"],
-    profileImage: ["image", "profileImage", "mainImage", "cardImage", "investigationImage"],
-    mainImage: ["mainImage", "cardImage", "image", "profileImage", "investigationImage"],
-    cardImage: ["mainImage", "cardImage", "image", "profileImage", "investigationImage"],
-    investigationImage: ["investigationImage", "spriteImage", "mainImage", "cardImage", "image"],
-    spriteImage: ["investigationImage", "spriteImage", "mainImage", "cardImage", "image"],
-  };
-
-  const candidates = fallbackGroups[pathKey] || [pathKey, "mainImage", "image", "investigationImage"];
-  for (const candidate of candidates.filter(Boolean)) {
-    const value = getValueByPath(character, candidate);
-    if (isDataImage(value)) return sendDataImage(req, res, value);
-  }
-
-  return res.status(404).end();
+  if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["image"]);
+  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "image"]);
+  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+  const value = getValueByPath(character, pathKey || "");
+  if (!isDataImage(value)) return res.status(404).end();
+  return sendDataImage(res, value);
 });
 
 app.get("/asset/investigation/:id", (req, res) => {
@@ -2032,7 +2005,70 @@ app.get("/asset/investigation/:id", (req, res) => {
   if (!item) return res.status(404).end();
   const value = getValueByPath(item, req.query.path || "");
   if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(req, res, value);
+  return sendDataImage(res, value);
+});
+
+function isHttpOrAssetImageUrl(value) {
+  const text = String(value || "").trim();
+  return !!text && (text.startsWith("/asset/") || text.startsWith("/uploads/") || text.startsWith("/design-assets/") || text.startsWith("http://") || text.startsWith("https://") || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(text));
+}
+
+function addManifestUrl(list, value) {
+  const text = String(value || "").trim();
+  if (!text || text.startsWith("data:image/")) return;
+  if (isHttpOrAssetImageUrl(text)) list.push(text);
+}
+
+function collectRawImageUrls(source, list, depth = 0) {
+  if (depth > 5 || source == null) return;
+  if (typeof source === "string") {
+    addManifestUrl(list, source);
+    return;
+  }
+  if (Array.isArray(source)) {
+    source.forEach((item) => collectRawImageUrls(item, list, depth + 1));
+    return;
+  }
+  if (typeof source === "object") {
+    Object.entries(source).forEach(([key, value]) => {
+      const lowerKey = String(key || "").toLowerCase();
+      if (typeof value === "string" && (lowerKey.includes("image") || lowerKey.includes("img") || lowerKey.includes("src") || lowerKey.includes("portrait") || lowerKey.includes("background"))) {
+        addManifestUrl(list, value);
+      }
+      collectRawImageUrls(value, list, depth + 1);
+    });
+  }
+}
+
+function addCharacterAssetIfData(list, character, pathKey, aliasPath = pathKey) {
+  const value = getValueByPath(character, pathKey);
+  if (isDataImage(value)) list.push(toCharacterAssetUrl(character.id, aliasPath, character.updatedAt || character.createdAt || character.id || ""));
+  else addManifestUrl(list, value);
+}
+
+function buildImageManifest() {
+  const important = [];
+  const rest = [];
+  (charactersDB || []).slice(0, 40).forEach((character) => {
+    addCharacterAssetIfData(important, character, "mainImage", "mainImage");
+    addCharacterAssetIfData(important, character, "cardImage", "cardImage");
+    addCharacterAssetIfData(important, character, "profileImage", "profileImage");
+    addCharacterAssetIfData(important, character, "image", "image");
+    addCharacterAssetIfData(important, character, "sdImage", "sdImage");
+    addCharacterAssetIfData(important, character, "spriteImage", "spriteImage");
+    addCharacterAssetIfData(important, character, "investigationImage", "investigationImage");
+    collectRawImageUrls(character, rest);
+  });
+  collectRawImageUrls(designConfig?.pages?.sd, important);
+  collectRawImageUrls(designConfig?.pages?.characters, rest);
+  collectRawImageUrls(designConfig?.pages?.home, rest);
+  const urls = [...new Set([...important, ...rest])].filter(Boolean).slice(0, 220);
+  return { success: true, count: urls.length, urls, generatedAt: Date.now() };
+}
+
+app.get("/image-manifest", (req, res) => {
+  res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=600");
+  res.json(buildImageManifest());
 });
 app.post("/designConfig", (req, res) => {
   const payload = req.body && typeof req.body === "object" ? req.body : {};

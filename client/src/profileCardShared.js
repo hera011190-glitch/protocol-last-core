@@ -19,26 +19,15 @@ export function getProfileCardImageStyle(frame) {
   return {
     position: "absolute",
     left: "50%",
-    top: "46%",
-    width: "92%",
-    height: "84%",
+    top: "40.5%",
+    width: "84%",
+    height: "72%",
     objectFit: "contain",
     transform: `translate(calc(-50% + ${offsetX}%), calc(-50% + ${offsetY}%)) scale(${safe.scale})`,
     transformOrigin: "center center",
     pointerEvents: "none",
     userSelect: "none",
   };
-}
-
-function uniqueImageSources(values) {
-  const seen = new Set();
-  return values
-    .map((value) => String(value || "").trim())
-    .filter((value) => {
-      if (!value || seen.has(value)) return false;
-      seen.add(value);
-      return true;
-    });
 }
 
 function shapeStyle(extra = {}) {
@@ -50,18 +39,11 @@ function shapeStyle(extra = {}) {
   };
 }
 
-export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, eager = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
+export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
-  const imageSources = uniqueImageSources([
-    image,
-    character?.mainImage,
-    character?.cardImage,
-    character?.profileImage,
-    character?.image,
-  ]);
-  const imageSrc = imageSources[0] || "";
-  const fallbackImageSources = imageSources.slice(1);
+  const imageSrc = image ?? character?.mainImage ?? character?.cardImage ?? character?.profileImage ?? character?.image ?? "";
+  const fallbackSrcs = [character?.cardImage, character?.profileImage, character?.image, character?.mainImage].filter((item) => item && item !== imageSrc);
   const cardFrame = frame ?? character?.mainImageFrame;
 
   return (
@@ -107,7 +89,7 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
       />
       <div style={shapeStyle({ position: "absolute", inset: 0 })}>
         {imageSrc ? (
-          <LazyImage src={imageSrc} fallbackSrcs={fallbackImageSources} alt={`${displayName}-full`} draggable={false} eager={eager} fit="contain" style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
+          <LazyImage src={imageSrc} fallbackSrcs={fallbackSrcs} alt={`${displayName}-full`} eager highPriority style={{ ...getProfileCardImageStyle(cardFrame), zIndex: 1 }} />
         ) : null}
       </div>
       <div

@@ -1,8 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
-import LazyImage from "./LazyImage";
 import { buildApiUrl } from "./api";
-import { preloadImages } from "./imagePreload";
+import { preloadImageManifest, warmImageCache, scheduleImageWarmup } from "./imagePreload";
+import LazyImage from "./LazyImage";
 
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -561,14 +561,13 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             alt=""
             loading="eager"
             decoding="async"
-            fetchPriority="high"
             onError={handleSpriteError}
             style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
           />
         ) : (
           <BrokenSdFallback name={character?.name} />
         )}
-        {showSpriteImage && tintReveal > 0 ? (
+        {showSpriteImage ? (
         <div
           aria-hidden
           style={{
@@ -583,9 +582,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
           <img
             src={spriteImage}
             alt=""
-            loading="lazy"
+            loading="eager"
             decoding="async"
-            fetchPriority="low"
             onError={handleSpriteError}
             style={{
               width: "100%",
@@ -599,7 +597,26 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
               maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
             }}
           />
-          {/* 큰 SD 파일 중복 요청을 줄이기 위해 두 번째 침식 오버레이 이미지는 제거했습니다. */}
+          <img
+            src={spriteImage}
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+            decoding="async"
+            onError={handleSpriteError}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              position: "absolute",
+              inset: 0,
+              opacity: Math.min(0.92, 0.16 + tintStrength * 0.82),
+              filter: `sepia(1) saturate(${(2.35 + tintStrength * 2.8).toFixed(2)}) hue-rotate(-36deg) brightness(${(0.86 + tintStrength * 0.06).toFixed(2)}) contrast(1.08)`,
+              mixBlendMode: "multiply",
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+            }}
+          />
         </div>
         ) : null}
       </div>
@@ -1024,6 +1041,10 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
   const stableCharacters = useMemo(() => filterVisibleSdCharacters(stabilizeCharacterRows(characters, activeCharacter, maps)), [characters, activeCharacter, maps]);
+
+  useEffect(() => {
+    preloadImageManifest({ highPriority: true, limit: 180 });
+  }, []);
   const canonicalActiveCharacter = useMemo(() => {
     if (!activeCharacter) return null;
     return stableCharacters.find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
@@ -1041,19 +1062,12 @@ export default function SDPage({ activeCharacter, design, theme }) {
       return true;
     });
   }, [stableCharacters, currentMap, activeCharacter, canonicalActiveCharacter]);
-
+  const availableDirs = currentMap?.neighbors || {};
 
   useEffect(() => {
-    const priorityImages = [];
-    if (currentMap?.backgroundImage) priorityImages.push(resolveAssetUrl(currentMap.backgroundImage));
-    mapCharacters.slice(0, 10).forEach((character) => {
-      const first = getSpriteImageCandidates(character)[0];
-      if (first) priorityImages.push(resolveAssetUrl(first));
-    });
-    preloadImages(priorityImages.filter(Boolean), { highPriority: true, limit: 10 });
-  }, [currentMap?.backgroundImage, currentMap?.id, mapCharacters]);
-
-  const availableDirs = currentMap?.neighbors || {};
+    warmImageCache([currentMap, mapCharacters], { highPriority: true, limit: 90 });
+    return scheduleImageWarmup(() => warmImageCache([maps, stableCharacters], { highPriority: false, limit: 220 }));
+  }, [currentMap, mapCharacters, maps, stableCharacters]);
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
     if (!nextId || nextId === activeMapId) return;
@@ -1070,12 +1084,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
               src={resolveAssetUrl(currentMap.backgroundImage)}
               alt={currentMap?.name || "맵 배경"}
               eager
-              fit="cover"
+              highPriority
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
+                objectFit: "cover",
                 objectPosition: `${Number(currentMap.backgroundPositionX ?? 50)}% ${Number(currentMap.backgroundPositionY ?? 50)}%`,
                 transform: `scale(${Math.max(1, Number(currentMap.backgroundScale ?? 100) / 100)})`,
                 transformOrigin: "center center",

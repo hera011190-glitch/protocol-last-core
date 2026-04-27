@@ -1,216 +1,87 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { buildApiUrl } from "./api";
+import { preloadImages } from "./imagePreload";
 
 function resolveImageUrl(src) {
   const value = String(src || "").trim();
   if (!value) return "";
   if (value.startsWith("data:image/")) return value;
-  if (value.startsWith("http://") || value.startsWith("https://")) {
-    return value.replace("http://localhost:3001", buildApiUrl(""));
-  }
-  if (value.startsWith("/")) return buildApiUrl(value);
+  if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/")) return buildApiUrl(value);
   return value;
-}
-
-const loadedCache = new Set();
-const failedOnce = new Map();
-
-const MAX_PARALLEL_LAZY_IMAGES = 4;
-let activeLazyImageLoads = 0;
-const lazyImageQueue = [];
-
-function runNextLazyImage() {
-  while (activeLazyImageLoads < MAX_PARALLEL_LAZY_IMAGES && lazyImageQueue.length > 0) {
-    const task = lazyImageQueue.shift();
-    if (!task || task.cancelled) continue;
-    activeLazyImageLoads += 1;
-    task.start();
-  }
-}
-
-function reserveLazyImageSlot(start, priority = false) {
-  if (priority) {
-    start();
-    return () => {};
-  }
-  const task = { start, cancelled: false };
-  lazyImageQueue.push(task);
-  runNextLazyImage();
-  return () => { task.cancelled = true; };
-}
-
-function releaseLazyImageSlot(priority = false) {
-  if (priority) return;
-  activeLazyImageLoads = Math.max(0, activeLazyImageLoads - 1);
-  runNextLazyImage();
 }
 
 export default function LazyImage({
   src,
-  alt = "",
-  className = "",
-  style,
-  fit = "cover",
-  eager = false,
-  placeholder = null,
   fallbackSrcs = [],
-  onLoad,
+  alt = "",
+  style,
+  className,
+  eager = true,
+  highPriority = true,
   onError,
-  retry = 2,
+  onLoad,
+  placeholder = true,
   ...props
 }) {
-  const wrapperRef = useRef(null);
-  const resolvedSrc = useMemo(() => resolveImageUrl(src), [src]);
-  const resolvedFallbacks = useMemo(() => {
-    const list = Array.isArray(fallbackSrcs) ? fallbackSrcs : [fallbackSrcs];
-    const seen = new Set([resolvedSrc]);
-    return list
-      .map(resolveImageUrl)
-      .filter((value) => {
-        if (!value || seen.has(value)) return false;
-        seen.add(value);
-        return true;
-      });
-  }, [fallbackSrcs, resolvedSrc]);
-  const sourceList = useMemo(() => [resolvedSrc, ...resolvedFallbacks].filter(Boolean), [resolvedSrc, resolvedFallbacks]);
-  const [sourceIndex, setSourceIndex] = useState(0);
-  const activeSrc = sourceList[sourceIndex] || resolvedSrc;
-  const [visible, setVisible] = useState(eager || loadedCache.has(resolvedSrc));
-  const [loaded, setLoaded] = useState(loadedCache.has(resolvedSrc));
-  const [attempt, setAttempt] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const [canLoad, setCanLoad] = useState(false);
-  const releasedRef = useRef(false);
+  const candidates = useMemo(() => [src, ...fallbackSrcs].map(resolveImageUrl).filter(Boolean), [src, fallbackSrcs]);
+  const [index, setIndex] = useState(0);
+  const currentSrc = candidates[index] || "";
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setSourceIndex(0);
-    setLoaded(sourceList.some((value) => loadedCache.has(value)));
-    setFailed(false);
-    setAttempt(0);
-    setVisible(eager || sourceList.some((value) => loadedCache.has(value)));
-    setCanLoad(false);
-    releasedRef.current = false;
-  }, [resolvedSrc, eager, sourceList]);
+    setIndex(0);
+    setReady(false);
+  }, [candidates.join("|")]);
 
   useEffect(() => {
-    if (!resolvedSrc || visible || eager) return undefined;
-    const node = wrapperRef.current;
-    if (!node || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return undefined;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "700px 0px" }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [resolvedSrc, visible, eager]);
+    if (!currentSrc) return;
+    preloadImages([currentSrc], { highPriority, limit: 1 });
+  }, [currentSrc, highPriority]);
 
-  useEffect(() => {
-    if (!activeSrc || !visible) return undefined;
-    if (loadedCache.has(activeSrc) || loadedCache.has(resolvedSrc)) {
-      setCanLoad(true);
-      return undefined;
-    }
-    releasedRef.current = false;
-    return reserveLazyImageSlot(() => setCanLoad(true), eager);
-  }, [activeSrc, resolvedSrc, visible, eager]);
-
-  const releaseSlotOnce = () => {
-    if (releasedRef.current) return;
-    releasedRef.current = true;
-    releaseLazyImageSlot(eager);
-  };
-
-  const srcWithRetry = useMemo(() => {
-    if (!activeSrc) return "";
-    if (!attempt) return activeSrc;
-    const sep = activeSrc.includes("?") ? "&" : "?";
-    return `${activeSrc}${sep}retry=${attempt}`;
-  }, [activeSrc, attempt]);
-
-  if (!resolvedSrc) return placeholder || null;
+  if (!currentSrc) {
+    return placeholder ? <div className={className} style={{ ...style, background: "linear-gradient(135deg, rgba(226,242,255,0.42), rgba(255,255,255,0.22))" }} /> : null;
+  }
 
   return (
-    <span
-      ref={wrapperRef}
-      className={className}
-      style={{
-        position: "relative",
-        display: "block",
-        overflow: "hidden",
-        background: loaded ? "transparent" : "rgba(255,255,255,0.08)",
-        ...style,
-      }}
-    >
-      {!loaded && (placeholder || (
-        <span
+    <>
+      {placeholder && !ready ? (
+        <div
           aria-hidden="true"
           style={{
-            position: "absolute",
-            inset: 0,
-            display: "grid",
-            placeItems: "center",
-            color: "rgba(225,242,255,0.62)",
-            fontSize: 12,
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-          }}
-        >
-          IMAGE
-        </span>
-      ))}
-      {visible && canLoad ? (
-        <img
-          {...props}
-          src={srcWithRetry}
-          alt={alt}
-          loading={eager ? "eager" : "lazy"}
-          decoding="async"
-          fetchPriority={eager ? "high" : "low"}
-          onLoad={(event) => {
-            loadedCache.add(activeSrc);
-            loadedCache.add(resolvedSrc);
-            setLoaded(true);
-            setFailed(false);
-            releaseSlotOnce();
-            if (typeof onLoad === "function") onLoad(event);
-          }}
-          onError={(event) => {
-            const previous = failedOnce.get(activeSrc) || 0;
-            failedOnce.set(activeSrc, previous + 1);
-            if (attempt < retry) {
-              window.setTimeout(() => setAttempt((value) => value + 1), 350 + attempt * 650);
-              return;
-            }
-            if (sourceIndex < sourceList.length - 1) {
-              setSourceIndex((value) => value + 1);
-              setAttempt(0);
-              setLoaded(false);
-              return;
-            }
-            releaseSlotOnce();
-            setFailed(true);
-            if (typeof onError === "function") onError(event);
-          }}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: fit,
-            opacity: loaded ? 1 : 0,
-            transition: "opacity 220ms ease",
-            display: failed ? "none" : "block",
+            ...style,
+            position: style?.position || "absolute",
+            background: "linear-gradient(135deg, rgba(224,242,254,0.56), rgba(255,255,255,0.24) 52%, rgba(186,230,253,0.30))",
+            filter: style?.filter,
           }}
         />
       ) : null}
-    </span>
+      <img
+        {...props}
+        className={className}
+        src={currentSrc}
+        alt={alt}
+        loading={eager ? "eager" : "lazy"}
+        decoding={highPriority ? "sync" : "async"}
+        fetchPriority={highPriority ? "high" : "auto"}
+        draggable={props.draggable ?? false}
+        onLoad={(event) => {
+          setReady(true);
+          if (typeof onLoad === "function") onLoad(event);
+        }}
+        onError={(event) => {
+          if (index + 1 < candidates.length) {
+            setIndex(index + 1);
+            setReady(false);
+            return;
+          }
+          if (typeof onError === "function") onError(event);
+        }}
+        style={{
+          ...style,
+          opacity: ready ? style?.opacity ?? 1 : 0.001,
+          transition: style?.transition || "opacity 0.18s ease",
+        }}
+      />
+    </>
   );
 }
-
-export { resolveImageUrl };

@@ -4,22 +4,16 @@ import DesignPageFrame from "./DesignPageFrame";
 import socket, { ensureSocketConnected } from "./socket";
 import { buildApiUrl } from "./api";
 import { ProfileCard } from "./profileCardShared";
-import { preloadImages } from "./imagePreload";
+import { preloadImageManifest, warmImageCache, scheduleImageWarmup } from "./imagePreload";
 
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 
-function unwrapCachedArray(value) {
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object" && Array.isArray(value.value)) return value.value;
-  return [];
-}
-
 function readCachedCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(CHARACTER_CACHE_KEY) || sessionStorage.getItem(`${CHARACTER_CACHE_KEY}__meta`) || sessionStorage.getItem(CHARACTER_CACHE_KEY);
+    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return unwrapCachedArray(parsed);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -35,14 +29,13 @@ function writeCachedCharacters(rows) {
   } catch {}
 }
 
-function CharacterCard({ character, onClick, theme, eager = false }) {
+function CharacterCard({ character, onClick, theme }) {
   return (
     <ProfileCard
       character={character}
       image={character?.mainImage || character?.cardImage || character?.profileImage || character?.image || ""}
       onClick={onClick}
       theme={theme}
-      eager={eager}
       isOnline={!!character.isOnline}
       rankFontSize={11}
       nameFontSize={15.5}
@@ -54,11 +47,11 @@ function CharacterCard({ character, onClick, theme, eager = false }) {
 
 async function fetchCharactersWithFallback() {
   const urls = [
-    buildApiUrl(`/characters-public?t=${Date.now()}`),
+    buildApiUrl(`/characters-public`),
   ];
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: "default" });
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
@@ -68,7 +61,7 @@ async function fetchCharactersWithFallback() {
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(buildApiUrl(`/character-public/${characterId}?t=${Date.now()}`), { cache: "no-store" });
+  const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
   const data = await res.json();
   return data?.character || null;
 }
@@ -89,6 +82,10 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
   const onlineSeenRef = useRef({});
   const loadStampRef = useRef(0);
   const content = design?.siteContent?.characters || {};
+
+  useEffect(() => {
+    preloadImageManifest({ highPriority: true, limit: 180 });
+  }, []);
 
   const loadCharacters = () => {
     fetchCharactersWithFallback()
@@ -165,20 +162,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
         requestLoad();
       }
     };
-    const handleCharacterUpdated = (event) => {
-      const updated = event?.detail?.character;
-      if (updated?.id) {
-        setCharacters((prev) => {
-          const list = Array.isArray(prev) ? prev : [];
-          const next = list.some((item) => String(item.id) === String(updated.id))
-            ? list.map((item) => String(item.id) === String(updated.id) ? { ...item, ...updated } : item)
-            : [updated, ...list];
-          writeCachedCharacters(next);
-          return next;
-        });
-      }
-      requestLoad(true);
-    };
+    const handleCharacterUpdated = () => requestLoad(true);
     requestLoad(true);
     ensureSocketConnected();
     socket.on("users", handleUsers);
@@ -221,14 +205,10 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
     });
   }, [characters, search, onlineKeys]);
 
-
-
   useEffect(() => {
-    const firstImages = filteredCharacters
-      .slice(0, 8)
-      .flatMap((character) => [character?.mainImage, character?.cardImage, character?.profileImage, character?.image])
-      .filter(Boolean);
-    preloadImages(firstImages, { highPriority: true, limit: 8 });
+    const visibleFirst = filteredCharacters.slice(0, 30);
+    warmImageCache(visibleFirst, { highPriority: true, limit: 120 });
+    return scheduleImageWarmup(() => warmImageCache(filteredCharacters, { highPriority: false, limit: 220 }));
   }, [filteredCharacters]);
 
   return (
@@ -246,7 +226,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
             <div className="status-chip">등록 인원 {filteredCharacters.length}명</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "14px" }}>
-            {filteredCharacters.map((character, index) => <CharacterCard key={character.id} character={character} eager={index < 8} onClick={async () => {
+            {filteredCharacters.map((character) => <CharacterCard key={character.id} character={character} onClick={async () => {
               if (!character?.id || detailPendingId) return;
               setDetailPendingId(String(character.id));
               try {
