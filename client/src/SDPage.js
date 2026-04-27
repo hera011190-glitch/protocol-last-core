@@ -1,8 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
-import { preloadImageManifest, warmImageCache, scheduleImageWarmup } from "./imagePreload";
-import LazyImage from "./LazyImage";
+import { warmVisibleImagesFromRows } from "./instantImageBoot";
 
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -260,7 +259,7 @@ const SD_ACTIVE_MAP_KEY = "plc-sd-active-map";
 const SD_MAP_CONFIG_CACHE_KEY = "plc-sd-map-config";
 const SD_POSITIONS_KEY = "plc-sd-positions";
 const SD_CHARACTERS_KEY = SD_CHARACTER_CACHE_KEY;
-const SD_IMAGE_CACHE_TOKEN = Date.now();
+const SD_IMAGE_CACHE_TOKEN = "stable";
 
 function readCachedMapConfig() {
   try {
@@ -382,8 +381,7 @@ function getSpriteImage(character) {
 }
 
 function appendImageCacheBuster(url) {
-  if (!url || /^(data:|blob:)/i.test(url)) return url || "";
-  return url + (url.includes("?") ? "&" : "?") + "sdv=" + SD_IMAGE_CACHE_TOKEN;
+  return url || "";
 }
 
 function resolveAssetUrl(value) {
@@ -512,7 +510,7 @@ async function fetchCharactersWithFallback() {
       const res = await fetch(requestUrl, { cache: "no-store" });
       if (!res.ok) continue;
       const data = await res.json();
-      if (Array.isArray(data)) return data;
+      if (Array.isArray(data)) { warmVisibleImagesFromRows(data); return data; }
     } catch {}
   }
   return [];
@@ -1041,10 +1039,6 @@ export default function SDPage({ activeCharacter, design, theme }) {
 
   const currentMap = useMemo(() => maps.find((map) => map.id === activeMapId) || maps[0] || null, [maps, activeMapId]);
   const stableCharacters = useMemo(() => filterVisibleSdCharacters(stabilizeCharacterRows(characters, activeCharacter, maps)), [characters, activeCharacter, maps]);
-
-  useEffect(() => {
-    preloadImageManifest({ highPriority: true, limit: 180 });
-  }, []);
   const canonicalActiveCharacter = useMemo(() => {
     if (!activeCharacter) return null;
     return stableCharacters.find((character) => matchesActiveCharacter(character, activeCharacter)) || null;
@@ -1063,11 +1057,6 @@ export default function SDPage({ activeCharacter, design, theme }) {
     });
   }, [stableCharacters, currentMap, activeCharacter, canonicalActiveCharacter]);
   const availableDirs = currentMap?.neighbors || {};
-
-  useEffect(() => {
-    warmImageCache([currentMap, mapCharacters], { highPriority: true, limit: 90 });
-    return scheduleImageWarmup(() => warmImageCache([maps, stableCharacters], { highPriority: false, limit: 220 }));
-  }, [currentMap, mapCharacters, maps, stableCharacters]);
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
     if (!nextId || nextId === activeMapId) return;
@@ -1080,11 +1069,10 @@ export default function SDPage({ activeCharacter, design, theme }) {
       <div style={{ color: theme?.textMain || "#13324b", height: "calc(100vh - 94px)", display: "grid" }}>
         <div style={{ position: "relative", height: "100%", overflow: "hidden", background: currentMap?.background || "#dff4ff", boxShadow: theme?.shadow || "0 24px 60px rgba(73,132,170,0.16)" }}>
           {currentMap?.backgroundImage ? (
-            <LazyImage
+            <img
               src={resolveAssetUrl(currentMap.backgroundImage)}
+              onError={(event) => { event.currentTarget.style.display = "none"; }}
               alt={currentMap?.name || "맵 배경"}
-              eager
-              highPriority
               style={{
                 position: "absolute",
                 inset: 0,

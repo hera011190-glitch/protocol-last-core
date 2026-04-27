@@ -3,7 +3,6 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const compression = require("compression");
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const defaultDesign = require("./defaultDesign");
@@ -14,8 +13,6 @@ const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
 const LEGACY_DATA_DIR = __dirname;
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, "..", "protocol-last-core-data"));
-const IMAGE_CACHE_MAX_ITEMS = Number(process.env.IMAGE_CACHE_MAX_ITEMS || 240);
-const DATA_IMAGE_BUFFER_CACHE = new Map();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -264,22 +261,27 @@ function mapDataImages(source, makeUrl, currentPath = "") {
   return source;
 }
 
-function reqConditionalNoneMatch(req, etag) {
-  const value = req?.headers?.["if-none-match"];
-  return !!value && String(value).split(",").map((item) => item.trim()).includes(etag);
+const DATA_IMAGE_RESPONSE_CACHE = new Map();
+const DATA_IMAGE_RESPONSE_CACHE_LIMIT = Number(process.env.IMAGE_MEMORY_CACHE_LIMIT || 160);
+
+function makeWeakEtagFromText(text) {
+  const source = String(text || "");
+  const headHash = source.slice(0, 80).split("").reduce((sum, ch) => (sum + ch.charCodeAt(0)) % 1000000007, 0).toString(36);
+  return 'W/"' + source.length.toString(36) + '-' + headHash + '"';
 }
 
-function getDataImageCacheKey(value) {
-  const text = String(value || "");
-  return crypto.createHash("sha1").update(text.length + ":" + text.slice(0, 4096) + ":" + text.slice(-4096)).digest("hex");
-}
-
-function rememberDataImageBuffer(key, entry) {
-  if (!DATA_IMAGE_BUFFER_CACHE.has(key) && DATA_IMAGE_BUFFER_CACHE.size >= IMAGE_CACHE_MAX_ITEMS) {
-    const oldestKey = DATA_IMAGE_BUFFER_CACHE.keys().next().value;
-    if (oldestKey) DATA_IMAGE_BUFFER_CACHE.delete(oldestKey);
+function rememberDataImageCache(key, value) {
+  if (DATA_IMAGE_RESPONSE_CACHE.has(key)) DATA_IMAGE_RESPONSE_CACHE.delete(key);
+  DATA_IMAGE_RESPONSE_CACHE.set(key, value);
+  while (DATA_IMAGE_RESPONSE_CACHE.size > DATA_IMAGE_RESPONSE_CACHE_LIMIT) {
+    const firstKey = DATA_IMAGE_RESPONSE_CACHE.keys().next().value;
+    DATA_IMAGE_RESPONSE_CACHE.delete(firstKey);
   }
-  DATA_IMAGE_BUFFER_CACHE.set(key, entry);
+}
+
+function reqFresh(req, etag) {
+  const incoming = String(req?.headers?.["if-none-match"] || "");
+  return incoming && incoming.split(",").map((part) => part.trim()).includes(etag);
 }
 
 function sendDataImage(res, value) {
@@ -287,18 +289,18 @@ function sendDataImage(res, value) {
   const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) return res.status(404).end();
   const [, mime, payload] = match;
-  const key = getDataImageCacheKey(raw);
-  let entry = DATA_IMAGE_BUFFER_CACHE.get(key);
-  if (!entry) {
-    entry = { mime, buffer: Buffer.from(payload, "base64"), etag: 'W/"' + key + '"' };
-    rememberDataImageBuffer(key, entry);
-  }
-  if (reqConditionalNoneMatch(res.req, entry.etag)) return res.status(304).end();
+  const etag = makeWeakEtagFromText(raw);
   res.set("Cache-Control", "public, max-age=31536000, immutable");
-  res.set("ETag", entry.etag);
-  res.set("X-PLC-Image-Cache", "memory");
-  res.type(entry.mime);
-  return res.send(entry.buffer);
+  res.set("ETag", etag);
+  res.set("Accept-Ranges", "bytes");
+  res.type(mime);
+  if (reqFresh(res.req, etag)) return res.status(304).end();
+  let cached = DATA_IMAGE_RESPONSE_CACHE.get(etag);
+  if (!cached) {
+    cached = { mime, buffer: Buffer.from(payload, "base64") };
+    rememberDataImageCache(etag, cached);
+  }
+  return res.send(cached.buffer);
 }
 
 function toCharacterAssetUrl(characterId, pathKey, version = "") {
@@ -1982,6 +1984,24 @@ app.get("/designConfigPublic", (req, res) => res.json(getPublicDesignShellConfig
 
 app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig()));
 
+app.get("/image-manifest", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const characters = charactersDB
+    .filter((character) => character && character.approved !== false)
+    .map(buildPublicCharacterSummary)
+    .map((character) => ({
+      id: character.id,
+      name: character.name,
+      cardImage: character.cardImage || character.mainImage || character.profileImage || character.image || "",
+      spriteImage: character.spriteImage || character.investigationImage || character.cardImage || character.mainImage || character.profileImage || character.image || "",
+      profileImage: character.profileImage || character.image || "",
+      updatedAt: character.updatedAt || character.assetVersion || 0,
+    }));
+  const maps = getPublicDesignMapsConfig();
+  res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+  res.json({ success: true, generatedAt: Date.now(), characters, maps });
+});
+
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
   if (!isDataImage(value)) return res.status(404).end();
@@ -1993,8 +2013,7 @@ app.get("/asset/character/:id", (req, res) => {
   if (!character) return res.status(404).end();
   let pathKey = String(req.query.path || "");
   if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["image"]);
-  if (pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["cardImage", "mainImage", "image"]);
-  if (pathKey === "mainImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "cardImage", "image"]);
+  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "image"]);
   if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
   const value = getValueByPath(character, pathKey || "");
   if (!isDataImage(value)) return res.status(404).end();
@@ -2007,69 +2026,6 @@ app.get("/asset/investigation/:id", (req, res) => {
   const value = getValueByPath(item, req.query.path || "");
   if (!isDataImage(value)) return res.status(404).end();
   return sendDataImage(res, value);
-});
-
-function isHttpOrAssetImageUrl(value) {
-  const text = String(value || "").trim();
-  return !!text && (text.startsWith("/asset/") || text.startsWith("/uploads/") || text.startsWith("/design-assets/") || text.startsWith("http://") || text.startsWith("https://") || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(text));
-}
-
-function addManifestUrl(list, value) {
-  const text = String(value || "").trim();
-  if (!text || text.startsWith("data:image/")) return;
-  if (isHttpOrAssetImageUrl(text)) list.push(text);
-}
-
-function collectRawImageUrls(source, list, depth = 0) {
-  if (depth > 5 || source == null) return;
-  if (typeof source === "string") {
-    addManifestUrl(list, source);
-    return;
-  }
-  if (Array.isArray(source)) {
-    source.forEach((item) => collectRawImageUrls(item, list, depth + 1));
-    return;
-  }
-  if (typeof source === "object") {
-    Object.entries(source).forEach(([key, value]) => {
-      const lowerKey = String(key || "").toLowerCase();
-      if (typeof value === "string" && (lowerKey.includes("image") || lowerKey.includes("img") || lowerKey.includes("src") || lowerKey.includes("portrait") || lowerKey.includes("background"))) {
-        addManifestUrl(list, value);
-      }
-      collectRawImageUrls(value, list, depth + 1);
-    });
-  }
-}
-
-function addCharacterAssetIfData(list, character, pathKey, aliasPath = pathKey) {
-  const value = getValueByPath(character, pathKey);
-  if (isDataImage(value)) list.push(toCharacterAssetUrl(character.id, aliasPath, character.updatedAt || character.createdAt || character.id || ""));
-  else addManifestUrl(list, value);
-}
-
-function buildImageManifest() {
-  const important = [];
-  const rest = [];
-  (charactersDB || []).slice(0, 40).forEach((character) => {
-    addCharacterAssetIfData(important, character, "mainImage", "mainImage");
-    addCharacterAssetIfData(important, character, "cardImage", "cardImage");
-    addCharacterAssetIfData(important, character, "profileImage", "profileImage");
-    addCharacterAssetIfData(important, character, "image", "image");
-    addCharacterAssetIfData(important, character, "sdImage", "sdImage");
-    addCharacterAssetIfData(important, character, "spriteImage", "spriteImage");
-    addCharacterAssetIfData(important, character, "investigationImage", "investigationImage");
-    collectRawImageUrls(character, rest);
-  });
-  collectRawImageUrls(designConfig?.pages?.sd, important);
-  collectRawImageUrls(designConfig?.pages?.characters, rest);
-  collectRawImageUrls(designConfig?.pages?.home, rest);
-  const urls = [...new Set([...important, ...rest])].filter(Boolean).slice(0, 220);
-  return { success: true, count: urls.length, urls, generatedAt: Date.now() };
-}
-
-app.get("/image-manifest", (req, res) => {
-  res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=600");
-  res.json(buildImageManifest());
 });
 app.post("/designConfig", (req, res) => {
   const payload = req.body && typeof req.body === "object" ? req.body : {};
@@ -3416,10 +3372,9 @@ function buildPublicCharacterSummary(character) {
   if (!character) return character;
   const summary = summarizeCharacter(character);
   const characterId = summary.id || summary.name || "unknown";
-  const profilePath = pickCharacterAssetPath(character, ["image", "profileImage", "mainImage", "cardImage", "investigationImage"]);
-  const cardPath = pickCharacterAssetPath(character, ["cardImage", "mainImage", "image", "profileImage"]);
-  const mainPath = pickCharacterAssetPath(character, ["mainImage", "cardImage", "image", "profileImage"]);
-  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "sdImage", "spriteImage", "mainImage", "cardImage", "image"]);
+  const profilePath = pickCharacterAssetPath(character, ["image", "mainImage", "investigationImage"]);
+  const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
+  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
 
   const version = summary.assetVersion || summary.updatedAt || "";
   const toUrl = (pathKey, fallbackValue) => {
@@ -3429,33 +3384,15 @@ function buildPublicCharacterSummary(character) {
   };
 
   const profileImage = profilePath ? toUrl(profilePath, summary.profileImage) : summary.profileImage;
-  const cardImage = cardPath ? toUrl(cardPath, summary.cardImage) : summary.cardImage;
-  const mainImage = mainPath ? toUrl(mainPath, summary.mainImage || cardImage) : (summary.mainImage || cardImage);
+  const mainImage = mainPath ? toUrl(mainPath, summary.mainImage) : summary.mainImage;
   const investigationImage = spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage;
-
-  const safeCardImage = cardImage || mainImage || profileImage || summary.cardImage || "";
-  const candidates = [
-    safeCardImage,
-    mainImage,
-    profileImage,
-    summary.cardImage,
-    summary.mainImage,
-    summary.profileImage,
-    summary.image,
-    toCharacterAssetUrl(characterId, "cardImage", version),
-    toCharacterAssetUrl(characterId, "mainImage", version),
-    toCharacterAssetUrl(characterId, "image", version),
-    toCharacterAssetUrl(characterId, "profileImage", version),
-  ].filter(Boolean);
 
   return {
     ...summary,
     image: profileImage,
     profileImage,
     mainImage,
-    cardImage: safeCardImage,
-    cardImageUrl: safeCardImage,
-    imageCandidates: [...new Set(candidates)],
+    cardImage: mainImage || profileImage || summary.cardImage,
     investigationImage,
     spriteImage: investigationImage || mainImage || profileImage || summary.spriteImage,
   };
@@ -3771,13 +3708,11 @@ app.get("/characters-lite", (req, res) => {
 });
 
 app.get("/characters-public/:ownerId", (req, res) => {
-  res.set("Cache-Control", "no-store");
   res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(buildPublicCharacterSummary));
 });
 
 app.get("/characters-public", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
-  res.set("Cache-Control", "no-store");
   res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 
