@@ -9,18 +9,37 @@ import { preloadImageManifest, warmImageCache, scheduleImageWarmup } from "./ima
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 
+function normalizeCharacterForCard(character) {
+  if (!character || typeof character !== "object") return character;
+  const cardImage = character.cardImage || character.mainImage || character.profileImage || character.image || "";
+  const mainImage = character.mainImage || character.cardImage || character.profileImage || character.image || "";
+  const profileImage = character.profileImage || character.image || character.mainImage || character.cardImage || "";
+  return {
+    ...character,
+    cardImage,
+    mainImage,
+    profileImage,
+    image: character.image || profileImage,
+    spriteImage: character.spriteImage || character.investigationImage || character.sdImage || character.mainImage || character.cardImage || character.image || "",
+  };
+}
+
+function normalizeCharacterList(rows) {
+  return (Array.isArray(rows) ? rows : []).map(normalizeCharacterForCard).filter(Boolean);
+}
+
 function readCachedCharacters() {
   try {
     const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return normalizeCharacterList(parsed);
   } catch {
     return [];
   }
 }
 
 function writeCachedCharacters(rows) {
-  const safeRows = Array.isArray(rows) ? rows : [];
+  const safeRows = normalizeCharacterList(rows);
   try {
     localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify(safeRows));
   } catch {}
@@ -33,7 +52,7 @@ function CharacterCard({ character, onClick, theme }) {
   return (
     <ProfileCard
       character={character}
-      image={character?.mainImage || character?.cardImage || character?.profileImage || character?.image || ""}
+      image={character?.cardImage || character?.mainImage || character?.profileImage || character?.image || ""}
       onClick={onClick}
       theme={theme}
       isOnline={!!character.isOnline}
@@ -47,14 +66,14 @@ function CharacterCard({ character, onClick, theme }) {
 
 async function fetchCharactersWithFallback() {
   const urls = [
-    buildApiUrl(`/characters-public`),
+    buildApiUrl(`/characters-public?imageTs=${Date.now()}`),
   ];
   for (const url of urls) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
-      if (Array.isArray(data)) return data;
+      if (Array.isArray(data)) return normalizeCharacterList(data);
     } catch {}
   }
   return [];
@@ -63,7 +82,7 @@ async function fetchCharactersWithFallback() {
 async function loadCharacterDetail(characterId) {
   const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
   const data = await res.json();
-  return data?.character || null;
+  return normalizeCharacterForCard(data?.character || null);
 }
 
 function rankOrderValue(rank) {
@@ -108,7 +127,7 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
     if (!latest) return;
     setSelectedCharacter((prev) => {
       if (!prev) return latest;
-      return { ...latest, ...prev };
+      return normalizeCharacterForCard({ ...prev, ...latest });
     });
   }, [characters, selectedCharacter?.id]);
 
@@ -162,7 +181,11 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
         requestLoad();
       }
     };
-    const handleCharacterUpdated = () => requestLoad(true);
+    const handleCharacterUpdated = () => {
+      try { sessionStorage.removeItem("plc-image-manifest-v2"); } catch {}
+      requestLoad(true);
+      preloadImageManifest({ highPriority: true, limit: 180 });
+    };
     requestLoad(true);
     ensureSocketConnected();
     socket.on("users", handleUsers);

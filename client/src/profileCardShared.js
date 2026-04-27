@@ -1,8 +1,21 @@
 import React from "react";
 import LazyImage from "./LazyImage";
+import { buildApiUrl } from "./api";
 
 export const PROFILE_CARD_ASPECT = "0.33 / 1";
 const PROFILE_CARD_CLIP = "polygon(14% 0, 100% 0, 86% 100%, 0 100%)";
+
+function characterAssetCandidate(character, pathKey) {
+  const id = character?.id || character?.characterId || character?.name;
+  if (!id || !pathKey) return "";
+  const version = character?.assetVersion || character?.updatedAt || character?.imageUpdatedAt || "";
+  const query = `path=${encodeURIComponent(pathKey)}${version ? `&v=${encodeURIComponent(String(version))}` : ""}`;
+  return buildApiUrl(`/asset/character/${encodeURIComponent(String(id))}?${query}`);
+}
+
+function uniqueList(list) {
+  return [...new Set((Array.isArray(list) ? list : []).filter(Boolean))];
+}
 
 export function normalizeProfileCardFrame(frame) {
   return {
@@ -42,9 +55,18 @@ function shapeStyle(extra = {}) {
 export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
-  const imageSrc = image ?? character?.mainImage ?? character?.cardImage ?? character?.profileImage ?? character?.image ?? "";
-  const fallbackSrcs = [character?.cardImage, character?.profileImage, character?.image, character?.mainImage].filter((item) => item && item !== imageSrc);
-  const cardFrame = frame ?? character?.mainImageFrame;
+  const imageSrc = image ?? character?.cardImage ?? character?.mainImage ?? character?.profileImage ?? character?.image ?? "";
+  const fallbackSrcs = uniqueList([
+    character?.cardImage,
+    character?.mainImage,
+    character?.profileImage,
+    character?.image,
+    characterAssetCandidate(character, "cardImage"),
+    characterAssetCandidate(character, "mainImage"),
+    characterAssetCandidate(character, "image"),
+    characterAssetCandidate(character, "profileImage"),
+  ]).filter((item) => item && item !== imageSrc);
+  const cardFrame = frame ?? character?.mainImageFrame ?? character?.cardImageFrame;
 
   return (
     <button

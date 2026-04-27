@@ -1993,7 +1993,8 @@ app.get("/asset/character/:id", (req, res) => {
   if (!character) return res.status(404).end();
   let pathKey = String(req.query.path || "");
   if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["image"]);
-  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "image"]);
+  if (pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["cardImage", "mainImage", "image"]);
+  if (pathKey === "mainImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "cardImage", "image"]);
   if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
   const value = getValueByPath(character, pathKey || "");
   if (!isDataImage(value)) return res.status(404).end();
@@ -3415,9 +3416,10 @@ function buildPublicCharacterSummary(character) {
   if (!character) return character;
   const summary = summarizeCharacter(character);
   const characterId = summary.id || summary.name || "unknown";
-  const profilePath = pickCharacterAssetPath(character, ["image", "mainImage", "investigationImage"]);
-  const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
-  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+  const profilePath = pickCharacterAssetPath(character, ["image", "profileImage", "mainImage", "cardImage", "investigationImage"]);
+  const cardPath = pickCharacterAssetPath(character, ["cardImage", "mainImage", "image", "profileImage"]);
+  const mainPath = pickCharacterAssetPath(character, ["mainImage", "cardImage", "image", "profileImage"]);
+  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "sdImage", "spriteImage", "mainImage", "cardImage", "image"]);
 
   const version = summary.assetVersion || summary.updatedAt || "";
   const toUrl = (pathKey, fallbackValue) => {
@@ -3427,7 +3429,8 @@ function buildPublicCharacterSummary(character) {
   };
 
   const profileImage = profilePath ? toUrl(profilePath, summary.profileImage) : summary.profileImage;
-  const mainImage = mainPath ? toUrl(mainPath, summary.mainImage) : summary.mainImage;
+  const cardImage = cardPath ? toUrl(cardPath, summary.cardImage) : summary.cardImage;
+  const mainImage = mainPath ? toUrl(mainPath, summary.mainImage || cardImage) : (summary.mainImage || cardImage);
   const investigationImage = spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage;
 
   return {
@@ -3435,7 +3438,7 @@ function buildPublicCharacterSummary(character) {
     image: profileImage,
     profileImage,
     mainImage,
-    cardImage: mainImage || profileImage || summary.cardImage,
+    cardImage: cardImage || mainImage || profileImage || summary.cardImage,
     investigationImage,
     spriteImage: investigationImage || mainImage || profileImage || summary.spriteImage,
   };
