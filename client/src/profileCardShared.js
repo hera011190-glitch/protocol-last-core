@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { buildApiUrl } from "./api";
+import { preloadImages } from "./imagePreload";
 
 function resolveCardImageUrl(src) {
   const value = String(src || "").trim();
@@ -67,6 +68,7 @@ function InlineCardImage({ src, fallbackSrcs = [], alt, style }) {
 
   React.useEffect(() => {
     setIndex(0);
+    preloadImages(candidates, { highPriority: true, limit: 10 });
   }, [candidates.join("|")]);
 
   if (!currentSrc) return null;

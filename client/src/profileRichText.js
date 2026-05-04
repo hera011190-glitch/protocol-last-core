@@ -121,6 +121,8 @@ export function sanitizeProfileHtml(source) {
               const value = rest.join(":").trim();
               if (!allowedStyles.has(key) || !value) return "";
               if (blockedStylePrefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}-`))) return "";
+              if ((key === "margin" || key.startsWith("margin-")) && /(^|\s)-\d/.test(value)) return "";
+              if (key === "width" && /(vw|vh|calc|position|fixed|absolute)/i.test(value)) return "";
               return `${key}:${value}`;
             })
             .filter(Boolean)

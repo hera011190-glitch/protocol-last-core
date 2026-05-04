@@ -27,6 +27,7 @@ export default function LazyImage({
   const [index, setIndex] = useState(0);
   const currentSrc = candidates[index] || "";
   const [ready, setReady] = useState(false);
+  const placeholderPosition = style?.position === "absolute" || style?.position === "fixed" ? style.position : "relative";
 
   useEffect(() => {
     setIndex(0);
@@ -49,7 +50,8 @@ export default function LazyImage({
           aria-hidden="true"
           style={{
             ...style,
-            position: style?.position || "absolute",
+            position: placeholderPosition,
+            display: style?.display || "block",
             background: "linear-gradient(135deg, rgba(224,242,254,0.56), rgba(255,255,255,0.24) 52%, rgba(186,230,253,0.30))",
             filter: style?.filter,
           }}
@@ -74,6 +76,7 @@ export default function LazyImage({
             setReady(false);
             return;
           }
+          setReady(true);
           if (typeof onError === "function") onError(event);
         }}
         style={{

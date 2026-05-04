@@ -527,6 +527,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
 
   useEffect(() => {
     setCandidateIndex(0);
+    if (spriteCandidates.length > 0) warmVisibleImagesFromRows(spriteCandidates);
   }, [spriteCandidates.join("|")]);
 
   const rawSpriteCandidate = candidateIndex < spriteCandidates.length ? spriteCandidates[candidateIndex] : "";

@@ -194,7 +194,7 @@ function extractRuntimeUserRows(parsed) {
 
   return Object.entries(parsed).map(([key, value]) => {
     if (value && typeof value === "object") {
-      return { ...value, id: value.id || value.userId || value.username || key };
+      return { ...value, id: value.id || value.userId || value.accountId || value.loginId || value.username || value.name || key };
     }
     return { id: key, pw: value };
   });
@@ -360,6 +360,13 @@ function getSafeUsersForAdmin(searchText = "") {
     : safeRows;
 
   return filteredRows.sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
+}
+
+function getExactAdminUser(userId = "") {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const keyword = String(userId || "").trim().toLowerCase();
+  if (!keyword) return null;
+  return getSafeUsersForAdmin("").find((user) => String(user.id || "").trim().toLowerCase() === keyword) || null;
 }
 
 let socketUsers = {};
@@ -2128,6 +2135,7 @@ app.get("/image-manifest", (req, res) => {
       id: character.id,
       name: character.name,
       cardImage: character.cardImage || character.mainImage || character.profileImage || character.image || "",
+      mainImage: character.mainImage || character.cardImage || character.profileImage || character.image || "",
       spriteImage: character.spriteImage || character.investigationImage || character.cardImage || character.mainImage || character.profileImage || character.image || "",
       profileImage: character.profileImage || character.image || "",
       updatedAt: character.updatedAt || character.assetVersion || 0,
@@ -2147,9 +2155,9 @@ app.get("/asset/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).end();
   let pathKey = String(req.query.path || "");
-  if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["image"]);
-  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "image"]);
-  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+  if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["profileImage", "image", "avatar", "portraitImage", "portrait", "mainImage", "cardImage", "investigationImage", "spriteImage"]);
+  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
+  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["spriteImage", "investigationImage", "sdImage", "sdImageUrl", "sd", "mainImage", "cardImage", "profileImage", "image"]);
   const value = getValueByPath(character, pathKey || "");
   if (!isDataImage(value)) return res.status(404).end();
   return sendDataImage(res, value);
@@ -3141,6 +3149,16 @@ io.on("connection", (socket) => {
 
 // --- add these routes anywhere after app initialization and before server.listen ---
 
+app.get("/admin/users/check", (req, res) => {
+  const id = String(req.query?.id || req.query?.q || req.query?.search || "").trim();
+  const user = getExactAdminUser(id);
+  res.json({
+    success: true,
+    exists: !!user,
+    user: user ? { id: user.id, type: user.type || "owner" } : null,
+  });
+});
+
 app.get("/admin/users", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
   res.json(getSafeUsersForAdmin(req.query?.q || req.query?.search || ""));
@@ -3435,11 +3453,11 @@ function attachRelationsToCharacter(character) {
 
 function summarizeCharacter(character) {
   if (!character) return character;
-  const profileImage = character.image || "";
-  const mainImage = character.mainImage || profileImage || "";
-  const investigationImage = character.investigationImage || mainImage || profileImage || "";
-  const cardImage = mainImage || profileImage || "";
-  const spriteImage = investigationImage || cardImage || "";
+  const profileImage = character.profileImage || character.image || character.avatar || character.portraitImage || character.portrait || "";
+  const mainImage = character.mainImage || character.cardImage || character.fullBodyImage || character.fullImage || profileImage || "";
+  const investigationImage = character.investigationImage || character.spriteImage || character.sdImage || character.sdImageUrl || character.sd || mainImage || profileImage || "";
+  const cardImage = character.cardImage || mainImage || profileImage || "";
+  const spriteImage = character.spriteImage || investigationImage || cardImage || "";
   return {
     id: character.id,
     ownerId: character.ownerId,
@@ -3505,9 +3523,9 @@ function buildPublicCharacterSummary(character) {
   if (!character) return character;
   const summary = summarizeCharacter(character);
   const characterId = summary.id || summary.name || "unknown";
-  const profilePath = pickCharacterAssetPath(character, ["image", "mainImage", "investigationImage"]);
-  const mainPath = pickCharacterAssetPath(character, ["mainImage", "image"]);
-  const spritePath = pickCharacterAssetPath(character, ["investigationImage", "mainImage", "image"]);
+  const profilePath = pickCharacterAssetPath(character, ["profileImage", "image", "avatar", "portraitImage", "portrait", "mainImage", "cardImage", "investigationImage", "spriteImage"]);
+  const mainPath = pickCharacterAssetPath(character, ["mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
+  const spritePath = pickCharacterAssetPath(character, ["spriteImage", "investigationImage", "sdImage", "sdImageUrl", "sd", "mainImage", "cardImage", "profileImage", "image"]);
 
   const version = summary.assetVersion || summary.updatedAt || "";
   const toUrl = (pathKey, fallbackValue) => {

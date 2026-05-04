@@ -333,7 +333,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
           ) : <div style={{ color: "#7e94ae" }}>전신 이미지</div>}
         </div>
 
-        <div style={{ padding: "6px 2px", color: "#4f7390", lineHeight: 1.95 }}>
+        <div style={{ padding: "6px 2px", color: "#4f7390", lineHeight: 1.95, position: "relative", zIndex: 1, isolation: "isolate", overflow: "hidden" }}>
           {renderProfileRichContent(viewCharacter?.profile || "프로필이 없습니다.")}
         </div>
 

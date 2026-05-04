@@ -30,7 +30,19 @@ function MenuCard({ title, onClick, disabled = false }) {
 }
 
 
-function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, onSelect, onClose, onRefresh, loading = false }) {
+function UserSelectModal({
+  open,
+  users,
+  selectedUserId,
+  search,
+  onSearchChange,
+  onSelect,
+  onTypedSelect,
+  onClose,
+  onRefresh,
+  loading = false,
+  verifyingUser = null,
+}) {
   const normalizedSearch = String(search || "").trim().toLowerCase();
   const safeUsers = Array.isArray(users) ? users : [];
   const filteredUsers = safeUsers.filter((user) => {
@@ -40,8 +52,24 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
     return id.toLowerCase().includes(normalizedSearch) || type.toLowerCase().includes(normalizedSearch);
   });
   const typedId = String(search || "").trim();
-  const hasExactTypedUser = !!typedId && safeUsers.some((user) => String(user?.id || "").toLowerCase() === typedId.toLowerCase());
-  const showTypedSelect = !!typedId && !hasExactTypedUser;
+  const typedKey = typedId.toLowerCase();
+  const hasExactTypedUser = !!typedId && safeUsers.some((user) => String(user?.id || "").toLowerCase() === typedKey);
+  const verificationMatchesTyped = !!typedId && String(verifyingUser?.id || "").trim().toLowerCase() === typedKey;
+  const verifiedExists = verificationMatchesTyped && verifyingUser?.status === "exists";
+  const verifiedMissing = verificationMatchesTyped && verifyingUser?.status === "missing";
+  const verifiedChecking = verificationMatchesTyped && verifyingUser?.status === "checking";
+  const verifiedError = verificationMatchesTyped && verifyingUser?.status === "error";
+  const showTypedSelect = !!typedId && !hasExactTypedUser && verifiedExists;
+
+  const verificationLabel = (() => {
+    if (!typedId) return "아이디를 입력하면 실제 가입 여부를 확인합니다.";
+    if (hasExactTypedUser) return "목록에서 실제 가입된 아이디를 찾았습니다.";
+    if (verifiedChecking) return "입력한 아이디가 실제 가입된 계정인지 확인 중입니다.";
+    if (verifiedExists) return "입력한 아이디는 실제 가입된 계정입니다.";
+    if (verifiedMissing) return "입력한 아이디와 정확히 일치하는 가입 계정을 찾지 못했습니다.";
+    if (verifiedError) return "가입 여부 확인에 실패했습니다. 새로고침 후 다시 확인해주세요.";
+    return "입력한 아이디가 실제 가입된 계정인지 확인합니다.";
+  })();
 
   if (!open) return null;
 
@@ -88,22 +116,34 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
         </div>
 
-        <div style={{ padding: "0 24px 14px", display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}>
-          <input
-            value={search}
-            onChange={(e) => onSearchChange?.(e.target.value)}
-            placeholder="유저 아이디 검색"
-            autoFocus
+        <div style={{ padding: "0 24px 14px", display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}>
+            <input
+              value={search}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+              placeholder="유저 아이디 검색"
+              autoFocus
+              style={{
+                ...inputStyle,
+                marginTop: 0,
+                fontSize: 15,
+                background: "rgba(255,255,255,0.98)",
+              }}
+            />
+            <button type="button" className="ghost-button" onClick={() => onRefresh?.()} disabled={loading || verifiedChecking}>
+              {loading || verifiedChecking ? "확인 중" : "새로고침"}
+            </button>
+          </div>
+          <div
             style={{
-              ...inputStyle,
-              marginTop: 0,
-              fontSize: 15,
-              background: "rgba(255,255,255,0.98)",
+              minHeight: 18,
+              fontSize: 12,
+              color: hasExactTypedUser || verifiedExists ? "#237052" : verifiedMissing || verifiedError ? "#b45309" : "#5d7a95",
+              fontWeight: hasExactTypedUser || verifiedExists ? 800 : 700,
             }}
-          />
-          <button type="button" className="ghost-button" onClick={() => onRefresh?.()} disabled={loading}>
-            {loading ? "확인 중" : "새로고침"}
-          </button>
+          >
+            {verificationLabel}
+          </div>
         </div>
 
         <div style={{ padding: "0 24px 20px", overflow: "auto" }}>
@@ -113,56 +153,56 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
             </div>
           ) : filteredUsers.length === 0 && !showTypedSelect ? (
             <div style={{ padding: 18, borderRadius: 18, background: "rgba(240,248,255,0.9)", color: "#5d7a95", textAlign: "center" }}>
-              검색 결과가 없습니다.
+              검색 결과가 없습니다. 정확한 아이디를 입력하면 실제 가입 여부를 따로 확인합니다.
             </div>
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               {filteredUsers.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
-              {filteredUsers.map((user) => {
-                const id = String(user?.id || "");
-                const type = String(user?.type || "");
-                const active = String(selectedUserId || "") === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => onSelect?.(id)}
-                    style={{
-                      textAlign: "left",
-                      padding: "14px 15px",
-                      borderRadius: 18,
-                      border: active ? "1px solid rgba(61, 154, 220, 0.75)" : "1px solid rgba(98,176,220,0.18)",
-                      background: active ? "linear-gradient(135deg, rgba(126,220,255,0.32), rgba(255,255,255,0.98))" : "rgba(255,255,255,0.92)",
-                      color: "#16324a",
-                      cursor: "pointer",
-                      boxShadow: active ? "0 12px 26px rgba(73,132,170,0.22)" : "0 10px 22px rgba(73,132,170,0.1)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 900, wordBreak: "break-all" }}>{id || "아이디 없음"}</div>
-                    <div style={{ marginTop: 4, fontSize: 12, color: "#6d86a0" }}>{type || "user"}</div>
-                  </button>
-                );
-              })}
+                  {filteredUsers.map((user) => {
+                    const id = String(user?.id || "");
+                    const type = String(user?.type || "");
+                    const active = String(selectedUserId || "") === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => onSelect?.(id)}
+                        style={{
+                          textAlign: "left",
+                          padding: "14px 15px",
+                          borderRadius: 18,
+                          border: active ? "1px solid rgba(61, 154, 220, 0.75)" : "1px solid rgba(98,176,220,0.18)",
+                          background: active ? "linear-gradient(135deg, rgba(126,220,255,0.32), rgba(255,255,255,0.98))" : "rgba(255,255,255,0.92)",
+                          color: "#16324a",
+                          cursor: "pointer",
+                          boxShadow: active ? "0 12px 26px rgba(73,132,170,0.22)" : "0 10px 22px rgba(73,132,170,0.1)",
+                        }}
+                      >
+                        <div style={{ fontWeight: 900, wordBreak: "break-all" }}>{id || "아이디 없음"}</div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: "#6d86a0" }}>{type || "user"}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               {showTypedSelect && (
                 <button
                   type="button"
-                  onClick={() => onSelect?.(typedId)}
+                  onClick={() => onTypedSelect?.(typedId)}
                   style={{
                     width: "100%",
                     textAlign: "left",
                     padding: "14px 16px",
                     borderRadius: 18,
-                    border: "1px dashed rgba(61, 154, 220, 0.55)",
-                    background: "rgba(235, 248, 255, 0.96)",
+                    border: "1px solid rgba(35,112,82,0.38)",
+                    background: "rgba(232, 255, 246, 0.96)",
                     color: "#16324a",
                     cursor: "pointer",
                   }}
                 >
-                  <div style={{ fontWeight: 900 }}>목록에 없으면 입력한 아이디로 선택</div>
-                  <div style={{ marginTop: 4, color: "#4d7898", wordBreak: "break-all" }}>{typedId}</div>
+                  <div style={{ fontWeight: 900 }}>확인된 아이디로 선택</div>
+                  <div style={{ marginTop: 4, color: "#237052", wordBreak: "break-all" }}>{typedId}</div>
                 </button>
               )}
             </div>
@@ -329,6 +369,7 @@ export default function AdminPage({
   const [selectedUserId, setSelectedUserId] = useState("");
   const [userSelectOpen, setUserSelectOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
+  const [userVerify, setUserVerify] = useState({ id: "", status: "idle", user: null });
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState(null);
   const [message, setMessage] = useState("");
@@ -479,6 +520,31 @@ export default function AdminPage({
     return [];
   };
 
+  const checkUserExists = async (userId) => {
+    const keyword = String(userId || "").trim();
+    if (!keyword) {
+      setUserVerify({ id: "", status: "idle", user: null });
+      return null;
+    }
+    setUserVerify({ id: keyword, status: "checking", user: null });
+    try {
+      const res = await fetch(adminApi(`/admin/users/check?id=${encodeURIComponent(keyword)}&t=${Date.now()}`), { cache: "no-store" });
+      const data = await res.json();
+      const foundUser = data?.exists && data?.user ? data.user : null;
+      if (foundUser) {
+        setUsers((prev) => mergeUsersById(prev, [foundUser]));
+        setUserVerify({ id: keyword, status: "exists", user: foundUser });
+        return foundUser;
+      }
+      setUserVerify({ id: keyword, status: "missing", user: null });
+      return null;
+    } catch (error) {
+      console.error("admin user verify failed", error);
+      setUserVerify({ id: keyword, status: "error", user: null });
+      return null;
+    }
+  };
+
   const loadAll = async () => {
     await loadUsers();
 
@@ -522,22 +588,35 @@ export default function AdminPage({
     [users, selectedUserId]
   );
   const selectAdminUser = (userId) => {
-    const nextId = String(userId || "");
+    const nextId = String(userId || "").trim();
+    if (!nextId) return;
     setSelectedUserId(nextId);
     setSelectedCharacterId("");
     setSelectedCharacterDetail(null);
     setUserSelectOpen(false);
   };
 
+  const selectVerifiedTypedUser = async (userId) => {
+    const foundUser = await checkUserExists(userId);
+    if (!foundUser) {
+      setMessage("실제 가입된 아이디인지 확인되지 않아 선택하지 않았습니다.");
+      return;
+    }
+    selectAdminUser(foundUser.id || userId);
+  };
+
   const openUserSelect = () => {
     setUserSelectOpen(true);
     loadUsers(userSearch).catch(() => {});
+    if (String(userSearch || "").trim()) checkUserExists(userSearch).catch(() => {});
   };
 
   useEffect(() => {
     if (!userSelectOpen) return undefined;
     const timer = setTimeout(() => {
       loadUsers(userSearch).catch(() => {});
+      if (String(userSearch || "").trim()) checkUserExists(userSearch).catch(() => {});
+      else setUserVerify({ id: "", status: "idle", user: null });
     }, 250);
     return () => clearTimeout(timer);
   }, [userSelectOpen, userSearch]);
@@ -783,9 +862,11 @@ export default function AdminPage({
         search={userSearch}
         onSearchChange={setUserSearch}
         onSelect={selectAdminUser}
+        onTypedSelect={selectVerifiedTypedUser}
         onClose={() => setUserSelectOpen(false)}
-        onRefresh={() => loadUsers(userSearch).catch(() => {})}
+        onRefresh={() => { loadUsers(userSearch).catch(() => {}); if (String(userSearch || "").trim()) checkUserExists(userSearch).catch(() => {}); }}
         loading={usersLoading}
+        verifyingUser={userVerify}
       />
 
       <div style={{ ...panelStyle, marginBottom: 18 }}>

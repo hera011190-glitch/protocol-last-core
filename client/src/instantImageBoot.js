@@ -134,6 +134,7 @@ export function startInstantImageBoot() {
       const fromManifest = [
         ...(manifest?.characters || []).flatMap((character) => [
           character?.cardImage,
+          character?.mainImage,
           character?.spriteImage,
           character?.profileImage,
         ]),
