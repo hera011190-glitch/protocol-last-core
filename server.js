@@ -183,6 +183,57 @@ function getRuntimeArrayFromDisk(filename) {
   }
 }
 
+function readRuntimeArrayFromExactPath(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return [];
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function collectKnownRuntimeJsonPaths(filename) {
+  const roots = [
+    DATA_DIR,
+    LEGACY_DATA_DIR,
+    process.cwd(),
+    path.dirname(DATA_DIR),
+    path.dirname(LEGACY_DATA_DIR),
+  ].filter(Boolean);
+
+  const candidates = [
+    resolveDataPath(filename),
+    resolveBundledPath(filename),
+  ];
+
+  roots.forEach((root) => {
+    candidates.push(path.join(root, filename));
+    ["protocol-last-core-data", "data", "runtime-data", "storage"].forEach((dirName) => {
+      candidates.push(path.join(root, dirName, filename));
+    });
+  });
+
+  const seen = new Set();
+  return candidates
+    .map((targetPath) => path.resolve(targetPath))
+    .filter((targetPath) => {
+      if (seen.has(targetPath)) return false;
+      seen.add(targetPath);
+      return true;
+    });
+}
+
+function getAllKnownRuntimeUsersFromDisk() {
+  // 여러 저장 위치가 섞여 있어도 DATA_DIR/현재 메모리 쪽 최신 계정이 우선되도록 뒤쪽 값이 이기게 병합합니다.
+  return mergeRuntimeUsers(...collectKnownRuntimeJsonPaths("users.json").reverse().map(readRuntimeArrayFromExactPath));
+}
+
+function refreshUsersFromKnownSources() {
+  usersDB = mergeRuntimeUsers(getAllKnownRuntimeUsersFromDisk(), usersDB);
+  return usersDB;
+}
+
 function shouldBlockDangerousEmptyWrite(filename, nextValue) {
   if (!PROTECTED_RUNTIME_ARRAYS.has(filename)) return false;
   if (!Array.isArray(nextValue) || nextValue.length > 0) return false;
@@ -205,6 +256,18 @@ function writeRuntimeArray(filename, value) {
       if (diskRows.length > 0) makeRuntimeBackup(filename, diskRows);
       // 캐릭터/계정 데이터는 홈페이지 수정 중 서버가 꺼져도 유실되지 않도록 즉시 원자 저장합니다.
       writeJsonAtomicSync(filePath, nextValue);
+
+      // 회원가입은 공통 API 저장소에 저장하고, 운영 화면/이전 코드가 legacy users.json을 읽어도
+      // 최신 계정이 누락되지 않도록 users.json만 보조 위치에도 안전하게 동기화합니다.
+      if (filename === "users.json") {
+        const legacyPath = resolveBundledPath(filename);
+        if (path.resolve(legacyPath) !== path.resolve(filePath)) {
+          const legacyUsers = readRuntimeArrayFromExactPath(legacyPath);
+          const mergedUsers = mergeRuntimeUsers(legacyUsers, nextValue);
+          writeJsonAtomicSync(legacyPath, mergedUsers);
+        }
+      }
+
       return true;
     }
 
@@ -251,16 +314,13 @@ function mergeRuntimeUsers(...lists) {
 }
 
 function refreshProtectedRuntimeArraysIfNeeded() {
-  const diskUsers = getRuntimeArrayFromDisk("users.json");
+  refreshUsersFromKnownSources();
   const diskCharacters = getRuntimeArrayFromDisk("characters.json");
-  const mergedUsers = mergeRuntimeUsers(usersDB, diskUsers);
-  if (mergedUsers.length !== usersDB.length || JSON.stringify(mergedUsers) !== JSON.stringify(usersDB)) usersDB = mergedUsers;
   if (diskCharacters.length > charactersDB.length) charactersDB = diskCharacters;
 }
 
 function getSafeUsersForAdmin() {
-  const diskUsers = getRuntimeArrayFromDisk("users.json");
-  usersDB = mergeRuntimeUsers(usersDB, diskUsers);
+  refreshUsersFromKnownSources();
   return usersDB
     .filter((user) => String(user.id || "").trim())
     .map((user) => ({
@@ -2095,6 +2155,7 @@ app.post("/designConfig", (req, res) => {
 });
 
 app.post("/register", (req, res) => {
+  refreshUsersFromKnownSources();
   const nextId = String(req.body?.id || "").trim();
   const nextPw = String(req.body?.pw || "").trim();
   const type = req.body?.type || "owner";
@@ -2105,8 +2166,9 @@ app.post("/register", (req, res) => {
   if (nextId === "PLC") return res.json({ success: false, message: "이 아이디는 사용할 수 없습니다." });
   const exists = usersDB.find((u) => String(u.id || "").toLowerCase() === nextId.toLowerCase() );
   if (exists) return res.json({ success: false, message: "이미 존재하는 아이디입니다." });
-  usersDB.push({ id: nextId, pw: nextPw, type });
-  writeRuntimeArray("users.json", usersDB);
+  usersDB = mergeRuntimeUsers(usersDB, [{ id: nextId, pw: nextPw, type }]);
+  const saved = writeRuntimeArray("users.json", usersDB);
+  if (!saved) return res.json({ success: false, message: "계정 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
   res.json({ success: true });
 });
 

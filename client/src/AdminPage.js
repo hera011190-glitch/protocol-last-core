@@ -3,6 +3,7 @@ import { ProfileCard, normalizeProfileCardFrame } from "./profileCardShared";
 import { renderProfileRichParagraph } from "./profileRichText";
 import ImageDropInput from "./ImageDropInput";
 import AudioSourceInput from "./AudioSourceInput";
+import { buildApiUrl } from "./api";
 
 function MenuCard({ title, onClick, disabled = false }) {
   return (
@@ -155,8 +156,7 @@ const PROFILE_FONT_OPTIONS = [
   { label: "궁서", value: `"Gungsuh", serif` },
 ];
 
-const API_BASE = window.location.hostname === "localhost" ? "http://localhost:3001" : "";
-const adminApi = (path) => `${API_BASE}${path}`;
+const adminApi = (path) => buildApiUrl(path);
 
 function normalizeSavedCharacterPayload(character) {
   if (!character || typeof character !== "object") return character;
