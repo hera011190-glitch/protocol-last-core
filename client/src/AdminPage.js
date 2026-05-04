@@ -174,6 +174,29 @@ function normalizeSavedCharacterPayload(character) {
   };
 }
 
+function mergeUsersById(currentUsers, nextUsers) {
+  const merged = [];
+  const indexById = new Map();
+
+  [...(Array.isArray(currentUsers) ? currentUsers : []), ...(Array.isArray(nextUsers) ? nextUsers : [])].forEach((user) => {
+    if (!user || typeof user !== "object") return;
+    const id = String(user.id || "").trim();
+    if (!id) return;
+    const key = id.toLowerCase();
+    const normalized = { ...user, id, type: user.type || "owner" };
+
+    if (indexById.has(key)) {
+      const index = indexById.get(key);
+      merged[index] = { ...merged[index], ...normalized };
+    } else {
+      indexById.set(key, merged.length);
+      merged.push(normalized);
+    }
+  });
+
+  return merged;
+}
+
 const inputStyle = {
   width: "100%",
   marginTop: 6,
@@ -400,12 +423,25 @@ export default function AdminPage({
     }
   };
 
-  const loadAll = async () => {
-    const userRes = await fetch(adminApi("/admin/users"), { cache: "no-store" });
-    const userData = await userRes.json();
-    if (Array.isArray(userData)) {
-      setUsers((prev) => (userData.length > 0 || prev.length === 0 ? userData : prev));
+  const loadUsers = async () => {
+    try {
+      const userRes = await fetch(adminApi(`/admin/users?t=${Date.now()}`), { cache: "no-store" });
+      const userData = await userRes.json();
+      if (Array.isArray(userData)) {
+        setUsers((prev) => {
+          if (userData.length === 0 && prev.length > 0) return prev;
+          return mergeUsersById(prev, userData);
+        });
+        return userData;
+      }
+    } catch (error) {
+      console.error("admin users load failed", error);
     }
+    return [];
+  };
+
+  const loadAll = async () => {
+    await loadUsers();
 
     const charRes = await fetch(adminApi(`/characters-lite?t=${Date.now()}`), { cache: "no-store" });
     const charData = await charRes.json();
@@ -452,6 +488,11 @@ export default function AdminPage({
     setSelectedCharacterId("");
     setSelectedCharacterDetail(null);
     setUserSelectOpen(false);
+  };
+
+  const openUserSelect = () => {
+    setUserSelectOpen(true);
+    loadUsers().catch(() => {});
   };
 
   const ownerCharacters = useMemo(
@@ -722,7 +763,7 @@ export default function AdminPage({
             <div style={{ fontWeight: 800 }}>계정 선택</div>
             <button
               type="button"
-              onClick={() => setUserSelectOpen(true)}
+              onClick={openUserSelect}
               style={{
                 ...inputStyle,
                 textAlign: "left",

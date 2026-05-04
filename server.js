@@ -220,11 +220,53 @@ let usersDB = readRuntimeArray("users.json");
 let charactersDB = readRuntimeArray("characters.json");
 let roomChats = {};
 
+function mergeRuntimeUsers(...lists) {
+  const merged = [];
+  const indexById = new Map();
+
+  lists.forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((user) => {
+      if (!user || typeof user !== "object") return;
+      const id = String(user.id || "").trim();
+      if (!id) return;
+      const key = id.toLowerCase();
+      const normalized = {
+        ...user,
+        id,
+        type: user.type || "owner",
+      };
+
+      if (indexById.has(key)) {
+        const index = indexById.get(key);
+        merged[index] = { ...merged[index], ...normalized };
+      } else {
+        indexById.set(key, merged.length);
+        merged.push(normalized);
+      }
+    });
+  });
+
+  return merged;
+}
+
 function refreshProtectedRuntimeArraysIfNeeded() {
   const diskUsers = getRuntimeArrayFromDisk("users.json");
   const diskCharacters = getRuntimeArrayFromDisk("characters.json");
-  if (diskUsers.length > usersDB.length) usersDB = diskUsers;
+  const mergedUsers = mergeRuntimeUsers(usersDB, diskUsers);
+  if (mergedUsers.length !== usersDB.length || JSON.stringify(mergedUsers) !== JSON.stringify(usersDB)) usersDB = mergedUsers;
   if (diskCharacters.length > charactersDB.length) charactersDB = diskCharacters;
+}
+
+function getSafeUsersForAdmin() {
+  const diskUsers = getRuntimeArrayFromDisk("users.json");
+  usersDB = mergeRuntimeUsers(usersDB, diskUsers);
+  return usersDB
+    .filter((user) => String(user.id || "").trim())
+    .map((user) => ({
+      id: String(user.id || "").trim(),
+      type: user.type || "owner",
+    }));
 }
 
 let socketUsers = {};
@@ -3006,11 +3048,7 @@ io.on("connection", (socket) => {
 
 app.get("/admin/users", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
-  const safeUsers = usersDB.map((user) => ({
-    id: user.id,
-    type: user.type,
-  }));
-  res.json(safeUsers);
+  res.json(getSafeUsersForAdmin());
 });
 
 
