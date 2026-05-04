@@ -30,7 +30,7 @@ function MenuCard({ title, onClick, disabled = false }) {
 }
 
 
-function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, onSelect, onClose }) {
+function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, onSelect, onClose, onRefresh, loading = false }) {
   const normalizedSearch = String(search || "").trim().toLowerCase();
   const safeUsers = Array.isArray(users) ? users : [];
   const filteredUsers = safeUsers.filter((user) => {
@@ -39,6 +39,9 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
     if (!normalizedSearch) return true;
     return id.toLowerCase().includes(normalizedSearch) || type.toLowerCase().includes(normalizedSearch);
   });
+  const typedId = String(search || "").trim();
+  const hasExactTypedUser = !!typedId && safeUsers.some((user) => String(user?.id || "").toLowerCase() === typedId.toLowerCase());
+  const showTypedSelect = !!typedId && !hasExactTypedUser;
 
   if (!open) return null;
 
@@ -79,13 +82,13 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
             <div className="section-eyebrow">USER SELECT</div>
             <h3 style={{ margin: "8px 0 0", fontSize: 24 }}>계정 선택</h3>
             <div style={{ marginTop: 6, color: "#5d7a95", fontSize: 13 }}>
-              가입된 계정 {safeUsers.length}개 중 {filteredUsers.length}개 표시
+              가입된 계정 {safeUsers.length}개 중 {filteredUsers.length}개 표시{loading ? " · 불러오는 중" : ""}
             </div>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
         </div>
 
-        <div style={{ padding: "0 24px 14px" }}>
+        <div style={{ padding: "0 24px 14px", display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}>
           <input
             value={search}
             onChange={(e) => onSearchChange?.(e.target.value)}
@@ -98,15 +101,24 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
               background: "rgba(255,255,255,0.98)",
             }}
           />
+          <button type="button" className="ghost-button" onClick={() => onRefresh?.()} disabled={loading}>
+            {loading ? "확인 중" : "새로고침"}
+          </button>
         </div>
 
         <div style={{ padding: "0 24px 20px", overflow: "auto" }}>
-          {filteredUsers.length === 0 ? (
+          {loading && safeUsers.length === 0 ? (
+            <div style={{ padding: 18, borderRadius: 18, background: "rgba(240,248,255,0.9)", color: "#5d7a95", textAlign: "center" }}>
+              계정 목록을 다시 불러오고 있습니다.
+            </div>
+          ) : filteredUsers.length === 0 && !showTypedSelect ? (
             <div style={{ padding: 18, borderRadius: 18, background: "rgba(240,248,255,0.9)", color: "#5d7a95", textAlign: "center" }}>
               검색 결과가 없습니다.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+            <div style={{ display: "grid", gap: 12 }}>
+              {filteredUsers.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
               {filteredUsers.map((user) => {
                 const id = String(user?.id || "");
                 const type = String(user?.type || "");
@@ -132,6 +144,27 @@ function UserSelectModal({ open, users, selectedUserId, search, onSearchChange, 
                   </button>
                 );
               })}
+                </div>
+              )}
+              {showTypedSelect && (
+                <button
+                  type="button"
+                  onClick={() => onSelect?.(typedId)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "14px 16px",
+                    borderRadius: 18,
+                    border: "1px dashed rgba(61, 154, 220, 0.55)",
+                    background: "rgba(235, 248, 255, 0.96)",
+                    color: "#16324a",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 900 }}>목록에 없으면 입력한 아이디로 선택</div>
+                  <div style={{ marginTop: 4, color: "#4d7898", wordBreak: "break-all" }}>{typedId}</div>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -291,6 +324,7 @@ export default function AdminPage({
   goMapManager,
 }) {
   const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [characters, setCharacters] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [userSelectOpen, setUserSelectOpen] = useState(false);
@@ -423,9 +457,12 @@ export default function AdminPage({
     }
   };
 
-  const loadUsers = async () => {
+  const loadUsers = async (searchText = "") => {
+    const keyword = String(searchText || "").trim();
     try {
-      const userRes = await fetch(adminApi(`/admin/users?t=${Date.now()}`), { cache: "no-store" });
+      setUsersLoading(true);
+      const query = keyword ? `q=${encodeURIComponent(keyword)}&` : "";
+      const userRes = await fetch(adminApi(`/admin/users?${query}t=${Date.now()}`), { cache: "no-store" });
       const userData = await userRes.json();
       if (Array.isArray(userData)) {
         setUsers((prev) => {
@@ -436,6 +473,8 @@ export default function AdminPage({
       }
     } catch (error) {
       console.error("admin users load failed", error);
+    } finally {
+      setUsersLoading(false);
     }
     return [];
   };
@@ -492,8 +531,16 @@ export default function AdminPage({
 
   const openUserSelect = () => {
     setUserSelectOpen(true);
-    loadUsers().catch(() => {});
+    loadUsers(userSearch).catch(() => {});
   };
+
+  useEffect(() => {
+    if (!userSelectOpen) return undefined;
+    const timer = setTimeout(() => {
+      loadUsers(userSearch).catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [userSelectOpen, userSearch]);
 
   const ownerCharacters = useMemo(
     () => characters.filter((c) => String(c.ownerId || "") === String(selectedUserId || "")),
@@ -737,6 +784,8 @@ export default function AdminPage({
         onSearchChange={setUserSearch}
         onSelect={selectAdminUser}
         onClose={() => setUserSelectOpen(false)}
+        onRefresh={() => loadUsers(userSearch).catch(() => {})}
+        loading={usersLoading}
       />
 
       <div style={{ ...panelStyle, marginBottom: 18 }}>

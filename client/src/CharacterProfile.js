@@ -102,6 +102,15 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
   const pageDesign = design?.pages?.[pageKey] || defaultDesign.pages?.[pageKey] || {};
   const background = pageDesign.background || {};
   const pageOverlay = background.overlay || "none";
+  const hasBackgroundImage = !!background.image;
+  const backgroundSize = hasBackgroundImage
+    ? (background.size || (background.scale ? `${Number(background.scale || 100)}% auto` : "cover"))
+    : undefined;
+  const backgroundPosition = hasBackgroundImage
+    ? (background.position || `${Number(background.positionX ?? 50)}% ${Number(background.positionY ?? 50)}%`)
+    : undefined;
+  const backgroundSizeList = hasBackgroundImage && pageOverlay !== "none" ? `${backgroundSize}, ${backgroundSize}` : backgroundSize;
+  const backgroundPositionList = hasBackgroundImage && pageOverlay !== "none" ? `${backgroundPosition}, ${backgroundPosition}` : backgroundPosition;
 
   useEffect(() => {
     const characterId = character?.id;
@@ -202,9 +211,9 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
             : pageOverlay !== "none"
             ? pageOverlay
             : "linear-gradient(180deg, rgba(250,254,255,0.92), rgba(239,249,255,0.95))",
-        backgroundSize: background.image ? `${Number(background.scale || 100)}% auto` : undefined,
-        backgroundPosition: background.image ? `${Number(background.positionX || 50)}% ${Number(background.positionY || 50)}%` : undefined,
-        backgroundRepeat: background.image ? "no-repeat" : undefined,
+        backgroundSize: backgroundSizeList,
+        backgroundPosition: backgroundPositionList,
+        backgroundRepeat: hasBackgroundImage ? "no-repeat" : undefined,
         padding: "28px 24px 80px",
       }}
     >

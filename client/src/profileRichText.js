@@ -87,7 +87,8 @@ export function sanitizeProfileHtml(source) {
   if (!root) return html;
 
   const allowedTags = new Set(["div", "p", "span", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "h1", "h2", "h3", "h4", "table", "thead", "tbody", "tr", "td", "th", "hr"]);
-  const allowedStyles = new Set(["text-align", "color", "font-family", "font-size", "font-weight", "font-style", "text-decoration", "background-color", "border", "border-collapse", "width", "padding", "margin"]);
+  const allowedStyles = new Set(["text-align", "color", "font-family", "font-size", "font-weight", "font-style", "text-decoration", "border", "border-collapse", "width", "padding", "margin"]);
+  const blockedStylePrefixes = ["background", "box-shadow", "filter", "backdrop-filter"];
   const unwrap = (node) => {
     const parent = node.parentNode;
     if (!parent) return;
@@ -119,6 +120,7 @@ export function sanitizeProfileHtml(source) {
               const key = String(prop || "").trim().toLowerCase();
               const value = rest.join(":").trim();
               if (!allowedStyles.has(key) || !value) return "";
+              if (blockedStylePrefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}-`))) return "";
               return `${key}:${value}`;
             })
             .filter(Boolean)

@@ -183,11 +183,28 @@ function getRuntimeArrayFromDisk(filename) {
   }
 }
 
+function extractRuntimeUserRows(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return [];
+
+  const nestedKeys = ["users", "accounts", "members", "userList", "data", "rows", "items"];
+  for (const key of nestedKeys) {
+    if (Array.isArray(parsed[key])) return parsed[key];
+  }
+
+  return Object.entries(parsed).map(([key, value]) => {
+    if (value && typeof value === "object") {
+      return { ...value, id: value.id || value.userId || value.username || key };
+    }
+    return { id: key, pw: value };
+  });
+}
+
 function readRuntimeArrayFromExactPath(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return [];
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-    return Array.isArray(parsed) ? parsed : [];
+    return extractRuntimeUserRows(parsed);
   } catch {
     return [];
   }
@@ -319,14 +336,30 @@ function refreshProtectedRuntimeArraysIfNeeded() {
   if (diskCharacters.length > charactersDB.length) charactersDB = diskCharacters;
 }
 
-function getSafeUsersForAdmin() {
+function getSafeUsersForAdmin(searchText = "") {
   refreshUsersFromKnownSources();
-  return usersDB
+  const ownerRows = (Array.isArray(charactersDB) ? charactersDB : [])
+    .map((character) => String(character?.ownerId || "").trim())
+    .filter(Boolean)
+    .map((id) => ({ id, type: "owner" }));
+
+  const safeRows = mergeRuntimeUsers(usersDB, ownerRows)
     .filter((user) => String(user.id || "").trim())
     .map((user) => ({
       id: String(user.id || "").trim(),
       type: user.type || "owner",
     }));
+
+  const keyword = String(searchText || "").trim().toLowerCase();
+  const filteredRows = keyword
+    ? safeRows.filter((user) => {
+        const id = String(user.id || "").toLowerCase();
+        const type = String(user.type || "").toLowerCase();
+        return id.includes(keyword) || type.includes(keyword);
+      })
+    : safeRows;
+
+  return filteredRows.sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
 }
 
 let socketUsers = {};
@@ -3110,7 +3143,7 @@ io.on("connection", (socket) => {
 
 app.get("/admin/users", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
-  res.json(getSafeUsersForAdmin());
+  res.json(getSafeUsersForAdmin(req.query?.q || req.query?.search || ""));
 });
 
 
