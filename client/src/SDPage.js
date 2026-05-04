@@ -527,7 +527,6 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
 
   useEffect(() => {
     setCandidateIndex(0);
-    if (spriteCandidates.length > 0) warmVisibleImagesFromRows(spriteCandidates);
   }, [spriteCandidates.join("|")]);
 
   const rawSpriteCandidate = candidateIndex < spriteCandidates.length ? spriteCandidates[candidateIndex] : "";
@@ -583,7 +582,6 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             alt=""
             loading="eager"
             decoding="async"
-            onError={handleSpriteError}
             style={{
               width: "100%",
               height: "100%",
@@ -635,6 +633,7 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const charactersRef = useRef(characters);
   const activeMapRef = useRef(activeMapId);
   const quotesRef = useRef(quotes);
+  const manualMapMoveRef = useRef(0);
   const mapRoot = remoteMapRoot || design?.siteContent?.maps || {};
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
   const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
@@ -1058,9 +1057,22 @@ export default function SDPage({ activeCharacter, design, theme }) {
     });
   }, [stableCharacters, currentMap, activeCharacter, canonicalActiveCharacter]);
   const availableDirs = currentMap?.neighbors || {};
+
+  useEffect(() => {
+    if (!maps.length || !stableCharacters.length || !currentMap?.id) return;
+    if (Date.now() - manualMapMoveRef.current < 9000) return;
+    const hasCharacterOnCurrentMap = stableCharacters.some((character) => String(character?.currentMap || "") === String(currentMap.id));
+    if (hasCharacterOnCurrentMap) return;
+    const preferredMapId = canonicalActiveCharacter?.currentMap || stableCharacters[0]?.currentMap || maps[0]?.id || "";
+    if (preferredMapId && String(preferredMapId) !== String(currentMap.id) && maps.some((map) => String(map.id) === String(preferredMapId))) {
+      setActiveMapId(preferredMapId);
+    }
+  }, [maps, stableCharacters, currentMap?.id, canonicalActiveCharacter?.currentMap]);
+
   const moveByArrow = (dir) => {
     const nextId = getNextMap(activeMapId, dir);
     if (!nextId || nextId === activeMapId) return;
+    manualMapMoveRef.current = Date.now();
     setActiveMapId(nextId);
   };
 

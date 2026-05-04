@@ -62,7 +62,8 @@ function shapeStyle(extra = {}) {
 }
 
 function InlineCardImage({ src, fallbackSrcs = [], alt, style }) {
-  const candidates = useMemo(() => uniqueList([src, ...fallbackSrcs]).map(resolveCardImageUrl).filter(Boolean), [src, fallbackSrcs]);
+  const fallbackKey = Array.isArray(fallbackSrcs) ? fallbackSrcs.join("|") : "";
+  const candidates = useMemo(() => uniqueList([src, ...(Array.isArray(fallbackSrcs) ? fallbackSrcs : [])]).map(resolveCardImageUrl).filter(Boolean), [src, fallbackKey]);
   const [index, setIndex] = useState(0);
   const currentSrc = candidates[index] || "";
 
@@ -78,7 +79,7 @@ function InlineCardImage({ src, fallbackSrcs = [], alt, style }) {
       src={currentSrc}
       alt={alt || ""}
       loading="eager"
-      decoding="async"
+      decoding="sync"
       fetchPriority="high"
       draggable={false}
       onError={() => {
@@ -96,17 +97,22 @@ function InlineCardImage({ src, fallbackSrcs = [], alt, style }) {
 export function ProfileCard({ character = {}, onClick, theme, width = "100%", oneLine, image, rank, name, frame, isOnline = false, rankFontSize = 9, nameFontSize = 13, oneLineFontSize = 7.8 }) {
   const displayName = name ?? character?.name ?? "캐릭터 이름";
   const displayRank = rank ?? character?.rank ?? "대원";
-  const imageSrc = image ?? character?.cardImage ?? character?.mainImage ?? character?.profileImage ?? character?.image ?? "";
-  const fallbackSrcs = uniqueList([
-    ...(Array.isArray(character?.imageCandidates) ? character.imageCandidates : []),
-    character?.cardImage,
-    character?.mainImage,
-    character?.profileImage,
-    character?.image,
+  const rawImageSrc = image ?? character?.cardImage ?? character?.mainImage ?? character?.profileImage ?? character?.image ?? "";
+  const assetSrcs = uniqueList([
     characterAssetCandidate(character, "cardImage"),
     characterAssetCandidate(character, "mainImage"),
     characterAssetCandidate(character, "image"),
     characterAssetCandidate(character, "profileImage"),
+  ]);
+  const imageSrc = character?.id ? (assetSrcs[0] || rawImageSrc) : rawImageSrc;
+  const fallbackSrcs = uniqueList([
+    ...assetSrcs,
+    ...(Array.isArray(character?.imageCandidates) ? character.imageCandidates : []),
+    rawImageSrc,
+    character?.cardImage,
+    character?.mainImage,
+    character?.profileImage,
+    character?.image,
   ]).filter((item) => item && item !== imageSrc);
   const cardFrame = frame ?? character?.mainImageFrame ?? character?.cardImageFrame;
 

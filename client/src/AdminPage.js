@@ -5,6 +5,22 @@ import ImageDropInput from "./ImageDropInput";
 import AudioSourceInput from "./AudioSourceInput";
 import { buildApiUrl } from "./api";
 
+function normalizeUserIdText(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim();
+}
+
+function pickAdminUserRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.users)) return payload.users;
+  if (Array.isArray(payload?.accounts)) return payload.accounts;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 function MenuCard({ title, onClick, disabled = false }) {
   return (
     <button
@@ -43,18 +59,18 @@ function UserSelectModal({
   loading = false,
   verifyingUser = null,
 }) {
-  const normalizedSearch = String(search || "").trim().toLowerCase();
+  const normalizedSearch = normalizeUserIdText(search).toLowerCase();
   const safeUsers = Array.isArray(users) ? users : [];
   const filteredUsers = safeUsers.filter((user) => {
-    const id = String(user?.id || "");
+    const id = normalizeUserIdText(user?.id);
     const type = String(user?.type || "");
     if (!normalizedSearch) return true;
     return id.toLowerCase().includes(normalizedSearch) || type.toLowerCase().includes(normalizedSearch);
   });
-  const typedId = String(search || "").trim();
+  const typedId = normalizeUserIdText(search);
   const typedKey = typedId.toLowerCase();
-  const hasExactTypedUser = !!typedId && safeUsers.some((user) => String(user?.id || "").toLowerCase() === typedKey);
-  const verificationMatchesTyped = !!typedId && String(verifyingUser?.id || "").trim().toLowerCase() === typedKey;
+  const hasExactTypedUser = !!typedId && safeUsers.some((user) => normalizeUserIdText(user?.id).toLowerCase() === typedKey);
+  const verificationMatchesTyped = !!typedId && normalizeUserIdText(verifyingUser?.id).toLowerCase() === typedKey;
   const verifiedExists = verificationMatchesTyped && verifyingUser?.status === "exists";
   const verifiedMissing = verificationMatchesTyped && verifyingUser?.status === "missing";
   const verifiedChecking = verificationMatchesTyped && verifyingUser?.status === "checking";
@@ -253,10 +269,10 @@ function mergeUsersById(currentUsers, nextUsers) {
 
   [...(Array.isArray(currentUsers) ? currentUsers : []), ...(Array.isArray(nextUsers) ? nextUsers : [])].forEach((user) => {
     if (!user || typeof user !== "object") return;
-    const id = String(user.id || "").trim();
+    const id = normalizeUserIdText(user.id ?? user.userId ?? user.accountId ?? user.loginId ?? user.username ?? user.ownerId ?? user.name);
     if (!id) return;
     const key = id.toLowerCase();
-    const normalized = { ...user, id, type: user.type || "owner" };
+    const normalized = { ...user, id, type: user.type || user.role || "owner" };
 
     if (indexById.has(key)) {
       const index = indexById.get(key);
@@ -499,18 +515,19 @@ export default function AdminPage({
   };
 
   const loadUsers = async (searchText = "") => {
-    const keyword = String(searchText || "").trim();
+    const keyword = normalizeUserIdText(searchText);
     try {
       setUsersLoading(true);
       const query = keyword ? `q=${encodeURIComponent(keyword)}&` : "";
       const userRes = await fetch(adminApi(`/admin/users?${query}t=${Date.now()}`), { cache: "no-store" });
       const userData = await userRes.json();
-      if (Array.isArray(userData)) {
+      const userRows = pickAdminUserRows(userData);
+      if (Array.isArray(userRows)) {
         setUsers((prev) => {
-          if (userData.length === 0 && prev.length > 0) return prev;
-          return mergeUsersById(prev, userData);
+          if (userRows.length === 0 && prev.length > 0) return prev;
+          return mergeUsersById(prev, userRows);
         });
-        return userData;
+        return userRows;
       }
     } catch (error) {
       console.error("admin users load failed", error);
@@ -521,10 +538,15 @@ export default function AdminPage({
   };
 
   const checkUserExists = async (userId) => {
-    const keyword = String(userId || "").trim();
+    const keyword = normalizeUserIdText(userId);
     if (!keyword) {
       setUserVerify({ id: "", status: "idle", user: null });
       return null;
+    }
+    const localFound = users.find((user) => normalizeUserIdText(user?.id).toLowerCase() === keyword.toLowerCase());
+    if (localFound) {
+      setUserVerify({ id: keyword, status: "exists", user: localFound });
+      return localFound;
     }
     setUserVerify({ id: keyword, status: "checking", user: null });
     try {
@@ -584,11 +606,11 @@ export default function AdminPage({
   }, [message]);
 
   const selectedUser = useMemo(
-    () => users.find((user) => String(user?.id || "") === String(selectedUserId || "")),
+    () => users.find((user) => normalizeUserIdText(user?.id).toLowerCase() === normalizeUserIdText(selectedUserId).toLowerCase()),
     [users, selectedUserId]
   );
   const selectAdminUser = (userId) => {
-    const nextId = String(userId || "").trim();
+    const nextId = normalizeUserIdText(userId);
     if (!nextId) return;
     setSelectedUserId(nextId);
     setSelectedCharacterId("");
@@ -608,21 +630,21 @@ export default function AdminPage({
   const openUserSelect = () => {
     setUserSelectOpen(true);
     loadUsers(userSearch).catch(() => {});
-    if (String(userSearch || "").trim()) checkUserExists(userSearch).catch(() => {});
+    if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {});
   };
 
   useEffect(() => {
     if (!userSelectOpen) return undefined;
     const timer = setTimeout(() => {
       loadUsers(userSearch).catch(() => {});
-      if (String(userSearch || "").trim()) checkUserExists(userSearch).catch(() => {});
+      if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {});
       else setUserVerify({ id: "", status: "idle", user: null });
     }, 250);
     return () => clearTimeout(timer);
   }, [userSelectOpen, userSearch]);
 
   const ownerCharacters = useMemo(
-    () => characters.filter((c) => String(c.ownerId || "") === String(selectedUserId || "")),
+    () => characters.filter((c) => normalizeUserIdText(c.ownerId).toLowerCase() === normalizeUserIdText(selectedUserId).toLowerCase()),
     [characters, selectedUserId]
   );
   const selectedCharacterLite = ownerCharacters.find((c) => String(c.id) === String(selectedCharacterId));
@@ -864,7 +886,7 @@ export default function AdminPage({
         onSelect={selectAdminUser}
         onTypedSelect={selectVerifiedTypedUser}
         onClose={() => setUserSelectOpen(false)}
-        onRefresh={() => { loadUsers(userSearch).catch(() => {}); if (String(userSearch || "").trim()) checkUserExists(userSearch).catch(() => {}); }}
+        onRefresh={() => { loadUsers(userSearch).catch(() => {}); if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {}); }}
         loading={usersLoading}
         verifyingUser={userVerify}
       />

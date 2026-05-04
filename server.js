@@ -183,21 +183,49 @@ function getRuntimeArrayFromDisk(filename) {
   }
 }
 
+function normalizeUserIdText(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim();
+}
+
+function getRuntimeUserId(user) {
+  if (!user || typeof user !== "object") return "";
+  return normalizeUserIdText(
+    user.id ??
+    user.userId ??
+    user.accountId ??
+    user.loginId ??
+    user.loginID ??
+    user.username ??
+    user.userName ??
+    user.ownerId ??
+    user.name ??
+    ""
+  );
+}
+
 function extractRuntimeUserRows(parsed) {
-  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((user) => user && typeof user === "object" ? { ...user, id: getRuntimeUserId(user) || normalizeUserIdText(user.id) } : user)
+      .filter(Boolean);
+  }
   if (!parsed || typeof parsed !== "object") return [];
 
   const nestedKeys = ["users", "accounts", "members", "userList", "data", "rows", "items"];
   for (const key of nestedKeys) {
-    if (Array.isArray(parsed[key])) return parsed[key];
+    if (Array.isArray(parsed[key])) return extractRuntimeUserRows(parsed[key]);
   }
 
   return Object.entries(parsed).map(([key, value]) => {
+    const fallbackId = normalizeUserIdText(key);
     if (value && typeof value === "object") {
-      return { ...value, id: value.id || value.userId || value.accountId || value.loginId || value.username || value.name || key };
+      return { ...value, id: getRuntimeUserId(value) || fallbackId };
     }
-    return { id: key, pw: value };
-  });
+    return { id: fallbackId, pw: value };
+  }).filter((user) => getRuntimeUserId(user));
 }
 
 function readRuntimeArrayFromExactPath(filePath) {
@@ -241,9 +269,25 @@ function collectKnownRuntimeJsonPaths(filename) {
     });
 }
 
+function getRuntimeUserBackupRows() {
+  try {
+    if (!fs.existsSync(RUNTIME_BACKUP_DIR)) return [];
+    return fs.readdirSync(RUNTIME_BACKUP_DIR)
+      .filter((name) => name.startsWith("users.json.") && name.endsWith(".bak.json"))
+      .sort()
+      .slice(-20)
+      .flatMap((name) => readRuntimeArrayFromExactPath(path.join(RUNTIME_BACKUP_DIR, name)));
+  } catch {
+    return [];
+  }
+}
+
 function getAllKnownRuntimeUsersFromDisk() {
-  // 여러 저장 위치가 섞여 있어도 DATA_DIR/현재 메모리 쪽 최신 계정이 우선되도록 뒤쪽 값이 이기게 병합합니다.
-  return mergeRuntimeUsers(...collectKnownRuntimeJsonPaths("users.json").reverse().map(readRuntimeArrayFromExactPath));
+  // 여러 저장 위치/백업이 섞여 있어도 DATA_DIR/현재 메모리 쪽 최신 계정이 우선되도록 뒤쪽 값이 이기게 병합합니다.
+  return mergeRuntimeUsers(
+    getRuntimeUserBackupRows(),
+    ...collectKnownRuntimeJsonPaths("users.json").reverse().map(readRuntimeArrayFromExactPath)
+  );
 }
 
 function refreshUsersFromKnownSources() {
@@ -308,18 +352,18 @@ function mergeRuntimeUsers(...lists) {
     if (!Array.isArray(list)) return;
     list.forEach((user) => {
       if (!user || typeof user !== "object") return;
-      const id = String(user.id || "").trim();
+      const id = getRuntimeUserId(user);
       if (!id) return;
       const key = id.toLowerCase();
       const normalized = {
         ...user,
         id,
-        type: user.type || "owner",
+        type: user.type || user.role || "owner",
       };
 
       if (indexById.has(key)) {
         const index = indexById.get(key);
-        merged[index] = { ...merged[index], ...normalized };
+        merged[index] = { ...merged[index], ...normalized, id: merged[index].id || id };
       } else {
         indexById.set(key, merged.length);
         merged.push(normalized);
@@ -336,24 +380,37 @@ function refreshProtectedRuntimeArraysIfNeeded() {
   if (diskCharacters.length > charactersDB.length) charactersDB = diskCharacters;
 }
 
+function getOnlineRuntimeUserRows() {
+  try {
+    return Object.values(socketUsers || {})
+      .map((user) => ({
+        id: getRuntimeUserId(user),
+        type: user?.type || "owner",
+      }))
+      .filter((user) => user.id);
+  } catch {
+    return [];
+  }
+}
+
 function getSafeUsersForAdmin(searchText = "") {
   refreshUsersFromKnownSources();
   const ownerRows = (Array.isArray(charactersDB) ? charactersDB : [])
-    .map((character) => String(character?.ownerId || "").trim())
+    .map((character) => normalizeUserIdText(character?.ownerId))
     .filter(Boolean)
     .map((id) => ({ id, type: "owner" }));
 
-  const safeRows = mergeRuntimeUsers(usersDB, ownerRows)
-    .filter((user) => String(user.id || "").trim())
+  const safeRows = mergeRuntimeUsers(usersDB, ownerRows, getOnlineRuntimeUserRows())
+    .filter((user) => getRuntimeUserId(user))
     .map((user) => ({
-      id: String(user.id || "").trim(),
+      id: getRuntimeUserId(user),
       type: user.type || "owner",
     }));
 
-  const keyword = String(searchText || "").trim().toLowerCase();
+  const keyword = normalizeUserIdText(searchText).toLowerCase();
   const filteredRows = keyword
     ? safeRows.filter((user) => {
-        const id = String(user.id || "").toLowerCase();
+        const id = normalizeUserIdText(user.id).toLowerCase();
         const type = String(user.type || "").toLowerCase();
         return id.includes(keyword) || type.includes(keyword);
       })
@@ -364,9 +421,9 @@ function getSafeUsersForAdmin(searchText = "") {
 
 function getExactAdminUser(userId = "") {
   refreshProtectedRuntimeArraysIfNeeded();
-  const keyword = String(userId || "").trim().toLowerCase();
+  const keyword = normalizeUserIdText(userId).toLowerCase();
   if (!keyword) return null;
-  return getSafeUsersForAdmin("").find((user) => String(user.id || "").trim().toLowerCase() === keyword) || null;
+  return getSafeUsersForAdmin("").find((user) => normalizeUserIdText(user.id).toLowerCase() === keyword) || null;
 }
 
 let socketUsers = {};
@@ -2197,7 +2254,7 @@ app.post("/designConfig", (req, res) => {
 
 app.post("/register", (req, res) => {
   refreshUsersFromKnownSources();
-  const nextId = String(req.body?.id || "").trim();
+  const nextId = normalizeUserIdText(req.body?.id);
   const nextPw = String(req.body?.pw || "").trim();
   const type = req.body?.type || "owner";
 
@@ -2205,7 +2262,7 @@ app.post("/register", (req, res) => {
     return res.json({ success: false, message: "아이디와 비밀번호를 입력해 주세요." });
   }
   if (nextId === "PLC") return res.json({ success: false, message: "이 아이디는 사용할 수 없습니다." });
-  const exists = usersDB.find((u) => String(u.id || "").toLowerCase() === nextId.toLowerCase() );
+  const exists = usersDB.find((u) => normalizeUserIdText(u.id).toLowerCase() === nextId.toLowerCase());
   if (exists) return res.json({ success: false, message: "이미 존재하는 아이디입니다." });
   usersDB = mergeRuntimeUsers(usersDB, [{ id: nextId, pw: nextPw, type }]);
   const saved = writeRuntimeArray("users.json", usersDB);
@@ -2215,7 +2272,7 @@ app.post("/register", (req, res) => {
 
 app.post("/login", (req, res) => {
   refreshProtectedRuntimeArraysIfNeeded();
-  const nextId = String(req.body?.id || "").trim();
+  const nextId = normalizeUserIdText(req.body?.id);
   const nextPw = String(req.body?.pw || "").trim();
   if (!nextId || !nextPw) {
     return res.json({ success: false, message: "아이디와 비밀번호를 입력해 주세요." });
@@ -2223,7 +2280,7 @@ app.post("/login", (req, res) => {
   if (nextId === "PLC" && nextPw === "1119") {
     return res.json({ success: true, user: { id: "PLC", pw: "1119", type: "owner", isAdmin: true } });
   }
-  const user = usersDB.find((u) => String(u.id || "").toLowerCase() === nextId.toLowerCase() && String(u.pw || "") === nextPw);
+  const user = usersDB.find((u) => normalizeUserIdText(u.id).toLowerCase() === nextId.toLowerCase() && String(u.pw || "") === nextPw);
   if (!user) return res.json({ success: false, message: "아이디 또는 비밀번호가 맞지 않습니다." });
   res.json({ success: true, user: { ...user, isAdmin: false } });
 });
@@ -3150,7 +3207,7 @@ io.on("connection", (socket) => {
 // --- add these routes anywhere after app initialization and before server.listen ---
 
 app.get("/admin/users/check", (req, res) => {
-  const id = String(req.query?.id || req.query?.q || req.query?.search || "").trim();
+  const id = normalizeUserIdText(req.query?.id || req.query?.q || req.query?.search || "");
   const user = getExactAdminUser(id);
   res.json({
     success: true,
