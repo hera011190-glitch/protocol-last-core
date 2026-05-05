@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
-import { warmVisibleImagesFromRows } from "./instantImageBoot";
+import { startInstantImageBoot, warmVisibleImagesFromRows } from "./instantImageBoot";
 
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -676,6 +676,25 @@ export default function SDPage({ activeCharacter, design, theme }) {
       body: JSON.stringify(payload),
     }).catch(() => {});
   };
+
+
+  useEffect(() => {
+    startInstantImageBoot();
+  }, []);
+
+  useEffect(() => {
+    if (!activeCharacter) return;
+    setCharacters((prev) => {
+      const cached = readCachedSdCharacters();
+      const seedRows = mergeCharacterStates(prev && prev.length > 0 ? prev : cached, [activeCharacter], maps, activeCharacter);
+      const next = stabilizeCharacterRows(seedRows, activeCharacter, maps);
+      if (next.length > 0) {
+        writeCachedSdCharacters(next);
+        warmVisibleImagesFromRows(next);
+      }
+      return next.length > 0 ? next : prev;
+    });
+  }, [activeCharacter?.id, activeCharacter?.updatedAt, activeCharacter?.assetVersion, maps]);
 
   useEffect(() => {
     charactersRef.current = stabilizeCharacterRows(characters, activeCharacter, maps);

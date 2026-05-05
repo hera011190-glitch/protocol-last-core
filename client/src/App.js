@@ -25,6 +25,9 @@ import { applyDomOverrides } from "./designDomUtils";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
 import { buildApiUrl, apiJsonCached } from "./api";
 import { collectImageUrls, preloadImages, scheduleImageWarmup, warmImageCache } from "./imagePreload";
+import { startInstantImageBoot } from "./instantImageBoot";
+
+startInstantImageBoot();
 
 const DESIGN_CACHE_KEY = "plc-design-cache";
 const AUDIO_MUTE_KEY = "plc-audio-muted";

@@ -82,7 +82,7 @@ function UserSelectModal({
     if (hasExactTypedUser) return "목록에서 실제 가입된 아이디를 찾았습니다.";
     if (verifiedChecking) return "입력한 아이디가 실제 가입된 계정인지 확인 중입니다.";
     if (verifiedExists) return "입력한 아이디는 실제 가입된 계정입니다.";
-    if (verifiedMissing) return "입력한 아이디와 정확히 일치하는 가입 계정을 찾지 못했습니다.";
+    if (verifiedMissing) return "서버의 전체 회원가입 목록을 다시 확인했지만, 정확히 일치하는 계정을 찾지 못했습니다.";
     if (verifiedError) return "가입 여부 확인에 실패했습니다. 새로고침 후 다시 확인해주세요.";
     return "입력한 아이디가 실제 가입된 계정인지 확인합니다.";
   })();
@@ -514,12 +514,10 @@ export default function AdminPage({
     }
   };
 
-  const loadUsers = async (searchText = "") => {
-    const keyword = normalizeUserIdText(searchText);
+  const loadUsers = async () => {
     try {
       setUsersLoading(true);
-      const query = keyword ? `q=${encodeURIComponent(keyword)}&` : "";
-      const userRes = await fetch(adminApi(`/admin/users?${query}t=${Date.now()}`), { cache: "no-store" });
+      const userRes = await fetch(adminApi(`/admin/users?t=${Date.now()}`), { cache: "no-store" });
       const userData = await userRes.json();
       const userRows = pickAdminUserRows(userData);
       if (Array.isArray(userRows)) {
@@ -629,14 +627,14 @@ export default function AdminPage({
 
   const openUserSelect = () => {
     setUserSelectOpen(true);
-    loadUsers(userSearch).catch(() => {});
+    loadUsers().catch(() => {});
     if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {});
   };
 
   useEffect(() => {
     if (!userSelectOpen) return undefined;
     const timer = setTimeout(() => {
-      loadUsers(userSearch).catch(() => {});
+      loadUsers().catch(() => {});
       if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {});
       else setUserVerify({ id: "", status: "idle", user: null });
     }, 250);
@@ -886,7 +884,7 @@ export default function AdminPage({
         onSelect={selectAdminUser}
         onTypedSelect={selectVerifiedTypedUser}
         onClose={() => setUserSelectOpen(false)}
-        onRefresh={() => { loadUsers(userSearch).catch(() => {}); if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {}); }}
+        onRefresh={() => { loadUsers().catch(() => {}); if (normalizeUserIdText(userSearch)) checkUserExists(userSearch).catch(() => {}); }}
         loading={usersLoading}
         verifyingUser={userVerify}
       />

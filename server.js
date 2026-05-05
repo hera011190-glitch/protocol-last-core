@@ -134,6 +134,7 @@ function readRuntimeArray(filename) {
     if (!fs.existsSync(filePath)) return [];
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
+    if (filename === "users.json") return extractRuntimeUserRows(parsed);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     console.error(`readRuntimeArray failed: ${filename}`, error);
@@ -177,6 +178,7 @@ function getRuntimeArrayFromDisk(filename) {
     const filePath = resolveDataPath(filename);
     if (!fs.existsSync(filePath)) return [];
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    if (filename === "users.json") return extractRuntimeUserRows(parsed);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -450,12 +452,26 @@ function writeRuntimeArray(filename, value) {
       // 회원가입은 공통 API 저장소에 저장하고, 운영 화면/이전 코드가 legacy users.json을 읽어도
       // 최신 계정이 누락되지 않도록 users.json만 보조 위치에도 안전하게 동기화합니다.
       if (filename === "users.json") {
-        const legacyPath = resolveBundledPath(filename);
-        if (path.resolve(legacyPath) !== path.resolve(filePath)) {
-          const legacyUsers = readRuntimeArrayFromExactPath(legacyPath);
-          const mergedUsers = mergeRuntimeUsers(legacyUsers, nextValue);
-          writeJsonAtomicSync(legacyPath, mergedUsers);
-        }
+        const mirrorPaths = [
+          resolveBundledPath(filename),
+          path.join(process.cwd(), filename),
+          path.join(process.cwd(), "data", filename),
+          path.join(process.cwd(), "runtime-data", filename),
+          path.join(DATA_DIR, "registeredUsers.json"),
+        ];
+        const written = new Set([path.resolve(filePath)]);
+        mirrorPaths.forEach((mirrorPath) => {
+          try {
+            const resolvedMirrorPath = path.resolve(mirrorPath);
+            if (written.has(resolvedMirrorPath)) return;
+            written.add(resolvedMirrorPath);
+            const previousUsers = readRuntimeArrayFromExactPath(resolvedMirrorPath);
+            const mergedUsers = mergeRuntimeUsers(previousUsers, nextValue);
+            writeJsonAtomicSync(resolvedMirrorPath, mergedUsers);
+          } catch (error) {
+            console.error(`[data-mirror] users.json 보조 저장 실패: ${mirrorPath}`, error.message);
+          }
+        });
       }
 
       return true;
@@ -482,7 +498,7 @@ function rememberRegisteredRuntimeUser(user) {
   }
 }
 
-let usersDB = readRuntimeArray("users.json");
+let usersDB = mergeRuntimeUsers(readRuntimeArray("users.json"), getAllKnownRuntimeUsersFromDisk());
 let charactersDB = readRuntimeArray("characters.json");
 let roomChats = {};
 
