@@ -6,9 +6,13 @@ function resolveCardImageUrl(src) {
   const value = String(src || "").trim();
   if (!value) return "";
   if (value.startsWith("data:image/")) return value;
-  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  if (value.startsWith("http://") || value.startsWith("https://")) return buildApiUrl(value);
   if (value.startsWith("/")) return buildApiUrl(value);
-  return value;
+  return buildApiUrl(`/${value}`);
+}
+
+function isDataImage(value) {
+  return typeof value === "string" && value.startsWith("data:image/");
 }
 
 export const PROFILE_CARD_ASPECT = "0.33 / 1";
@@ -104,15 +108,15 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
     characterAssetCandidate(character, "image"),
     characterAssetCandidate(character, "profileImage"),
   ]);
-  const imageSrc = rawImageSrc || assetSrcs[0] || "";
+  const imageSrc = isDataImage(rawImageSrc) && assetSrcs[0] ? assetSrcs[0] : (rawImageSrc || assetSrcs[0] || "");
   const fallbackSrcs = uniqueList([
+    ...assetSrcs,
     rawImageSrc,
     character?.cardImage,
     character?.mainImage,
     character?.profileImage,
     character?.image,
     ...(Array.isArray(character?.imageCandidates) ? character.imageCandidates : []),
-    ...assetSrcs,
   ]).filter((item) => item && item !== imageSrc);
   const cardFrame = frame ?? character?.mainImageFrame ?? character?.cardImageFrame;
 

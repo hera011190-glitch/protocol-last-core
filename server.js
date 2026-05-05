@@ -61,7 +61,7 @@ function ensureRuntimeFile(filename, fallbackValue) {
   return runtimePath;
 }
 
-["users.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
+["users.json", "registeredUsers.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
 
 const allowedOrigins = [
@@ -220,8 +220,16 @@ function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "") {
 
   if (!parsed || typeof parsed !== "object") {
     const fallbackId = normalizeUserIdText(fallbackKey);
-    if (!fallbackId || fallbackId === "users" || fallbackId === "accounts" || fallbackId === "members") return [];
-    return [{ id: fallbackId, pw: parsed }];
+    const valueId = normalizeUserIdText(parsed);
+    const fallbackIsIndex = /^\d+$/.test(fallbackId);
+    const blockedFallbacks = new Set(["users", "accounts", "members", "userList", "data", "rows", "items"]);
+
+    // users.json이 ["id1", "id2"]처럼 문자열 배열로 저장된 경우도 운영 목록에서 놓치지 않습니다.
+    if (fallbackIsIndex && valueId) return [{ id: valueId, type: "owner" }];
+
+    // users.json이 { "id1": "password" }처럼 객체 key를 아이디로 쓰는 경우를 보존합니다.
+    if (!fallbackId || blockedFallbacks.has(fallbackId)) return [];
+    return [{ id: fallbackId, pw: parsed, type: "owner" }];
   }
 
   const rows = [];
@@ -271,6 +279,48 @@ function readRuntimeArrayFromExactPath(filePath) {
   }
 }
 
+
+function collectJsonPathsDeep(root, { depth = 3, maxFiles = 140 } = {}) {
+  const found = [];
+  const seen = new Set();
+  const blockedDirs = new Set(["node_modules", ".git", "build", "dist", "coverage", ".cache", ".next"]);
+  const wantedName = /(user|users|account|accounts|member|members|owner|owners|login|auth|registered|database|db|data)/i;
+
+  function walk(dir, level) {
+    if (!dir || found.length >= maxFiles || level > depth) return;
+    let realDir = "";
+    try {
+      if (!fs.existsSync(dir)) return;
+      realDir = fs.realpathSync(dir);
+      if (seen.has(realDir)) return;
+      seen.add(realDir);
+      const entries = fs.readdirSync(realDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (found.length >= maxFiles) break;
+        if (entry.name.startsWith(".")) continue;
+        const fullPath = path.join(realDir, entry.name);
+        if (entry.isDirectory()) {
+          if (blockedDirs.has(entry.name)) continue;
+          walk(fullPath, level + 1);
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        const lower = entry.name.toLowerCase();
+        if (!lower.endsWith(".json")) continue;
+        if (!wantedName.test(entry.name)) continue;
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.size > 10 * 1024 * 1024) continue;
+        } catch {}
+        found.push(fullPath);
+      }
+    } catch {}
+  }
+
+  walk(root, 0);
+  return found;
+}
+
 function collectKnownRuntimeJsonPaths(filename) {
   const roots = [
     DATA_DIR,
@@ -307,10 +357,23 @@ function collectKnownRuntimeJsonPaths(filename) {
           if (!entry.isFile()) return;
           const lower = entry.name.toLowerCase();
           if (!lower.endsWith(".json")) return;
-          if (!/(user|account|member|owner|login|auth)/.test(lower)) return;
+          if (!/(user|account|member|owner|login|auth|registered)/.test(lower)) return;
           candidates.push(path.join(root, entry.name));
         });
       } catch {}
+    });
+
+    // Render/로컬 환경에서 실제 가입 데이터가 data, storage 등 다른 하위 폴더에 남아 있는 경우까지 탐색합니다.
+    [
+      DATA_DIR,
+      LEGACY_DATA_DIR,
+      process.cwd(),
+      path.dirname(DATA_DIR),
+      path.dirname(LEGACY_DATA_DIR),
+      "/var/data",
+      "/data",
+    ].filter(Boolean).forEach((root) => {
+      collectJsonPathsDeep(root, { depth: 3, maxFiles: 160 }).forEach((targetPath) => candidates.push(targetPath));
     });
   }
 
@@ -346,9 +409,12 @@ function getAllKnownRuntimeUsersFromDisk() {
   if (pendingPayload) {
     try { pendingRows = extractRuntimeUserRows(JSON.parse(pendingPayload)); } catch {}
   }
+  const paths = collectKnownRuntimeJsonPaths("users.json");
   return mergeRuntimeUsers(
+    readRuntimeArrayFromExactPath(resolveDataPath("users.json")),
+    readRuntimeArrayFromExactPath(resolveDataPath("registeredUsers.json")),
     getRuntimeUserBackupRows(),
-    ...collectKnownRuntimeJsonPaths("users.json").reverse().map(readRuntimeArrayFromExactPath),
+    ...paths.reverse().map(readRuntimeArrayFromExactPath),
     pendingRows
   );
 }
@@ -476,7 +542,8 @@ function getSafeUsersForAdmin(searchText = "") {
     .filter(Boolean)
     .map((id) => ({ id, type: "owner" }));
 
-  const safeRows = mergeRuntimeUsers(usersDB, ownerRows, getOnlineRuntimeUserRows())
+  const knownDiskRows = getAllKnownRuntimeUsersFromDisk();
+  const safeRows = mergeRuntimeUsers(knownDiskRows, usersDB, ownerRows, getOnlineRuntimeUserRows())
     .filter((user) => getRuntimeUserId(user))
     .map((user) => ({
       id: getRuntimeUserId(user),

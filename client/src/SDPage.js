@@ -254,6 +254,7 @@ function SDInfoModal({ character, onClose, theme }) {
 }
 
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
+const CHARACTER_CACHE_KEY = "plc-cache-characters";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 const SD_ACTIVE_MAP_KEY = "plc-sd-active-map";
 const SD_MAP_CONFIG_CACHE_KEY = "plc-sd-map-config";
@@ -282,7 +283,10 @@ function clearCachedMapConfig() {
 
 function readCachedSdCharacters() {
   try {
-    const raw = sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) || localStorage.getItem(SD_CHARACTER_CACHE_KEY);
+    const raw =
+      sessionStorage.getItem(WARM_CHARACTER_CACHE_KEY) ||
+      localStorage.getItem(SD_CHARACTER_CACHE_KEY) ||
+      localStorage.getItem(CHARACTER_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -294,6 +298,9 @@ function writeCachedSdCharacters(rows) {
   const safeRows = Array.isArray(rows) ? rows : [];
   try {
     localStorage.setItem(SD_CHARACTER_CACHE_KEY, JSON.stringify(safeRows));
+  } catch {}
+  try {
+    localStorage.setItem(CHARACTER_CACHE_KEY, JSON.stringify(safeRows));
   } catch {}
   try {
     sessionStorage.setItem(WARM_CHARACTER_CACHE_KEY, JSON.stringify(safeRows));
@@ -560,7 +567,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
             src={spriteImage}
             alt=""
             loading="eager"
-            decoding="async"
+            decoding="sync"
+            fetchPriority="high"
             onError={handleSpriteError}
             style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
           />
@@ -678,15 +686,16 @@ export default function SDPage({ activeCharacter, design, theme }) {
   }, [activeMapId]);
 
   useEffect(() => {
-    try {
-      localStorage.removeItem(SD_POSITIONS_KEY);
-      localStorage.removeItem(SD_CHARACTERS_KEY);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
     quotesRef.current = quotes;
   }, [quotes]);
+
+  useEffect(() => {
+    const cached = stabilizeCharacterRows(readCachedSdCharacters(), activeCharacter, maps);
+    if (cached.length > 0) {
+      warmVisibleImagesFromRows(cached);
+      setCharacters((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : cached));
+    }
+  }, []);
 
   useEffect(() => {
     if (design?.siteContent?.maps && Object.keys(design.siteContent.maps || {}).length > 0) {
