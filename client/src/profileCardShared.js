@@ -104,15 +104,15 @@ export function ProfileCard({ character = {}, onClick, theme, width = "100%", on
     characterAssetCandidate(character, "image"),
     characterAssetCandidate(character, "profileImage"),
   ]);
-  const imageSrc = character?.id ? (assetSrcs[0] || rawImageSrc) : rawImageSrc;
+  const imageSrc = rawImageSrc || assetSrcs[0] || "";
   const fallbackSrcs = uniqueList([
-    ...assetSrcs,
-    ...(Array.isArray(character?.imageCandidates) ? character.imageCandidates : []),
     rawImageSrc,
     character?.cardImage,
     character?.mainImage,
     character?.profileImage,
     character?.image,
+    ...(Array.isArray(character?.imageCandidates) ? character.imageCandidates : []),
+    ...assetSrcs,
   ]).filter((item) => item && item !== imageSrc);
   const cardFrame = frame ?? character?.mainImageFrame ?? character?.cardImageFrame;
 

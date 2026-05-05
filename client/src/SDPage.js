@@ -396,12 +396,14 @@ function resolveAssetUrl(value) {
 function isAdminCharacter(character) {
   if (!character) return false;
   if (character.isAdmin || character.admin || character.isOperator || character.operator) return true;
-  const roleFields = [character.role, character.userRole, character.accountRole, character.ownerRole, character.permission, character.type]
+  const roleFields = [character.role, character.userRole, character.accountRole, character.ownerRole, character.permission]
     .map((value) => normalizeKeyPart(value));
-  if (roleFields.some((value) => ["admin", "operator", "owner", "manager", "운영", "운영자", "관리자"].includes(value))) return true;
+  if (roleFields.some((value) => ["admin", "operator", "manager", "운영", "운영자", "관리자"].includes(value))) return true;
+  const typeValue = normalizeKeyPart(character.type);
+  if (["admin", "operator", "manager", "운영", "운영자", "관리자"].includes(typeValue)) return true;
   const idFields = [character.id, character.ownerId, character.userId, character.accountId, character.loginId, character.username]
     .map((value) => normalizeKeyPart(value));
-  return idFields.some((value) => value === "admin" || value === "operator" || value === "master" || value === "owner" || value === "운영자" || value === "관리자");
+  return idFields.some((value) => value === "plc" || value === "admin" || value === "operator" || value === "master" || value === "운영자" || value === "관리자");
 }
 
 function filterVisibleSdCharacters(rows) {
