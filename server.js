@@ -61,7 +61,7 @@ function ensureRuntimeFile(filename, fallbackValue) {
   return runtimePath;
 }
 
-["users.json", "registeredUsers.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
+["users.json", "registeredUsers.json", "adminUserIndex.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
 
 const allowedOrigins = [
@@ -333,7 +333,7 @@ function collectKnownRuntimeJsonPaths(filename) {
   ].filter(Boolean);
 
   const relatedUserFiles = filename === "users.json"
-    ? ["users.json", "accounts.json", "members.json", "owners.json", "userList.json", "usersDB.json", "registeredUsers.json"]
+    ? ["users.json", "accounts.json", "members.json", "owners.json", "userList.json", "usersDB.json", "registeredUsers.json", "adminUserIndex.json"]
     : [filename];
 
   const candidates = [];
@@ -415,6 +415,7 @@ function getAllKnownRuntimeUsersFromDisk() {
   return mergeRuntimeUsers(
     readRuntimeArrayFromExactPath(resolveDataPath("users.json")),
     readRuntimeArrayFromExactPath(resolveDataPath("registeredUsers.json")),
+    readRuntimeArrayFromExactPath(resolveDataPath("adminUserIndex.json")),
     getRuntimeUserBackupRows(),
     ...paths.reverse().map(readRuntimeArrayFromExactPath),
     pendingRows
@@ -458,6 +459,7 @@ function writeRuntimeArray(filename, value) {
           path.join(process.cwd(), "data", filename),
           path.join(process.cwd(), "runtime-data", filename),
           path.join(DATA_DIR, "registeredUsers.json"),
+          path.join(DATA_DIR, "adminUserIndex.json"),
         ];
         const written = new Set([path.resolve(filePath)]);
         mirrorPaths.forEach((mirrorPath) => {
@@ -489,13 +491,24 @@ function rememberRegisteredRuntimeUser(user) {
   try {
     const id = getRuntimeUserId(user);
     if (!id || id === "PLC") return;
-    const indexPath = resolveDataPath("registeredUsers.json");
-    const current = readRuntimeArrayFromExactPath(indexPath);
-    const next = mergeRuntimeUsers(current, [{ id, type: user?.type || user?.role || "owner", lastSeenAt: new Date().toISOString() }]);
-    writeJsonAtomicSync(indexPath, next);
+    const row = { id, type: user?.type || user?.role || "owner", lastSeenAt: new Date().toISOString() };
+    ["registeredUsers.json", "adminUserIndex.json"].forEach((filename) => {
+      const indexPath = resolveDataPath(filename);
+      const current = readRuntimeArrayFromExactPath(indexPath);
+      const next = mergeRuntimeUsers(current, [row]);
+      writeJsonAtomicSync(indexPath, next);
+    });
   } catch (error) {
     console.error("rememberRegisteredRuntimeUser failed", error);
   }
+}
+
+function refreshCharactersFromDiskIfNeeded() {
+  const diskCharacters = getRuntimeArrayFromDisk("characters.json");
+  if (diskCharacters.length > 0 && diskCharacters.length >= charactersDB.length) {
+    charactersDB = diskCharacters;
+  }
+  return charactersDB;
 }
 
 let usersDB = mergeRuntimeUsers(readRuntimeArray("users.json"), getAllKnownRuntimeUsersFromDisk());
@@ -2343,7 +2356,7 @@ app.get("/designConfigPublic", (req, res) => res.json(getPublicDesignShellConfig
 app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig()));
 
 app.get("/image-manifest", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
+  refreshCharactersFromDiskIfNeeded();
   const characters = charactersDB
     .filter((character) => character && character.approved !== false)
     .map(buildPublicCharacterSummary)
@@ -4073,7 +4086,8 @@ app.get("/characters-lite/:ownerId", (req, res) => {
 });
 
 app.get("/characters-lite", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
+  refreshCharactersFromDiskIfNeeded();
+  res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
   res.json(charactersDB.map(summarizeCharacter));
 });
 
@@ -4082,7 +4096,8 @@ app.get("/characters-public/:ownerId", (req, res) => {
 });
 
 app.get("/characters-public", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
+  refreshCharactersFromDiskIfNeeded();
+  res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
   res.json(charactersDB.map(buildPublicCharacterSummary));
 });
 
