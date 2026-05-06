@@ -449,7 +449,7 @@ function getRuntimeSearchRoots() {
   return roots;
 }
 
-function collectKnownRuntimeJsonPaths(filename) {
+function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
   const roots = getRuntimeSearchRoots();
 
   const relatedUserFiles = filename === "users.json"
@@ -472,6 +472,9 @@ function collectKnownRuntimeJsonPaths(filename) {
   });
 
   if (filename === "users.json") {
+    // 서버 시작 시에는 알려진 위치만 빠르게 확인합니다.
+    // Render에서 시작 시점에 프로젝트 전체를 깊게 훑으면 프로세스가 바로 죽을 수 있어서,
+    // 깊은 탐색은 /admin/users/rebuild처럼 운영자가 명시적으로 요청할 때만 실행합니다.
     roots.forEach((root) => {
       try {
         if (!root || !fs.existsSync(root)) return;
@@ -485,18 +488,19 @@ function collectKnownRuntimeJsonPaths(filename) {
       } catch {}
     });
 
-    // Render/로컬 환경에서 실제 가입 데이터가 data, storage 등 다른 하위 폴더에 남아 있는 경우까지 탐색합니다.
-    [
-      DATA_DIR,
-      LEGACY_DATA_DIR,
-      process.cwd(),
-      path.dirname(DATA_DIR),
-      path.dirname(LEGACY_DATA_DIR),
-      "/var/data",
-      "/data",
-    ].filter(Boolean).forEach((root) => {
-      collectJsonPathsDeep(root, { depth: 5, maxFiles: 360, userFilesOnly: true }).forEach((targetPath) => candidates.push(targetPath));
-    });
+    if (deep) {
+      [
+        DATA_DIR,
+        LEGACY_DATA_DIR,
+        process.cwd(),
+        path.dirname(DATA_DIR),
+        path.dirname(LEGACY_DATA_DIR),
+        "/var/data",
+        "/data",
+      ].filter(Boolean).forEach((root) => {
+        collectJsonPathsDeep(root, { depth: 4, maxFiles: 180, userFilesOnly: true }).forEach((targetPath) => candidates.push(targetPath));
+      });
+    }
   }
 
   const seen = new Set();
@@ -563,7 +567,7 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
     try { pendingRows = extractRuntimeUserRows(JSON.parse(pendingPayload)); } catch {}
   }
 
-  const paths = collectKnownRuntimeJsonPaths("users.json");
+  const paths = collectKnownRuntimeJsonPaths("users.json", { deep });
   const deepPaths = deep
     ? getRuntimeSearchRoots().flatMap((root) => collectJsonPathsDeep(root, { depth: 5, maxFiles: 420, userFilesOnly: true }))
     : [];
@@ -682,7 +686,7 @@ function refreshCharactersFromDiskIfNeeded({ force = false } = {}) {
   return charactersDB;
 }
 
-let usersDB = mergeRuntimeUsers(readRuntimeArray("users.json"), getAllKnownRuntimeUsersFromDisk());
+let usersDB = mergeRuntimeUsers(readRuntimeArray("users.json"), getAllKnownRuntimeUsersFromDisk({ deep: false }));
 let charactersDB = readRuntimeArray("characters.json");
 let charactersDiskSignature = getRuntimeFileSignature("characters.json");
 let roomChats = {};
