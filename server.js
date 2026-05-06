@@ -173,6 +173,25 @@ function makeRuntimeBackup(filename, currentValue) {
   }
 }
 
+const LAST_RUNTIME_BACKUP_AT = new Map();
+
+function shouldMakeRuntimeBackupNow(filename) {
+  const now = Date.now();
+  const key = String(filename || "runtime");
+  const minInterval = key === "characters.json" ? 10 * 60 * 1000 : 60 * 1000;
+  const lastAt = Number(LAST_RUNTIME_BACKUP_AT.get(key) || 0);
+  if (now - lastAt < minInterval) return false;
+  LAST_RUNTIME_BACKUP_AT.set(key, now);
+  return true;
+}
+
+function getRowsForBackup(filename, fallbackRows) {
+  if (filename === "characters.json") {
+    return Array.isArray(fallbackRows) && fallbackRows.length > 0 ? fallbackRows : (Array.isArray(charactersDB) ? charactersDB : []);
+  }
+  return getRuntimeArrayFromDisk(filename);
+}
+
 function getRuntimeArrayFromDisk(filename) {
   try {
     const filePath = resolveDataPath(filename);
@@ -271,13 +290,58 @@ function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "") {
   return mergeRuntimeUsers(rows);
 }
 
+function extractRuntimeUserRowsFromLooseText(rawText) {
+  const raw = String(rawText || "");
+  if (!raw.trim()) return [];
+  const rows = [];
+  const blocked = new Set(["id", "userId", "accountId", "loginId", "username", "name", "ownerId", "pw", "password", "type", "role", "users", "accounts", "members", "data", "rows", "items"]);
+
+  const fieldPatterns = [
+    /["'](?:id|userId|accountId|loginId|username|userName|uid|memberId|ownerId)["']\s*:\s*["']([^"'\n\r]{1,80})["']/gi,
+    /(?:^|[,{\s])(?:id|userId|accountId|loginId|username|userName|uid|memberId|ownerId)\s*[:=]\s*["']([^"'\n\r]{1,80})["']/gi,
+  ];
+
+  fieldPatterns.forEach((pattern) => {
+    let match;
+    while ((match = pattern.exec(raw))) {
+      const id = normalizeUserIdText(match[1]);
+      if (id && !blocked.has(id) && id !== "PLC") rows.push({ id, type: "owner" });
+    }
+  });
+
+  const objectKeyPattern = /["']([^"'\n\r]{1,80})["']\s*:\s*\{[^{}]{0,800}?["'](?:pw|password)["']\s*:/gi;
+  let keyMatch;
+  while ((keyMatch = objectKeyPattern.exec(raw))) {
+    const id = normalizeUserIdText(keyMatch[1]);
+    if (id && !blocked.has(id) && id !== "PLC") rows.push({ id, type: "owner" });
+  }
+
+  return mergeRuntimeUsers(rows);
+}
+
 function readRuntimeArrayFromExactPath(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return [];
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-    return extractRuntimeUserRows(parsed);
+    const raw = fs.readFileSync(filePath, "utf-8");
+    try {
+      const parsed = JSON.parse(raw);
+      return mergeRuntimeUsers(extractRuntimeUserRows(parsed), extractRuntimeUserRowsFromLooseText(raw));
+    } catch {
+      return extractRuntimeUserRowsFromLooseText(raw);
+    }
   } catch {
     return [];
+  }
+}
+
+function getRuntimeFileSignature(filename) {
+  try {
+    const filePath = resolveDataPath(filename);
+    if (!filePath || !fs.existsSync(filePath)) return "";
+    const stat = fs.statSync(filePath);
+    return `${stat.size}:${Math.round(stat.mtimeMs)}`;
+  } catch {
+    return "";
   }
 }
 
@@ -445,10 +509,16 @@ function writeRuntimeArray(filename, value) {
     }
 
     if (PROTECTED_RUNTIME_ARRAYS.has(filename)) {
-      const diskRows = getRuntimeArrayFromDisk(filename);
-      if (diskRows.length > 0) makeRuntimeBackup(filename, diskRows);
+      if (shouldMakeRuntimeBackupNow(filename)) {
+        const backupRows = getRowsForBackup(filename, nextValue);
+        if (backupRows.length > 0) makeRuntimeBackup(filename, backupRows);
+      }
       // 캐릭터/계정 데이터는 홈페이지 수정 중 서버가 꺼져도 유실되지 않도록 즉시 원자 저장합니다.
       writeJsonAtomicSync(filePath, nextValue);
+      if (filename === "characters.json") {
+        charactersDiskSignature = getRuntimeFileSignature("characters.json");
+        publicCharacterSummaryCache = null;
+      }
 
       // 회원가입은 공통 API 저장소에 저장하고, 운영 화면/이전 코드가 legacy users.json을 읽어도
       // 최신 계정이 누락되지 않도록 users.json만 보조 위치에도 안전하게 동기화합니다.
@@ -503,16 +573,23 @@ function rememberRegisteredRuntimeUser(user) {
   }
 }
 
-function refreshCharactersFromDiskIfNeeded() {
+function refreshCharactersFromDiskIfNeeded({ force = false } = {}) {
+  const nextSignature = getRuntimeFileSignature("characters.json");
+  if (!force && nextSignature && charactersDiskSignature && nextSignature === charactersDiskSignature) {
+    return charactersDB;
+  }
+
   const diskCharacters = getRuntimeArrayFromDisk("characters.json");
-  if (diskCharacters.length > 0 && diskCharacters.length >= charactersDB.length) {
+  if (diskCharacters.length > 0 && (force || !Array.isArray(charactersDB) || charactersDB.length === 0 || diskCharacters.length >= charactersDB.length || nextSignature !== charactersDiskSignature)) {
     charactersDB = diskCharacters;
   }
+  charactersDiskSignature = nextSignature || charactersDiskSignature;
   return charactersDB;
 }
 
 let usersDB = mergeRuntimeUsers(readRuntimeArray("users.json"), getAllKnownRuntimeUsersFromDisk());
 let charactersDB = readRuntimeArray("characters.json");
+let charactersDiskSignature = getRuntimeFileSignature("characters.json");
 let roomChats = {};
 
 function mergeRuntimeUsers(...lists) {
@@ -547,8 +624,7 @@ function mergeRuntimeUsers(...lists) {
 
 function refreshProtectedRuntimeArraysIfNeeded() {
   refreshUsersFromKnownSources();
-  const diskCharacters = getRuntimeArrayFromDisk("characters.json");
-  if (diskCharacters.length > charactersDB.length) charactersDB = diskCharacters;
+  refreshCharactersFromDiskIfNeeded();
 }
 
 function getOnlineRuntimeUserRows() {
@@ -2356,10 +2432,8 @@ app.get("/designConfigPublic", (req, res) => res.json(getPublicDesignShellConfig
 app.get("/designMapsPublic", (req, res) => res.json(getPublicDesignMapsConfig()));
 
 app.get("/image-manifest", (req, res) => {
-  refreshCharactersFromDiskIfNeeded();
-  const characters = charactersDB
+  const characters = getPublicCharacterSummaries()
     .filter((character) => character && character.approved !== false)
-    .map(buildPublicCharacterSummary)
     .map((character) => ({
       id: character.id,
       name: character.name,
@@ -2436,10 +2510,11 @@ app.post("/register", (req, res) => {
   if (nextId === "PLC") return res.json({ success: false, message: "이 아이디는 사용할 수 없습니다." });
   const exists = usersDB.find((u) => normalizeUserIdText(u.id).toLowerCase() === nextId.toLowerCase());
   if (exists) return res.json({ success: false, message: "이미 존재하는 아이디입니다." });
-  usersDB = mergeRuntimeUsers(usersDB, [{ id: nextId, pw: nextPw, type }]);
+  const nextUser = { id: nextId, pw: nextPw, type, createdAt: new Date().toISOString() };
+  usersDB = mergeRuntimeUsers(usersDB, [nextUser]);
   const saved = writeRuntimeArray("users.json", usersDB);
   if (!saved) return res.json({ success: false, message: "계정 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
-  rememberRegisteredRuntimeUser({ id: nextId, type });
+  rememberRegisteredRuntimeUser(nextUser);
   res.json({ success: true });
 });
 
@@ -2634,6 +2709,11 @@ app.post("/updateCharacter", (req, res) => {
     mainImageFrame,
   } = req.body || {};
 
+  const positionSyncKeys = new Set(["charId", "characterId", "id", "ownerId", "userId", "accountId", "characterName", "currentMap", "x", "y", "dx", "dy", "waitMs", "moveCooldownMs"]);
+  const incomingKeys = Object.keys(req.body || {}).filter((key) => req.body[key] !== undefined);
+  const hasPositionPayload = ["currentMap", "x", "y", "dx", "dy", "waitMs", "moveCooldownMs"].some((key) => req.body?.[key] !== undefined);
+  const isPositionOnlyUpdate = hasPositionPayload && incomingKeys.length > 0 && incomingKeys.every((key) => positionSyncKeys.has(key));
+
   const char = findCharacterByLooseIdentifiers({ charId, characterId, id, ownerId, userId, accountId, name, characterName });
 
   if (!char) {
@@ -2703,6 +2783,12 @@ app.post("/updateCharacter", (req, res) => {
   if (!char.mainImageFrame || typeof char.mainImageFrame !== "object") {
     char.mainImageFrame = { x: 50, y: 26, scale: 1.06 };
   }
+  if (isPositionOnlyUpdate) {
+    markCharactersDirty();
+    publicCharacterSummaryCache = null;
+    return res.json({ success: true, character: buildPublicCharacterSummary(char) });
+  }
+
   char.updatedAt = Date.now();
   char.assetVersion = char.updatedAt;
 
@@ -3781,6 +3867,42 @@ function buildPublicCharacterSummary(character) {
   };
 }
 
+let publicCharacterSummaryCache = null;
+
+function getPublicCharacterSummarySignature(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((character) => [
+    character?.id,
+    character?.ownerId,
+    character?.name,
+    character?.approved,
+    character?.currentMap,
+    Number(character?.x ?? ""),
+    Number(character?.y ?? ""),
+    Number(character?.dx ?? ""),
+    Number(character?.dy ?? ""),
+    Number(character?.waitMs ?? ""),
+    Number(character?.moveCooldownMs ?? ""),
+    Number(character?.corrosion || 0),
+    Number(character?.updatedAt || character?.assetVersion || 0),
+    String(character?.profileImage || character?.image || "").length,
+    String(character?.mainImage || character?.cardImage || "").length,
+    String(character?.spriteImage || character?.investigationImage || "").length,
+  ].join(":"))
+    .join("|");
+}
+
+function getPublicCharacterSummaries({ refresh = true } = {}) {
+  if (refresh) refreshCharactersFromDiskIfNeeded();
+  const source = Array.isArray(charactersDB) ? charactersDB : [];
+  const signature = getPublicCharacterSummarySignature(source);
+  if (publicCharacterSummaryCache && publicCharacterSummaryCache.signature === signature) {
+    return publicCharacterSummaryCache.rows;
+  }
+  const rows = source.map(buildPublicCharacterSummary);
+  publicCharacterSummaryCache = { signature, rows };
+  return rows;
+}
+
 function buildPublicCharacter(character) {
   if (!character) return character;
   const detailed = attachRelationsToCharacter(character);
@@ -4003,7 +4125,7 @@ setInterval(() => {
     writeRuntimeArray("characters.json", charactersDB);
     global.__plcCharactersDirty = false;
   } catch {}
-}, 2000);
+}, 8000);
 
 function buildPublicInvestigationState(item) {
   if (!item) return null;
@@ -4092,13 +4214,14 @@ app.get("/characters-lite", (req, res) => {
 });
 
 app.get("/characters-public/:ownerId", (req, res) => {
-  res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(buildPublicCharacterSummary));
+  const rows = getPublicCharacterSummaries().filter((c) => String(c.ownerId) === String(req.params.ownerId));
+  res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
+  res.json(rows);
 });
 
 app.get("/characters-public", (req, res) => {
-  refreshCharactersFromDiskIfNeeded();
   res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
-  res.json(charactersDB.map(buildPublicCharacterSummary));
+  res.json(getPublicCharacterSummaries());
 });
 
 app.get("/health", (req, res) => {

@@ -640,6 +640,8 @@ export default function SDPage({ activeCharacter, design, theme }) {
   const lastFrameRef = useRef(0);
   const saveTickRef = useRef(0);
   const lastServerSyncRef = useRef("");
+  const lastServerSyncAtRef = useRef(0);
+  const lastServerSyncPayloadRef = useRef(null);
   const charactersRef = useRef(characters);
   const activeMapRef = useRef(activeMapId);
   const quotesRef = useRef(quotes);
@@ -669,7 +671,13 @@ export default function SDPage({ activeCharacter, design, theme }) {
     };
     const syncKey = JSON.stringify(payload);
     if (lastServerSyncRef.current === syncKey) return;
+    const now = Date.now();
+    const previousPayload = lastServerSyncPayloadRef.current;
+    const sameMap = previousPayload && String(previousPayload.currentMap || "") === String(payload.currentMap || "");
+    if (sameMap && now - lastServerSyncAtRef.current < 4500) return;
     lastServerSyncRef.current = syncKey;
+    lastServerSyncAtRef.current = now;
+    lastServerSyncPayloadRef.current = payload;
     fetch(buildApiUrl("/updateCharacter"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },

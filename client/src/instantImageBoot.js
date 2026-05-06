@@ -2,8 +2,8 @@ import { buildApiUrl } from "./api";
 
 const IMAGE_MEMORY_KEY = "plc-instant-image-manifest-v2";
 const PRELOADED = new Set();
-const MAX_EAGER_IMAGES = 90;
-const MAX_PARALLEL = 8;
+const MAX_EAGER_IMAGES = 140;
+const MAX_PARALLEL = 12;
 
 function normalizeUrl(value) {
   const raw = String(value || "").trim();
@@ -126,7 +126,7 @@ export function startInstantImageBoot() {
 
   // 지난 접속에서 이미 알게 된 이미지부터 즉시 요청합니다.
   const saved = readSavedManifestImages();
-  if (saved.length > 0) preloadQueue(saved, { highCount: 36 });
+  if (saved.length > 0) preloadQueue(saved, { highCount: 64 });
 
   const run = async () => {
     try {
@@ -143,7 +143,7 @@ export function startInstantImageBoot() {
       const urls = uniqueImages(fromManifest);
       if (urls.length > 0) {
         saveManifestImages(urls);
-        await preloadQueue(urls, { highCount: 42 });
+        await preloadQueue(urls, { highCount: 64 });
       }
     } catch {
       try {
@@ -164,17 +164,17 @@ export function startInstantImageBoot() {
         ]);
         if (urls.length > 0) {
           saveManifestImages(urls);
-          await preloadQueue(urls, { highCount: 42 });
+          await preloadQueue(urls, { highCount: 64 });
         }
       } catch {}
     }
   };
 
   // React가 그리기 전에 너무 막지 않게, 하지만 거의 즉시 시작합니다.
-  window.setTimeout(run, 30);
+  window.setTimeout(run, 0);
 }
 
 export function warmVisibleImagesFromRows(rows = []) {
   const urls = uniqueImages(collectImages(rows)).slice(0, MAX_EAGER_IMAGES);
-  preloadQueue(urls, { highCount: 36 });
+  preloadQueue(urls, { highCount: 64 });
 }
