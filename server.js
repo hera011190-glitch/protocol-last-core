@@ -6,6 +6,7 @@ const compression = require("compression");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { spawnSync } = require("child_process");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
@@ -64,7 +65,7 @@ function compactDataImagesInJsonFile(filePath, namespace) {
     fs.mkdirSync(targetDir, { recursive: true });
 
     let changed = false;
-    const replaced = raw.replace(/"data:image\\?\/([^;\"]+);base64,([^\"]+)"/g, (full, mime, base64Text) => {
+    const replaced = raw.replace(/data:image\\?\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/g, (full, mime, base64Text) => {
       try {
         const ext = getImageExtensionFromMime(mime);
         const hash = crypto
@@ -82,7 +83,7 @@ function compactDataImagesInJsonFile(filePath, namespace) {
           fs.writeFileSync(assetPath, Buffer.from(String(base64Text || ""), "base64"));
         }
         changed = true;
-        return JSON.stringify(`/asset-file/${targetNamespace}/${assetName}`);
+        return `/asset-file/${targetNamespace}/${assetName}`;
       } catch (error) {
         console.error(`[asset-compact] 이미지 분리 실패: ${filePath}`, error.message);
         return full;
@@ -118,6 +119,53 @@ function compactRuntimeJsonImagesIfNeeded(filename) {
   } catch (error) {
     console.error(`[asset-compact] ${filename} 확인 실패`, error.message);
     return false;
+  }
+}
+
+function listTopLevelJsonFilesForImageCompact(dirPath) {
+  try {
+    if (!dirPath || !fs.existsSync(dirPath)) return [];
+    return fs.readdirSync(dirPath, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
+      .filter((entry) => !["package.json", "package-lock.json"].includes(entry.name.toLowerCase()))
+      .map((entry) => path.join(dirPath, entry.name));
+  } catch (error) {
+    console.error("[asset-compact] JSON 파일 목록 확인 실패", dirPath, error.message);
+    return [];
+  }
+}
+
+function compactAllTopLevelJsonImages() {
+  const seen = new Set();
+  let changedCount = 0;
+  for (const dirPath of [DATA_DIR, LEGACY_DATA_DIR]) {
+    for (const filePath of listTopLevelJsonFilesForImageCompact(dirPath)) {
+      const resolved = path.resolve(filePath);
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      const namespacePrefix = path.resolve(dirPath) === path.resolve(DATA_DIR) ? "" : "legacy_";
+      const namespace = `${namespacePrefix}${path.basename(filePath, ".json")}`;
+      if (compactDataImagesInJsonFile(filePath, namespace)) changedCount += 1;
+    }
+  }
+  return changedCount;
+}
+
+function runAssetCompactChildProcess() {
+  if (process.env.PLC_ASSET_COMPACT_CHILD === "1") return;
+  try {
+    const result = spawnSync(process.execPath, [__filename], {
+      env: { ...process.env, PLC_ASSET_COMPACT_CHILD: "1" },
+      stdio: "inherit",
+      timeout: Number(process.env.PLC_ASSET_COMPACT_TIMEOUT_MS || 120000),
+    });
+    if (result.error) {
+      console.error("[asset-compact] 별도 프로세스 실행 실패", result.error.message);
+    } else if (typeof result.status === "number" && result.status !== 0) {
+      console.error(`[asset-compact] 별도 프로세스가 비정상 종료되었습니다: ${result.status}`);
+    }
+  } catch (error) {
+    console.error("[asset-compact] 별도 프로세스 준비 실패", error.message);
   }
 }
 
@@ -168,7 +216,14 @@ function ensureRuntimeFile(filename, fallbackValue) {
 
 ["users.json", "registeredUsers.json", "adminUserIndex.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
-["characters.json", "designConfig.json", "customInvestigations.json", "shopItems.json"].forEach((filename) => compactRuntimeJsonImagesIfNeeded(filename));
+
+if (process.env.PLC_ASSET_COMPACT_CHILD === "1") {
+  const changedCount = compactAllTopLevelJsonImages();
+  console.log(`[asset-compact] 별도 프로세스 완료: ${changedCount}개 JSON 파일 정리`);
+  process.exit(0);
+}
+
+runAssetCompactChildProcess();
 
 const allowedOrigins = [
   "http://localhost:3000",
