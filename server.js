@@ -12,9 +12,30 @@ const REQUEST_BODY_LIMIT = "100mb";
 const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
 const LEGACY_DATA_DIR = __dirname;
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, "..", "protocol-last-core-data"));
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+function pickRuntimeDataDir() {
+  const candidates = [
+    process.env.DATA_DIR,
+    process.env.RENDER ? "/var/data/protocol-last-core-data" : "",
+    path.join(__dirname, "..", "protocol-last-core-data"),
+    path.join(__dirname, "data"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const resolved = path.resolve(candidate);
+      fs.mkdirSync(resolved, { recursive: true });
+      fs.accessSync(resolved, fs.constants.R_OK | fs.constants.W_OK);
+      return resolved;
+    } catch (error) {
+      console.error(`[data-dir] 사용할 수 없는 저장 경로: ${candidate}`, error.message);
+    }
+  }
+
+  return __dirname;
+}
+
+const DATA_DIR = pickRuntimeDataDir();
 
 function resolveDataPath(filename) {
   const nextPath = path.join(DATA_DIR, filename);
@@ -346,16 +367,35 @@ function extractRuntimeUserRowsFromLooseText(rawText) {
   return mergeRuntimeUsers(rows);
 }
 
+const MAX_USER_SOURCE_BYTES = 3 * 1024 * 1024;
+const MAX_LOOSE_TEXT_SCAN_BYTES = 768 * 1024;
+
+function isGenericRuntimeUserSource(filePath) {
+  const name = path.basename(String(filePath || "")).toLowerCase();
+  return ["data.json", "db.json", "database.json", "backup.json", "index.json"].includes(name);
+}
+
 function readRuntimeArrayFromExactPath(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) return [];
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= 0) return [];
+
+    // Render 시작 직후 대형 data/db 파일을 통째로 정규식 스캔하면 프로세스가 134로 죽을 수 있습니다.
+    // 확실한 계정 파일은 읽되, 범용 대형 파일은 운영 화면의 안전한 재수집 대상에서도 제외합니다.
+    if (stat.size > MAX_USER_SOURCE_BYTES && isGenericRuntimeUserSource(filePath)) return [];
+
     const raw = fs.readFileSync(filePath, "utf-8");
+    let parsedRows = [];
     try {
-      const parsed = JSON.parse(raw);
-      return mergeRuntimeUsers(extractRuntimeUserRows(parsed), extractRuntimeUserRowsFromLooseText(raw));
-    } catch {
-      return extractRuntimeUserRowsFromLooseText(raw);
-    }
+      parsedRows = extractRuntimeUserRows(JSON.parse(raw));
+    } catch {}
+
+    const looseRows = raw.length <= MAX_LOOSE_TEXT_SCAN_BYTES
+      ? extractRuntimeUserRowsFromLooseText(raw)
+      : [];
+
+    return mergeRuntimeUsers(parsedRows, looseRows);
   } catch {
     return [];
   }
@@ -386,7 +426,7 @@ function collectJsonPathsDeep(root, { depth = 4, maxFiles = 260, userFilesOnly =
     if (userFilesOnly && !wantedName.test(entryName) && !wantedName.test(fullPath)) return false;
     try {
       const stat = fs.statSync(fullPath);
-      if (stat.size <= 0 || stat.size > 12 * 1024 * 1024) return false;
+      if (stat.size <= 0 || stat.size > MAX_USER_SOURCE_BYTES) return false;
     } catch {
       return false;
     }
@@ -421,24 +461,25 @@ function collectJsonPathsDeep(root, { depth = 4, maxFiles = 260, userFilesOnly =
   return found;
 }
 
-function getRuntimeSearchRoots() {
+function getRuntimeSearchRoots({ deep = false } = {}) {
   const baseRoots = [
     DATA_DIR,
     LEGACY_DATA_DIR,
     process.cwd(),
     path.dirname(DATA_DIR),
     path.dirname(LEGACY_DATA_DIR),
+  ];
+
+  const deepRoots = deep ? [
     path.resolve(__dirname, ".."),
     path.resolve(process.cwd(), ".."),
     "/var/data",
     "/data",
-    "/opt/render/project/src",
-    "/opt/render/project",
-  ].filter(Boolean);
+  ] : [];
 
   const roots = [];
   const seen = new Set();
-  baseRoots.forEach((root) => {
+  [...baseRoots, ...deepRoots].filter(Boolean).forEach((root) => {
     try {
       const resolved = path.resolve(root);
       if (seen.has(resolved)) return;
@@ -450,10 +491,24 @@ function getRuntimeSearchRoots() {
 }
 
 function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
-  const roots = getRuntimeSearchRoots();
+  const roots = getRuntimeSearchRoots({ deep });
 
+  const directUserFiles = [
+    "users.json",
+    "accounts.json",
+    "members.json",
+    "owners.json",
+    "userList.json",
+    "usersDB.json",
+    "registeredUsers.json",
+    "adminUserIndex.json",
+    "allUserIds.json",
+    "publicUserIndex.json",
+    "auth.json",
+    "login.json",
+  ];
   const relatedUserFiles = filename === "users.json"
-    ? ["users.json", "accounts.json", "members.json", "owners.json", "userList.json", "usersDB.json", "registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json", "auth.json", "login.json", "database.json", "db.json", "data.json"]
+    ? (deep ? [...directUserFiles, "database.json", "db.json", "data.json"] : directUserFiles)
     : [filename];
 
   const candidates = [];
@@ -472,9 +527,6 @@ function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
   });
 
   if (filename === "users.json") {
-    // 서버 시작 시에는 알려진 위치만 빠르게 확인합니다.
-    // Render에서 시작 시점에 프로젝트 전체를 깊게 훑으면 프로세스가 바로 죽을 수 있어서,
-    // 깊은 탐색은 /admin/users/rebuild처럼 운영자가 명시적으로 요청할 때만 실행합니다.
     roots.forEach((root) => {
       try {
         if (!root || !fs.existsSync(root)) return;
@@ -489,16 +541,8 @@ function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
     });
 
     if (deep) {
-      [
-        DATA_DIR,
-        LEGACY_DATA_DIR,
-        process.cwd(),
-        path.dirname(DATA_DIR),
-        path.dirname(LEGACY_DATA_DIR),
-        "/var/data",
-        "/data",
-      ].filter(Boolean).forEach((root) => {
-        collectJsonPathsDeep(root, { depth: 4, maxFiles: 180, userFilesOnly: true }).forEach((targetPath) => candidates.push(targetPath));
+      getRuntimeSearchRoots({ deep: true }).forEach((root) => {
+        collectJsonPathsDeep(root, { depth: 3, maxFiles: 120, userFilesOnly: true }).forEach((targetPath) => candidates.push(targetPath));
       });
     }
   }
@@ -513,6 +557,7 @@ function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
       return true;
     });
 }
+
 
 function getRuntimeUserBackupRows() {
   try {
@@ -560,6 +605,7 @@ function writeRuntimeUserIndexes(userRows) {
 
 function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
   // 여러 저장 위치/백업이 섞여 있어도 가능한 모든 회원가입 원본을 합쳐 운영 목록에서 누락되지 않게 합니다.
+  // 단, 서버 시작 단계에서는 대형 파일 스캔/색인 저장을 하지 않아 Render 시작 실패를 막습니다.
   const pendingUsersPath = resolveDataPath("users.json");
   const pendingPayload = pendingJsonWrites.get(pendingUsersPath)?.payload;
   let pendingRows = [];
@@ -568,9 +614,6 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
   }
 
   const paths = collectKnownRuntimeJsonPaths("users.json", { deep });
-  const deepPaths = deep
-    ? getRuntimeSearchRoots().flatMap((root) => collectJsonPathsDeep(root, { depth: 5, maxFiles: 420, userFilesOnly: true }))
-    : [];
 
   const rows = mergeRuntimeUsers(
     readRuntimeArrayFromExactPath(resolveDataPath("users.json")),
@@ -582,13 +625,13 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
     readRuntimeArrayFromExactPath(resolveDataPath("publicUserIndex.json")),
     getRuntimeUserBackupRows(),
     ...paths.reverse().map(readRuntimeArrayFromExactPath),
-    ...deepPaths.reverse().map(readRuntimeArrayFromExactPath),
     pendingRows
   );
 
-  if (rows.length > 0) writeRuntimeUserIndexes(rows);
+  if (deep && rows.length > 0) writeRuntimeUserIndexes(rows);
   return rows;
 }
+
 
 function refreshUsersFromKnownSources(options = {}) {
   usersDB = mergeRuntimeUsers(getAllKnownRuntimeUsersFromDisk({ deep: options.deep === true }), usersDB);
