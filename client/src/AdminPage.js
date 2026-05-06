@@ -517,16 +517,34 @@ export default function AdminPage({
   const loadUsers = async () => {
     try {
       setUsersLoading(true);
-      const userRes = await fetch(adminApi(`/admin/users?t=${Date.now()}`), { cache: "no-store" });
-      const userData = await userRes.json();
-      const userRows = pickAdminUserRows(userData);
-      if (Array.isArray(userRows)) {
-        setUsers((prev) => {
-          if (userRows.length === 0 && prev.length > 0) return prev;
-          return mergeUsersById(prev, userRows);
-        });
-        return userRows;
+      const stamp = Date.now();
+      const endpoints = [
+        `/admin/users?deep=1&t=${stamp}`,
+        `/admin/users/rebuild?deep=1&t=${stamp}`,
+      ];
+      let mergedRows = [];
+
+      for (const endpoint of endpoints) {
+        try {
+          const userRes = await fetch(adminApi(endpoint), {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          });
+          const userData = await userRes.json();
+          const userRows = pickAdminUserRows(userData);
+          if (Array.isArray(userRows) && userRows.length > 0) {
+            mergedRows = mergeUsersById(mergedRows, userRows);
+          }
+        } catch (error) {
+          console.error("admin users endpoint failed", endpoint, error);
+        }
       }
+
+      setUsers((prev) => {
+        if (mergedRows.length === 0 && prev.length > 0) return prev;
+        return mergeUsersById(prev, mergedRows);
+      });
+      return mergedRows;
     } catch (error) {
       console.error("admin users load failed", error);
     } finally {
@@ -548,9 +566,27 @@ export default function AdminPage({
     }
     setUserVerify({ id: keyword, status: "checking", user: null });
     try {
-      const res = await fetch(adminApi(`/admin/users/check?id=${encodeURIComponent(keyword)}&t=${Date.now()}`), { cache: "no-store" });
+      const stamp = Date.now();
+      const res = await fetch(adminApi(`/admin/users/check?id=${encodeURIComponent(keyword)}&deep=1&t=${stamp}`), {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       const data = await res.json();
-      const foundUser = data?.exists && data?.user ? data.user : null;
+      let foundUser = data?.exists && data?.user ? data.user : null;
+
+      if (!foundUser) {
+        const rebuildRes = await fetch(adminApi(`/admin/users/rebuild?q=${encodeURIComponent(keyword)}&deep=1&t=${Date.now()}`), {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+        const rebuildData = await rebuildRes.json();
+        const rebuildRows = pickAdminUserRows(rebuildData);
+        if (Array.isArray(rebuildRows) && rebuildRows.length > 0) {
+          setUsers((prev) => mergeUsersById(prev, rebuildRows));
+          foundUser = rebuildRows.find((user) => normalizeUserIdText(user?.id).toLowerCase() === keyword.toLowerCase()) || null;
+        }
+      }
+
       if (foundUser) {
         setUsers((prev) => mergeUsersById(prev, [foundUser]));
         setUserVerify({ id: keyword, status: "exists", user: foundUser });

@@ -221,13 +221,22 @@ function getRuntimeUserId(user) {
     user.loginID ??
     user.username ??
     user.userName ??
+    user.user_name ??
     user.uid ??
     user.user_id ??
     user.account_id ??
+    user.login_id ??
     user.memberId ??
     user.memberID ??
+    user.member_id ??
     user.email ??
     user.ownerId ??
+    user.owner_id ??
+    user.displayName ??
+    user.display_name ??
+    user.nickname ??
+    user.nick ??
+    user.handle ??
     user.name ??
     ""
   );
@@ -290,31 +299,49 @@ function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "") {
   return mergeRuntimeUsers(rows);
 }
 
+function isBlockedRuntimeUserToken(value) {
+  const id = normalizeUserIdText(value);
+  if (!id) return true;
+  const lower = id.toLowerCase();
+  return new Set([
+    "id", "userid", "user_id", "accountid", "account_id", "loginid", "login_id", "username", "name", "ownerid", "owner_id",
+    "displayname", "display_name", "nickname", "nick", "handle", "pw", "password", "pass", "passwd", "type", "role",
+    "users", "accounts", "members", "owners", "data", "rows", "items", "characters", "design", "theme", "admin", "plc"
+  ]).has(lower);
+}
+
+function pushLooseRuntimeUser(rows, id, source = "loose") {
+  const nextId = normalizeUserIdText(id);
+  if (isBlockedRuntimeUserToken(nextId)) return;
+  if (nextId.length > 80) return;
+  if (/^https?:\/\//i.test(nextId) || nextId.includes("/static/") || nextId.includes("data:image/")) return;
+  rows.push({ id: nextId, type: "owner", source });
+}
+
 function extractRuntimeUserRowsFromLooseText(rawText) {
   const raw = String(rawText || "");
   if (!raw.trim()) return [];
   const rows = [];
-  const blocked = new Set(["id", "userId", "accountId", "loginId", "username", "name", "ownerId", "pw", "password", "type", "role", "users", "accounts", "members", "data", "rows", "items"]);
 
   const fieldPatterns = [
-    /["'](?:id|userId|accountId|loginId|username|userName|uid|memberId|ownerId)["']\s*:\s*["']([^"'\n\r]{1,80})["']/gi,
-    /(?:^|[,{\s])(?:id|userId|accountId|loginId|username|userName|uid|memberId|ownerId)\s*[:=]\s*["']([^"'\n\r]{1,80})["']/gi,
+    /["'](?:id|userId|userID|user_id|accountId|accountID|account_id|loginId|loginID|login_id|username|userName|user_name|uid|memberId|memberID|member_id|ownerId|ownerID|owner_id|displayName|display_name|nickname|nick|handle)["']\s*:\s*["']([^"'\n\r]{1,80})["']/gi,
+    /(?:^|[,\{\s])(?:id|userId|userID|user_id|accountId|accountID|account_id|loginId|loginID|login_id|username|userName|user_name|uid|memberId|memberID|member_id|ownerId|ownerID|owner_id|displayName|display_name|nickname|nick|handle)\s*[:=]\s*["']([^"'\n\r]{1,80})["']/gi,
   ];
 
   fieldPatterns.forEach((pattern) => {
     let match;
-    while ((match = pattern.exec(raw))) {
-      const id = normalizeUserIdText(match[1]);
-      if (id && !blocked.has(id) && id !== "PLC") rows.push({ id, type: "owner" });
-    }
+    while ((match = pattern.exec(raw))) pushLooseRuntimeUser(rows, match[1], "field");
   });
 
-  const objectKeyPattern = /["']([^"'\n\r]{1,80})["']\s*:\s*\{[^{}]{0,800}?["'](?:pw|password)["']\s*:/gi;
+  // { "someId": { "pw": "..." } } / { "someId": { "password": "..." } } 형태를 깊은 중첩이 있어도 놓치지 않습니다.
+  const objectKeyPattern = /["']([^"'\n\r]{1,80})["']\s*:\s*\{[\s\S]{0,3600}?["'](?:pw|password|pass|passwd)["']\s*:/gi;
   let keyMatch;
-  while ((keyMatch = objectKeyPattern.exec(raw))) {
-    const id = normalizeUserIdText(keyMatch[1]);
-    if (id && !blocked.has(id) && id !== "PLC") rows.push({ id, type: "owner" });
-  }
+  while ((keyMatch = objectKeyPattern.exec(raw))) pushLooseRuntimeUser(rows, keyMatch[1], "object-key");
+
+  // 로그/임시 파일에 id=abc, userId: abc 식으로 남은 경우까지 회수합니다.
+  const linePattern = /(?:^|[\n\r\s,;])(?:id|userId|user_id|accountId|account_id|loginId|login_id|username|nickname|nick|handle)\s*[:=]\s*([A-Za-z0-9가-힣_.@+-]{2,80})/gi;
+  let lineMatch;
+  while ((lineMatch = linePattern.exec(raw))) pushLooseRuntimeUser(rows, lineMatch[1], "line");
 
   return mergeRuntimeUsers(rows);
 }
@@ -346,11 +373,25 @@ function getRuntimeFileSignature(filename) {
 }
 
 
-function collectJsonPathsDeep(root, { depth = 3, maxFiles = 140 } = {}) {
+function collectJsonPathsDeep(root, { depth = 4, maxFiles = 260, userFilesOnly = true } = {}) {
   const found = [];
   const seen = new Set();
-  const blockedDirs = new Set(["node_modules", ".git", "build", "dist", "coverage", ".cache", ".next"]);
-  const wantedName = /(user|users|account|accounts|member|members|owner|owners|login|auth|registered|database|db|data)/i;
+  const blockedDirs = new Set(["node_modules", ".git", "build", "dist", "coverage", ".cache", ".next", "client", "static"]);
+  const wantedName = /(user|users|account|accounts|member|members|owner|owners|login|auth|registered|database|db|data|backup|index)/i;
+  const allowedExt = /\.(json|bak|txt|log)$/i;
+
+  function shouldTakeFile(entryName, fullPath) {
+    const lower = String(entryName || "").toLowerCase();
+    if (!allowedExt.test(lower) && !lower.endsWith(".bak.json")) return false;
+    if (userFilesOnly && !wantedName.test(entryName) && !wantedName.test(fullPath)) return false;
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.size <= 0 || stat.size > 12 * 1024 * 1024) return false;
+    } catch {
+      return false;
+    }
+    return true;
+  }
 
   function walk(dir, level) {
     if (!dir || found.length >= maxFiles || level > depth) return;
@@ -363,7 +404,7 @@ function collectJsonPathsDeep(root, { depth = 3, maxFiles = 140 } = {}) {
       const entries = fs.readdirSync(realDir, { withFileTypes: true });
       for (const entry of entries) {
         if (found.length >= maxFiles) break;
-        if (entry.name.startsWith(".")) continue;
+        if (entry.name.startsWith(".") && entry.name !== ".data") continue;
         const fullPath = path.join(realDir, entry.name);
         if (entry.isDirectory()) {
           if (blockedDirs.has(entry.name)) continue;
@@ -371,14 +412,7 @@ function collectJsonPathsDeep(root, { depth = 3, maxFiles = 140 } = {}) {
           continue;
         }
         if (!entry.isFile()) continue;
-        const lower = entry.name.toLowerCase();
-        if (!lower.endsWith(".json")) continue;
-        if (!wantedName.test(entry.name)) continue;
-        try {
-          const stat = fs.statSync(fullPath);
-          if (stat.size > 10 * 1024 * 1024) continue;
-        } catch {}
-        found.push(fullPath);
+        if (shouldTakeFile(entry.name, fullPath)) found.push(fullPath);
       }
     } catch {}
   }
@@ -387,17 +421,39 @@ function collectJsonPathsDeep(root, { depth = 3, maxFiles = 140 } = {}) {
   return found;
 }
 
-function collectKnownRuntimeJsonPaths(filename) {
-  const roots = [
+function getRuntimeSearchRoots() {
+  const baseRoots = [
     DATA_DIR,
     LEGACY_DATA_DIR,
     process.cwd(),
     path.dirname(DATA_DIR),
     path.dirname(LEGACY_DATA_DIR),
+    path.resolve(__dirname, ".."),
+    path.resolve(process.cwd(), ".."),
+    "/var/data",
+    "/data",
+    "/opt/render/project/src",
+    "/opt/render/project",
   ].filter(Boolean);
 
+  const roots = [];
+  const seen = new Set();
+  baseRoots.forEach((root) => {
+    try {
+      const resolved = path.resolve(root);
+      if (seen.has(resolved)) return;
+      seen.add(resolved);
+      roots.push(resolved);
+    } catch {}
+  });
+  return roots;
+}
+
+function collectKnownRuntimeJsonPaths(filename) {
+  const roots = getRuntimeSearchRoots();
+
   const relatedUserFiles = filename === "users.json"
-    ? ["users.json", "accounts.json", "members.json", "owners.json", "userList.json", "usersDB.json", "registeredUsers.json", "adminUserIndex.json"]
+    ? ["users.json", "accounts.json", "members.json", "owners.json", "userList.json", "usersDB.json", "registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json", "auth.json", "login.json", "database.json", "db.json", "data.json"]
     : [filename];
 
   const candidates = [];
@@ -439,7 +495,7 @@ function collectKnownRuntimeJsonPaths(filename) {
       "/var/data",
       "/data",
     ].filter(Boolean).forEach((root) => {
-      collectJsonPathsDeep(root, { depth: 3, maxFiles: 160 }).forEach((targetPath) => candidates.push(targetPath));
+      collectJsonPathsDeep(root, { depth: 5, maxFiles: 360, userFilesOnly: true }).forEach((targetPath) => candidates.push(targetPath));
     });
   }
 
@@ -456,18 +512,49 @@ function collectKnownRuntimeJsonPaths(filename) {
 
 function getRuntimeUserBackupRows() {
   try {
-    if (!fs.existsSync(RUNTIME_BACKUP_DIR)) return [];
-    return fs.readdirSync(RUNTIME_BACKUP_DIR)
-      .filter((name) => name.startsWith("users.json.") && name.endsWith(".bak.json"))
-      .sort()
-      .slice(-20)
-      .flatMap((name) => readRuntimeArrayFromExactPath(path.join(RUNTIME_BACKUP_DIR, name)));
+    const backupDirs = [
+      RUNTIME_BACKUP_DIR,
+      path.join(DATA_DIR, "backups"),
+      path.join(DATA_DIR, "backup"),
+      path.join(LEGACY_DATA_DIR, "_backups"),
+      path.join(LEGACY_DATA_DIR, "backups"),
+    ];
+    const candidates = [];
+    backupDirs.forEach((dir) => {
+      try {
+        if (!fs.existsSync(dir)) return;
+        fs.readdirSync(dir)
+          .filter((name) => /(?:user|account|member|owner|login|auth|registered).*\.(?:json|bak|txt|log)$/i.test(name) || name.endsWith(".bak.json"))
+          .sort()
+          .slice(-80)
+          .forEach((name) => candidates.push(path.join(dir, name)));
+      } catch {}
+    });
+    return mergeRuntimeUsers(...candidates.map(readRuntimeArrayFromExactPath));
   } catch {
     return [];
   }
 }
 
-function getAllKnownRuntimeUsersFromDisk() {
+function writeRuntimeUserIndexes(userRows) {
+  try {
+    const safeRows = mergeRuntimeUsers(userRows).map((user) => ({
+      id: getRuntimeUserId(user),
+      type: user.type || user.role || "owner",
+      indexedByServer: true,
+    })).filter((user) => user.id && user.id !== "PLC");
+    if (safeRows.length === 0) return;
+    ["registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json"].forEach((filename) => {
+      const indexPath = resolveDataPath(filename);
+      const current = readRuntimeArrayFromExactPath(indexPath);
+      writeJsonAtomicSync(indexPath, mergeRuntimeUsers(current, safeRows));
+    });
+  } catch (error) {
+    console.error("writeRuntimeUserIndexes failed", error);
+  }
+}
+
+function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
   // 여러 저장 위치/백업이 섞여 있어도 가능한 모든 회원가입 원본을 합쳐 운영 목록에서 누락되지 않게 합니다.
   const pendingUsersPath = resolveDataPath("users.json");
   const pendingPayload = pendingJsonWrites.get(pendingUsersPath)?.payload;
@@ -475,19 +562,32 @@ function getAllKnownRuntimeUsersFromDisk() {
   if (pendingPayload) {
     try { pendingRows = extractRuntimeUserRows(JSON.parse(pendingPayload)); } catch {}
   }
+
   const paths = collectKnownRuntimeJsonPaths("users.json");
-  return mergeRuntimeUsers(
+  const deepPaths = deep
+    ? getRuntimeSearchRoots().flatMap((root) => collectJsonPathsDeep(root, { depth: 5, maxFiles: 420, userFilesOnly: true }))
+    : [];
+
+  const rows = mergeRuntimeUsers(
     readRuntimeArrayFromExactPath(resolveDataPath("users.json")),
+    readRuntimeArrayFromExactPath(resolveBundledPath("users.json")),
+    readRuntimeArrayFromExactPath(path.join(process.cwd(), "users.json")),
     readRuntimeArrayFromExactPath(resolveDataPath("registeredUsers.json")),
     readRuntimeArrayFromExactPath(resolveDataPath("adminUserIndex.json")),
+    readRuntimeArrayFromExactPath(resolveDataPath("allUserIds.json")),
+    readRuntimeArrayFromExactPath(resolveDataPath("publicUserIndex.json")),
     getRuntimeUserBackupRows(),
     ...paths.reverse().map(readRuntimeArrayFromExactPath),
+    ...deepPaths.reverse().map(readRuntimeArrayFromExactPath),
     pendingRows
   );
+
+  if (rows.length > 0) writeRuntimeUserIndexes(rows);
+  return rows;
 }
 
-function refreshUsersFromKnownSources() {
-  usersDB = mergeRuntimeUsers(getAllKnownRuntimeUsersFromDisk(), usersDB);
+function refreshUsersFromKnownSources(options = {}) {
+  usersDB = mergeRuntimeUsers(getAllKnownRuntimeUsersFromDisk({ deep: options.deep === true }), usersDB);
   return usersDB;
 }
 
@@ -562,12 +662,7 @@ function rememberRegisteredRuntimeUser(user) {
     const id = getRuntimeUserId(user);
     if (!id || id === "PLC") return;
     const row = { id, type: user?.type || user?.role || "owner", lastSeenAt: new Date().toISOString() };
-    ["registeredUsers.json", "adminUserIndex.json"].forEach((filename) => {
-      const indexPath = resolveDataPath(filename);
-      const current = readRuntimeArrayFromExactPath(indexPath);
-      const next = mergeRuntimeUsers(current, [row]);
-      writeJsonAtomicSync(indexPath, next);
-    });
+    writeRuntimeUserIndexes([row]);
   } catch (error) {
     console.error("rememberRegisteredRuntimeUser failed", error);
   }
@@ -641,7 +736,7 @@ function getOnlineRuntimeUserRows() {
 }
 
 function getSafeUsersForAdmin(searchText = "") {
-  refreshUsersFromKnownSources();
+  refreshUsersFromKnownSources({ deep: true });
   const ownerRows = (Array.isArray(charactersDB) ? charactersDB : [])
     .map((character) => normalizeUserIdText(character?.ownerId))
     .filter(Boolean)
@@ -2499,7 +2594,7 @@ app.post("/designConfig", (req, res) => {
 });
 
 app.post("/register", (req, res) => {
-  refreshUsersFromKnownSources();
+  refreshUsersFromKnownSources({ deep: true });
   const nextId = normalizeUserIdText(req.body?.id);
   const nextPw = String(req.body?.pw || "").trim();
   const type = req.body?.type || "owner";
@@ -3468,6 +3563,7 @@ io.on("connection", (socket) => {
 
 app.get("/admin/users/check", (req, res) => {
   const id = normalizeUserIdText(req.query?.id || req.query?.q || req.query?.search || "");
+  refreshUsersFromKnownSources({ deep: true });
   const user = getExactAdminUser(id);
   res.json({
     success: true,
@@ -3477,9 +3573,20 @@ app.get("/admin/users/check", (req, res) => {
 });
 
 app.get("/admin/users", (req, res) => {
-  refreshProtectedRuntimeArraysIfNeeded();
+  refreshUsersFromKnownSources({ deep: true });
+  refreshCharactersFromDiskIfNeeded();
   const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.json({ success: true, users, count: users.length });
+});
+
+app.get("/admin/users/rebuild", (req, res) => {
+  refreshUsersFromKnownSources({ deep: true });
+  refreshCharactersFromDiskIfNeeded({ force: true });
+  const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "");
+  writeRuntimeUserIndexes(users);
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.json({ success: true, users, count: users.length, rebuilt: true });
 });
 
 
