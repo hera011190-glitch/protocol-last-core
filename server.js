@@ -40,15 +40,66 @@ function pickRuntimeDataDir() {
 const DATA_DIR = pickRuntimeDataDir();
 const BUNDLED_ASSET_DIR = path.join(__dirname, "public_assets");
 const RUNTIME_ASSET_DIR = path.join(DATA_DIR, "public_assets");
-const DATA_IMAGE_COMPACT_MIN_BYTES = Number(process.env.DATA_IMAGE_COMPACT_MIN_BYTES || 512 * 1024);
+const DATA_IMAGE_COMPACT_MIN_BYTES = Number(process.env.DATA_IMAGE_COMPACT_MIN_BYTES || 48 * 1024);
+const MAX_STARTUP_JSON_PARSE_BYTES = Number(process.env.MAX_STARTUP_JSON_PARSE_BYTES || 8 * 1024 * 1024);
 
-function getImageExtensionFromMime(mime = "") {
-  const normalized = String(mime || "png").toLowerCase();
+function getAssetExtensionFromMime(mime = "") {
+  const normalized = String(mime || "").toLowerCase();
   if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+  if (normalized.includes("png")) return "png";
   if (normalized.includes("webp")) return "webp";
   if (normalized.includes("gif")) return "gif";
   if (normalized.includes("svg")) return "svg";
-  return "png";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("ogg")) return "ogg";
+  if (normalized.includes("mp4")) return "mp4";
+  if (normalized.includes("woff2")) return "woff2";
+  if (normalized.includes("woff")) return "woff";
+  if (normalized.includes("truetype") || normalized.includes("ttf")) return "ttf";
+  if (normalized.includes("json")) return "json";
+  if (normalized.includes("pdf")) return "pdf";
+  return "bin";
+}
+
+function compactBase64DataUrlsInText(raw, namespace) {
+  const source = String(raw || "");
+  if (!source.includes("data:") || !source.includes(";base64,")) return { text: source, changed: false };
+
+  const targetNamespace = String(namespace || "assets").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const targetDir = path.join(RUNTIME_ASSET_DIR, targetNamespace);
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  let changed = false;
+  const dataUrlPattern = /data:([a-zA-Z0-9.+-]+)\?\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+\/_=-]+)/g;
+  const text = source.replace(dataUrlPattern, (full, major, minor, base64Text) => {
+    try {
+      const mime = `${major}/${minor}`;
+      const ext = getAssetExtensionFromMime(mime);
+      const normalizedBase64 = String(base64Text || "").replace(/-/g, "+").replace(/_/g, "/");
+      const hash = crypto
+        .createHash("sha256")
+        .update(String(mime || ""))
+        .update(":")
+        .update(normalizedBase64.slice(0, 8192))
+        .update(":")
+        .update(String(normalizedBase64.length))
+        .digest("hex")
+        .slice(0, 24);
+      const assetName = `${hash}.${ext}`;
+      const assetPath = path.join(targetDir, assetName);
+      if (!fs.existsSync(assetPath)) {
+        fs.writeFileSync(assetPath, Buffer.from(normalizedBase64, "base64"));
+      }
+      changed = true;
+      return `/asset-file/${targetNamespace}/${assetName}`;
+    } catch (error) {
+      console.error(`[asset-compact] data URL 분리 실패: ${targetNamespace}`, error.message);
+      return full;
+    }
+  });
+
+  return { text, changed };
 }
 
 function compactDataImagesInJsonFile(filePath, namespace) {
@@ -58,38 +109,7 @@ function compactDataImagesInJsonFile(filePath, namespace) {
     if (!stat.isFile() || stat.size < DATA_IMAGE_COMPACT_MIN_BYTES) return false;
 
     const raw = fs.readFileSync(filePath, "utf-8");
-    if (!raw.includes("data:image")) return false;
-
-    const targetNamespace = String(namespace || path.basename(filePath, ".json")).replace(/[^a-zA-Z0-9_-]/g, "_");
-    const targetDir = path.join(RUNTIME_ASSET_DIR, targetNamespace);
-    fs.mkdirSync(targetDir, { recursive: true });
-
-    let changed = false;
-    const replaced = raw.replace(/data:image\\?\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/g, (full, mime, base64Text) => {
-      try {
-        const ext = getImageExtensionFromMime(mime);
-        const hash = crypto
-          .createHash("sha256")
-          .update(String(mime || ""))
-          .update(":")
-          .update(String(base64Text || "").slice(0, 8192))
-          .update(":")
-          .update(String(String(base64Text || "").length))
-          .digest("hex")
-          .slice(0, 24);
-        const assetName = `${hash}.${ext}`;
-        const assetPath = path.join(targetDir, assetName);
-        if (!fs.existsSync(assetPath)) {
-          fs.writeFileSync(assetPath, Buffer.from(String(base64Text || ""), "base64"));
-        }
-        changed = true;
-        return `/asset-file/${targetNamespace}/${assetName}`;
-      } catch (error) {
-        console.error(`[asset-compact] 이미지 분리 실패: ${filePath}`, error.message);
-        return full;
-      }
-    });
-
+    const { text: replaced, changed } = compactBase64DataUrlsInText(raw, namespace || path.basename(filePath, ".json"));
     if (!changed || replaced === raw) return false;
 
     const backupDir = path.join(DATA_DIR, "_backups");
@@ -103,7 +123,7 @@ function compactDataImagesInJsonFile(filePath, namespace) {
     const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.compact.tmp`);
     fs.writeFileSync(tempPath, replaced, "utf-8");
     fs.renameSync(tempPath, filePath);
-    console.log(`[asset-compact] ${path.basename(filePath)} 안의 base64 이미지를 파일로 분리했습니다.`);
+    console.log(`[asset-compact] ${path.basename(filePath)} 안의 base64 data URL을 파일로 분리했습니다.`);
     return true;
   } catch (error) {
     console.error(`[asset-compact] ${filePath} 처리 실패`, error.message);
@@ -186,14 +206,30 @@ function resolveBundledPath(filename) {
   return path.join(__dirname, filename);
 }
 
-function readJsonFromPath(filePath, fallback = null) {
+function safeReadJsonFileStrict(filePath, fallback = null, label = "json") {
   try {
-    if (!fs.existsSync(filePath)) return fallback;
+    if (!filePath || !fs.existsSync(filePath)) return fallback;
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return fallback;
+
+    if (stat.size > MAX_STARTUP_JSON_PARSE_BYTES) {
+      console.error(`[json-safe] ${label} 파일이 너무 커서 서버 시작 중 파싱하지 않았습니다: ${filePath} (${stat.size} bytes)`);
+      return fallback;
+    }
+
+    if (stat.size > 1024 * 1024) {
+      console.log(`[json-safe] ${label} 읽는 중: ${path.basename(filePath)} (${stat.size} bytes)`);
+    }
+
     return JSON.parse(fs.readFileSync(filePath, "utf-8"));
   } catch (error) {
-    console.error("readJsonFromPath failed", filePath, error);
+    console.error(`[json-safe] ${label} 읽기 실패: ${filePath}`, error.message);
     return fallback;
   }
+}
+
+function readJsonFromPath(filePath, fallback = null) {
+  return safeReadJsonFileStrict(filePath, fallback, path.basename(String(filePath || "json")));
 }
 
 function ensureRuntimeFile(filename, fallbackValue) {
@@ -295,13 +331,11 @@ function scheduleJsonWrite(filePath, value, { delay = 12 } = {}) {
 function readRuntimeArray(filename) {
   try {
     const filePath = resolveDataPath(filename);
-    if (!fs.existsSync(filePath)) return [];
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw);
+    const parsed = safeReadJsonFileStrict(filePath, [], filename);
     if (filename === "users.json") return extractRuntimeUserRows(parsed);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error(`readRuntimeArray failed: ${filename}`, error);
+    console.error(`readRuntimeArray failed: ${filename}`, error.message);
     return [];
   }
 }
@@ -359,8 +393,7 @@ function getRowsForBackup(filename, fallbackRows) {
 function getRuntimeArrayFromDisk(filename) {
   try {
     const filePath = resolveDataPath(filename);
-    if (!fs.existsSync(filePath)) return [];
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    const parsed = safeReadJsonFileStrict(filePath, [], filename);
     if (filename === "users.json") return extractRuntimeUserRows(parsed);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -530,9 +563,11 @@ function readRuntimeArrayFromExactPath(filePath) {
 
     const raw = fs.readFileSync(filePath, "utf-8");
     let parsedRows = [];
-    try {
-      parsedRows = extractRuntimeUserRows(JSON.parse(raw));
-    } catch {}
+    if (stat.size <= MAX_STARTUP_JSON_PARSE_BYTES) {
+      try {
+        parsedRows = extractRuntimeUserRows(JSON.parse(raw));
+      } catch {}
+    }
 
     const looseRows = raw.length <= MAX_LOOSE_TEXT_SCAN_BYTES
       ? extractRuntimeUserRowsFromLooseText(raw)
@@ -753,7 +788,7 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
   const pendingPayload = pendingJsonWrites.get(pendingUsersPath)?.payload;
   let pendingRows = [];
   if (pendingPayload) {
-    try { pendingRows = extractRuntimeUserRows(JSON.parse(pendingPayload)); } catch {}
+    try { pendingRows = pendingPayload.length <= MAX_STARTUP_JSON_PARSE_BYTES ? extractRuntimeUserRows(JSON.parse(pendingPayload)) : []; } catch {}
   }
 
   const paths = collectKnownRuntimeJsonPaths("users.json", { deep });
@@ -3851,12 +3886,10 @@ function serializeInvestigationForPersistence(item) {
 
 function readCustomInvestigationsFromFile() {
   try {
-    if (!fs.existsSync(customInvestigationsPath)) return [];
-    const raw = fs.readFileSync(customInvestigationsPath, "utf-8");
-    const parsed = JSON.parse(raw);
+    const parsed = safeReadJsonFileStrict(customInvestigationsPath, [], "customInvestigations.json");
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    console.error("readCustomInvestigationsFromFile error", err);
+    console.error("readCustomInvestigationsFromFile error", err.message);
     return [];
   }
 }
@@ -4020,12 +4053,10 @@ const relationsPath = resolveDataPath("relations.json");
 
 function readJsonArraySafe(filePath) {
   try {
-    if (!fs.existsSync(filePath)) return [];
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw);
+    const parsed = safeReadJsonFileStrict(filePath, [], path.basename(String(filePath || "array.json")));
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    console.error("readJsonArraySafe error", filePath, err);
+    console.error("readJsonArraySafe error", filePath, err.message);
     return [];
   }
 }
@@ -4698,9 +4729,7 @@ function normalizeShopItem(item = {}) {
 
 function readJsonFileSafe(filePath, fallback) {
   try {
-    if (!fs.existsSync(filePath)) return fallback;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw);
+    const parsed = safeReadJsonFileStrict(filePath, fallback, path.basename(String(filePath || "json")));
     return parsed ?? fallback;
   } catch {
     return fallback;
