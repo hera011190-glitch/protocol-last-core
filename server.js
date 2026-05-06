@@ -5,6 +5,7 @@ const cors = require("cors");
 const compression = require("compression");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
@@ -36,6 +37,89 @@ function pickRuntimeDataDir() {
 }
 
 const DATA_DIR = pickRuntimeDataDir();
+const BUNDLED_ASSET_DIR = path.join(__dirname, "public_assets");
+const RUNTIME_ASSET_DIR = path.join(DATA_DIR, "public_assets");
+const DATA_IMAGE_COMPACT_MIN_BYTES = Number(process.env.DATA_IMAGE_COMPACT_MIN_BYTES || 512 * 1024);
+
+function getImageExtensionFromMime(mime = "") {
+  const normalized = String(mime || "png").toLowerCase();
+  if (normalized.includes("jpeg") || normalized.includes("jpg")) return "jpg";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  if (normalized.includes("svg")) return "svg";
+  return "png";
+}
+
+function compactDataImagesInJsonFile(filePath, namespace) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return false;
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size < DATA_IMAGE_COMPACT_MIN_BYTES) return false;
+
+    const raw = fs.readFileSync(filePath, "utf-8");
+    if (!raw.includes("data:image")) return false;
+
+    const targetNamespace = String(namespace || path.basename(filePath, ".json")).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const targetDir = path.join(RUNTIME_ASSET_DIR, targetNamespace);
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    let changed = false;
+    const replaced = raw.replace(/"data:image\\?\/([^;\"]+);base64,([^\"]+)"/g, (full, mime, base64Text) => {
+      try {
+        const ext = getImageExtensionFromMime(mime);
+        const hash = crypto
+          .createHash("sha256")
+          .update(String(mime || ""))
+          .update(":")
+          .update(String(base64Text || "").slice(0, 8192))
+          .update(":")
+          .update(String(String(base64Text || "").length))
+          .digest("hex")
+          .slice(0, 24);
+        const assetName = `${hash}.${ext}`;
+        const assetPath = path.join(targetDir, assetName);
+        if (!fs.existsSync(assetPath)) {
+          fs.writeFileSync(assetPath, Buffer.from(String(base64Text || ""), "base64"));
+        }
+        changed = true;
+        return JSON.stringify(`/asset-file/${targetNamespace}/${assetName}`);
+      } catch (error) {
+        console.error(`[asset-compact] 이미지 분리 실패: ${filePath}`, error.message);
+        return full;
+      }
+    });
+
+    if (!changed || replaced === raw) return false;
+
+    const backupDir = path.join(DATA_DIR, "_backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    const backupPath = path.join(
+      backupDir,
+      `${path.basename(filePath)}.before-asset-compact.${Date.now()}.bak.json`
+    );
+    try { fs.copyFileSync(filePath, backupPath); } catch {}
+
+    const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.compact.tmp`);
+    fs.writeFileSync(tempPath, replaced, "utf-8");
+    fs.renameSync(tempPath, filePath);
+    console.log(`[asset-compact] ${path.basename(filePath)} 안의 base64 이미지를 파일로 분리했습니다.`);
+    return true;
+  } catch (error) {
+    console.error(`[asset-compact] ${filePath} 처리 실패`, error.message);
+    return false;
+  }
+}
+
+function compactRuntimeJsonImagesIfNeeded(filename) {
+  try {
+    const runtimePath = path.join(DATA_DIR, filename);
+    if (!fs.existsSync(runtimePath)) return false;
+    return compactDataImagesInJsonFile(runtimePath, path.basename(filename, ".json"));
+  } catch (error) {
+    console.error(`[asset-compact] ${filename} 확인 실패`, error.message);
+    return false;
+  }
+}
 
 function resolveDataPath(filename) {
   const nextPath = path.join(DATA_DIR, filename);
@@ -84,6 +168,7 @@ function ensureRuntimeFile(filename, fallbackValue) {
 
 ["users.json", "registeredUsers.json", "adminUserIndex.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
+["characters.json", "designConfig.json", "customInvestigations.json", "shopItems.json"].forEach((filename) => compactRuntimeJsonImagesIfNeeded(filename));
 
 const allowedOrigins = [
   "http://localhost:3000",
@@ -104,6 +189,9 @@ app.use(cors(corsOptions));
 app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
+
+app.use("/asset-file", express.static(RUNTIME_ASSET_DIR, { maxAge: "30d", immutable: true }));
+app.use("/asset-file", express.static(BUNDLED_ASSET_DIR, { maxAge: "30d", immutable: true }));
 
 app.use((req, res, next) => {
   const lowerPath = String(req.path || "").toLowerCase();
@@ -950,7 +1038,13 @@ const defaultTheme = {
   fontFamily: '"Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif',
 };
 
-const savedDesign = readJsonFromPath(resolveDataPath("designConfig.json"), readJsonFromPath(resolveBundledPath("designConfig.json"), {}));
+function loadSavedDesignConfigAtStartup() {
+  const runtimeDesign = readJsonFromPath(resolveDataPath("designConfig.json"), null);
+  if (runtimeDesign && typeof runtimeDesign === "object") return runtimeDesign;
+  return readJsonFromPath(resolveBundledPath("designConfig.json"), {});
+}
+
+const savedDesign = loadSavedDesignConfigAtStartup();
 let designConfig = defaultDesign;
 let designAssetVersion = Date.now();
 if (savedDesign && typeof savedDesign === "object") {
