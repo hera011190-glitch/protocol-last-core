@@ -21,6 +21,43 @@ function pickAdminUserRows(payload) {
   return [];
 }
 
+function getAdminAccountId(user) {
+  if (!user || typeof user !== "object") return "";
+  return normalizeUserIdText(
+    user.id ??
+    user.userId ??
+    user.userID ??
+    user.user_id ??
+    user.accountId ??
+    user.accountID ??
+    user.account_id ??
+    user.loginId ??
+    user.loginID ??
+    user.login_id ??
+    user.username ??
+    user.userName ??
+    user.user_name ??
+    user.uid ??
+    user.memberId ??
+    user.memberID ??
+    user.member_id ??
+    user.email ??
+    ""
+  );
+}
+
+function isSelectableAdminUserRow(user) {
+  const id = getAdminAccountId(user);
+  if (!id) return false;
+  const lower = id.toLowerCase();
+  if (["plc", "id", "name", "items", "item", "users", "accounts", "members", "data", "rows"].includes(lower)) return false;
+  if (/^item-\d{8,}$/.test(lower)) return false;
+  if (/^\d+$/.test(id) && id.length >= 10) return false;
+  if (/^E-\d+$/i.test(id)) return false;
+  if (/^https?:\/\//i.test(id) || id.includes("/static/") || id.includes("data:image/")) return false;
+  return true;
+}
+
 function MenuCard({ title, onClick, disabled = false }) {
   return (
     <button
@@ -268,15 +305,14 @@ function mergeUsersById(currentUsers, nextUsers) {
   const indexById = new Map();
 
   [...(Array.isArray(currentUsers) ? currentUsers : []), ...(Array.isArray(nextUsers) ? nextUsers : [])].forEach((user) => {
-    if (!user || typeof user !== "object") return;
-    const id = normalizeUserIdText(user.id ?? user.userId ?? user.accountId ?? user.loginId ?? user.username ?? user.ownerId ?? user.name);
-    if (!id) return;
+    if (!isSelectableAdminUserRow(user)) return;
+    const id = getAdminAccountId(user);
     const key = id.toLowerCase();
     const normalized = { ...user, id, type: user.type || user.role || "owner" };
 
     if (indexById.has(key)) {
       const index = indexById.get(key);
-      merged[index] = { ...merged[index], ...normalized };
+      merged[index] = { ...merged[index], ...normalized, id: merged[index].id || id };
     } else {
       indexById.set(key, merged.length);
       merged.push(normalized);
@@ -541,8 +577,8 @@ export default function AdminPage({
       }
 
       setUsers((prev) => {
-        if (mergedRows.length === 0 && prev.length > 0) return prev;
-        return mergeUsersById(prev, mergedRows);
+        if (mergedRows.length === 0 && prev.length > 0) return mergeUsersById([], prev);
+        return mergeUsersById([], mergedRows);
       });
       return mergedRows;
     } catch (error) {
@@ -559,7 +595,7 @@ export default function AdminPage({
       setUserVerify({ id: "", status: "idle", user: null });
       return null;
     }
-    const localFound = users.find((user) => normalizeUserIdText(user?.id).toLowerCase() === keyword.toLowerCase());
+    const localFound = mergeUsersById([], users).find((user) => normalizeUserIdText(user?.id).toLowerCase() === keyword.toLowerCase());
     if (localFound) {
       setUserVerify({ id: keyword, status: "exists", user: localFound });
       return localFound;

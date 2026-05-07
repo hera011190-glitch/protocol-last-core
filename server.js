@@ -6,7 +6,7 @@ const compression = require("compression");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { spawnSync } = require("child_process");
+const { spawn } = require("child_process");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
@@ -174,16 +174,19 @@ function compactAllTopLevelJsonImages() {
 function runAssetCompactChildProcess() {
   if (process.env.PLC_ASSET_COMPACT_CHILD === "1") return;
   try {
-    const result = spawnSync(process.execPath, [__filename], {
+    const child = spawn(process.execPath, [__filename], {
       env: { ...process.env, PLC_ASSET_COMPACT_CHILD: "1" },
       stdio: "inherit",
-      timeout: Number(process.env.PLC_ASSET_COMPACT_TIMEOUT_MS || 120000),
+      detached: false,
     });
-    if (result.error) {
-      console.error("[asset-compact] 별도 프로세스 실행 실패", result.error.message);
-    } else if (typeof result.status === "number" && result.status !== 0) {
-      console.error(`[asset-compact] 별도 프로세스가 비정상 종료되었습니다: ${result.status}`);
-    }
+    child.on("error", (error) => {
+      console.error("[asset-compact] 별도 프로세스 실행 실패", error.message);
+    });
+    child.on("exit", (code) => {
+      if (typeof code === "number" && code !== 0) {
+        console.error(`[asset-compact] 별도 프로세스가 비정상 종료되었습니다: ${code}`);
+      }
+    });
   } catch (error) {
     console.error("[asset-compact] 별도 프로세스 준비 실패", error.message);
   }
@@ -258,8 +261,6 @@ if (process.env.PLC_ASSET_COMPACT_CHILD === "1") {
   console.log(`[asset-compact] 별도 프로세스 완료: ${changedCount}개 JSON 파일 정리`);
   process.exit(0);
 }
-
-runAssetCompactChildProcess();
 
 const allowedOrigins = [
   "http://localhost:3000",
@@ -415,6 +416,118 @@ function normalizeUserIdText(value) {
     .trim();
 }
 
+const RUNTIME_USER_SOURCE_NAMES = new Set([
+  "users.json",
+  "accounts.json",
+  "members.json",
+  "owners.json",
+  "userlist.json",
+  "usersdb.json",
+  "registeredusers.json",
+  "adminuserindex.json",
+  "alluserids.json",
+  "publicuserindex.json",
+  "auth.json",
+  "login.json",
+]);
+
+const RUNTIME_USER_INDEX_SOURCE_NAMES = new Set([
+  "registeredusers.json",
+  "adminuserindex.json",
+  "alluserids.json",
+  "publicuserindex.json",
+]);
+
+const RUNTIME_GENERIC_USER_SCAN_NAMES = new Set(["database.json", "db.json", "data.json", "backup.json", "index.json"]);
+
+function getRuntimeUserSourceKind(filePath = "") {
+  const name = path.basename(String(filePath || "")).toLowerCase();
+  if (RUNTIME_USER_INDEX_SOURCE_NAMES.has(name)) return "index";
+  if (RUNTIME_USER_SOURCE_NAMES.has(name)) return "account";
+  if (/(user|account|member|owner|login|auth|registered)/i.test(name)) return "account";
+  if (RUNTIME_GENERIC_USER_SCAN_NAMES.has(name)) return "generic";
+  return "generic";
+}
+
+function getRuntimeAccountId(user, { allowNameFallback = false } = {}) {
+  if (!user || typeof user !== "object") return "";
+  const primary = normalizeUserIdText(
+    user.id ??
+    user.userId ??
+    user.userID ??
+    user.user_id ??
+    user.accountId ??
+    user.accountID ??
+    user.account_id ??
+    user.loginId ??
+    user.loginID ??
+    user.login_id ??
+    user.username ??
+    user.userName ??
+    user.user_name ??
+    user.uid ??
+    user.memberId ??
+    user.memberID ??
+    user.member_id ??
+    user.email ??
+    ""
+  );
+  if (primary) return primary;
+  if (!allowNameFallback) return "";
+  return normalizeUserIdText(user.displayName ?? user.display_name ?? user.nickname ?? user.nick ?? user.handle ?? user.name ?? "");
+}
+
+function hasRuntimeUserAuthEvidence(user) {
+  if (!user || typeof user !== "object") return false;
+  return ["pw", "password", "pass", "passwd", "passwordHash", "password_hash", "hashedPassword", "hash"].some((key) =>
+    Object.prototype.hasOwnProperty.call(user, key) && String(user[key] ?? "") !== ""
+  );
+}
+
+function hasRuntimeUserIndexEvidence(user) {
+  if (!user || typeof user !== "object") return false;
+  return user.indexedByServer === true || user.registeredByServer === true || user.createdByRegister === true;
+}
+
+let knownShopItemBlockTokensCache = { signature: "", tokens: new Set() };
+
+function readKnownShopItemBlockTokens() {
+  try {
+    const filePath = resolveDataPath("shopItems.json");
+    let signature = "missing";
+    try {
+      const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+      signature = stat ? `${stat.size}:${Math.round(stat.mtimeMs)}` : "missing";
+    } catch {}
+    if (knownShopItemBlockTokensCache.signature === signature) return knownShopItemBlockTokensCache.tokens;
+
+    const parsed = readJsonFromPath(filePath, []);
+    const tokens = new Set();
+    if (Array.isArray(parsed)) {
+      parsed.forEach((item) => {
+        const id = normalizeUserIdText(item?.id);
+        const name = normalizeUserIdText(item?.name);
+        if (id) tokens.add(id.toLowerCase());
+        if (name) tokens.add(name.toLowerCase());
+      });
+    }
+    knownShopItemBlockTokensCache = { signature, tokens };
+    return tokens;
+  } catch {
+    return knownShopItemBlockTokensCache.tokens || new Set();
+  }
+}
+
+function isKnownNonUserRuntimeId(id) {
+  const nextId = normalizeUserIdText(id);
+  if (!nextId) return true;
+  const lower = nextId.toLowerCase();
+  if (lower === "plc") return true;
+  if (/^item-\d{8,}$/.test(lower)) return true;
+  if (readKnownShopItemBlockTokens().has(lower)) return true;
+  return false;
+}
+
 function getRuntimeUserId(user) {
   if (!user || typeof user !== "object") return "";
   return normalizeUserIdText(
@@ -446,57 +559,63 @@ function getRuntimeUserId(user) {
   );
 }
 
-function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "") {
+function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "", options = {}) {
   if (depth > 5) return [];
+  const sourceKind = options.sourceKind || "account";
+  const sourceAllowsPlainIds = sourceKind === "account" || sourceKind === "index";
+  const blockedFallbacks = new Set(["users", "accounts", "members", "userList", "data", "rows", "items"]);
+
   if (Array.isArray(parsed)) {
-    return parsed.flatMap((user, index) => extractRuntimeUserRows(user, depth + 1, String(index)));
+    return parsed.flatMap((user, index) => extractRuntimeUserRows(user, depth + 1, String(index), options));
   }
 
   if (!parsed || typeof parsed !== "object") {
     const fallbackId = normalizeUserIdText(fallbackKey);
     const valueId = normalizeUserIdText(parsed);
     const fallbackIsIndex = /^\d+$/.test(fallbackId);
-    const blockedFallbacks = new Set(["users", "accounts", "members", "userList", "data", "rows", "items"]);
 
     // users.json이 ["id1", "id2"]처럼 문자열 배열로 저장된 경우도 운영 목록에서 놓치지 않습니다.
-    if (fallbackIsIndex && valueId) return [{ id: valueId, type: "owner" }];
+    if (sourceAllowsPlainIds && fallbackIsIndex && valueId && !isKnownNonUserRuntimeId(valueId)) {
+      return [{ id: valueId, type: "owner" }];
+    }
 
     // users.json이 { "id1": "password" }처럼 객체 key를 아이디로 쓰는 경우를 보존합니다.
-    if (!fallbackId || blockedFallbacks.has(fallbackId)) return [];
+    if (!sourceAllowsPlainIds || depth > 1 || !fallbackId || blockedFallbacks.has(fallbackId) || isKnownNonUserRuntimeId(fallbackId)) return [];
     return [{ id: fallbackId, pw: parsed, type: "owner" }];
   }
 
   const rows = [];
-  const directId = getRuntimeUserId(parsed);
+  const hasAuthEvidence = hasRuntimeUserAuthEvidence(parsed);
+  const directId = getRuntimeAccountId(parsed, { allowNameFallback: hasAuthEvidence });
   const fallbackId = normalizeUserIdText(fallbackKey);
-  const looksLikeUser = !!directId || (
-    !!fallbackId &&
-    !["users", "accounts", "members", "userList", "data", "rows", "items"].includes(fallbackId) &&
-    (Object.prototype.hasOwnProperty.call(parsed, "pw") ||
-      Object.prototype.hasOwnProperty.call(parsed, "password") ||
-      Object.prototype.hasOwnProperty.call(parsed, "type") ||
-      Object.prototype.hasOwnProperty.call(parsed, "role") ||
-      Object.prototype.hasOwnProperty.call(parsed, "createdAt") ||
-      Object.prototype.hasOwnProperty.call(parsed, "updatedAt"))
+  const hasIndexEvidence = hasRuntimeUserIndexEvidence(parsed);
+  const hasAccountLikeDate = Object.prototype.hasOwnProperty.call(parsed, "createdAt") || Object.prototype.hasOwnProperty.call(parsed, "updatedAt");
+  const hasTypeEvidence = Object.prototype.hasOwnProperty.call(parsed, "type") || Object.prototype.hasOwnProperty.call(parsed, "role");
+  const fallbackLooksLikeUser = !!fallbackId && !blockedFallbacks.has(fallbackId) && !isKnownNonUserRuntimeId(fallbackId) && (hasAuthEvidence || (sourceAllowsPlainIds && (hasTypeEvidence || hasAccountLikeDate || hasIndexEvidence)));
+  const directLooksLikeUser = !!directId && !isKnownNonUserRuntimeId(directId) && (
+    sourceAllowsPlainIds ||
+    hasAuthEvidence ||
+    hasIndexEvidence ||
+    hasAccountLikeDate
   );
 
-  if (looksLikeUser) {
+  if (directLooksLikeUser || fallbackLooksLikeUser) {
     rows.push({
       ...parsed,
-      id: directId || fallbackId,
+      id: directLooksLikeUser ? directId : fallbackId,
       type: parsed.type || parsed.role || "owner",
     });
   }
 
   Object.entries(parsed).forEach(([key, value]) => {
     if (value && typeof value === "object") {
-      rows.push(...extractRuntimeUserRows(value, depth + 1, key));
+      rows.push(...extractRuntimeUserRows(value, depth + 1, key, options));
       return;
     }
-    if (looksLikeUser) return;
+    if (directLooksLikeUser || fallbackLooksLikeUser) return;
     const keyId = normalizeUserIdText(key);
-    if (keyId && !["pw", "password", "type", "role", "users", "accounts", "members", "data", "rows", "items"].includes(keyId)) {
-      rows.push(...extractRuntimeUserRows(value, depth + 1, key));
+    if (sourceAllowsPlainIds && keyId && !["pw", "password", "pass", "passwd", "type", "role", "users", "accounts", "members", "data", "rows", "items"].includes(keyId) && !isKnownNonUserRuntimeId(keyId)) {
+      rows.push(...extractRuntimeUserRows(value, depth + 1, key, options));
     }
   });
 
@@ -516,14 +635,16 @@ function isBlockedRuntimeUserToken(value) {
 
 function pushLooseRuntimeUser(rows, id, source = "loose") {
   const nextId = normalizeUserIdText(id);
-  if (isBlockedRuntimeUserToken(nextId)) return;
+  if (isBlockedRuntimeUserToken(nextId) || isKnownNonUserRuntimeId(nextId)) return;
   if (nextId.length > 80) return;
   if (/^https?:\/\//i.test(nextId) || nextId.includes("/static/") || nextId.includes("data:image/")) return;
   rows.push({ id: nextId, type: "owner", source });
 }
 
-function extractRuntimeUserRowsFromLooseText(rawText) {
+function extractRuntimeUserRowsFromLooseText(rawText, options = {}) {
   const raw = String(rawText || "");
+  const sourceKind = options.sourceKind || "account";
+  const allowLooseIdFields = sourceKind !== "generic";
   if (!raw.trim()) return [];
   const rows = [];
 
@@ -532,10 +653,12 @@ function extractRuntimeUserRowsFromLooseText(rawText) {
     /(?:^|[,\{\s])(?:id|userId|userID|user_id|accountId|accountID|account_id|loginId|loginID|login_id|username|userName|user_name|uid|memberId|memberID|member_id|ownerId|ownerID|owner_id|displayName|display_name|nickname|nick|handle)\s*[:=]\s*["']([^"'\n\r]{1,80})["']/gi,
   ];
 
-  fieldPatterns.forEach((pattern) => {
-    let match;
-    while ((match = pattern.exec(raw))) pushLooseRuntimeUser(rows, match[1], "field");
-  });
+  if (allowLooseIdFields) {
+    fieldPatterns.forEach((pattern) => {
+      let match;
+      while ((match = pattern.exec(raw))) pushLooseRuntimeUser(rows, match[1], "field");
+    });
+  }
 
   // { "someId": { "pw": "..." } } / { "someId": { "password": "..." } } 형태를 깊은 중첩이 있어도 놓치지 않습니다.
   const objectKeyPattern = /["']([^"'\n\r]{1,80})["']\s*:\s*\{[\s\S]{0,3600}?["'](?:pw|password|pass|passwd)["']\s*:/gi;
@@ -543,9 +666,11 @@ function extractRuntimeUserRowsFromLooseText(rawText) {
   while ((keyMatch = objectKeyPattern.exec(raw))) pushLooseRuntimeUser(rows, keyMatch[1], "object-key");
 
   // 로그/임시 파일에 id=abc, userId: abc 식으로 남은 경우까지 회수합니다.
-  const linePattern = /(?:^|[\n\r\s,;])(?:id|userId|user_id|accountId|account_id|loginId|login_id|username|nickname|nick|handle)\s*[:=]\s*([A-Za-z0-9가-힣_.@+-]{2,80})/gi;
-  let lineMatch;
-  while ((lineMatch = linePattern.exec(raw))) pushLooseRuntimeUser(rows, lineMatch[1], "line");
+  if (allowLooseIdFields) {
+    const linePattern = /(?:^|[\n\r\s,;])(?:id|userId|user_id|accountId|account_id|loginId|login_id|username|nickname|nick|handle)\s*[:=]\s*([A-Za-z0-9가-힣_.@+-]{2,80})/gi;
+    let lineMatch;
+    while ((lineMatch = linePattern.exec(raw))) pushLooseRuntimeUser(rows, lineMatch[1], "line");
+  }
 
   return mergeRuntimeUsers(rows);
 }
@@ -569,15 +694,16 @@ function readRuntimeArrayFromExactPath(filePath) {
     if (stat.size > MAX_USER_SOURCE_BYTES && isGenericRuntimeUserSource(filePath)) return [];
 
     const raw = fs.readFileSync(filePath, "utf-8");
+    const sourceKind = getRuntimeUserSourceKind(filePath);
     let parsedRows = [];
     if (stat.size <= MAX_STARTUP_JSON_PARSE_BYTES) {
       try {
-        parsedRows = extractRuntimeUserRows(JSON.parse(raw));
+        parsedRows = extractRuntimeUserRows(JSON.parse(raw), 0, "", { sourceKind });
       } catch {}
     }
 
     const looseRows = raw.length <= MAX_LOOSE_TEXT_SCAN_BYTES
-      ? extractRuntimeUserRowsFromLooseText(raw)
+      ? extractRuntimeUserRowsFromLooseText(raw, { sourceKind })
       : [];
 
     return mergeRuntimeUsers(parsedRows, looseRows);
@@ -770,18 +896,33 @@ function getRuntimeUserBackupRows() {
   }
 }
 
+function isDisplayableAdminAccount(user) {
+  const id = getRuntimeAccountId(user) || getRuntimeUserId(user);
+  if (!id || isBlockedRuntimeUserToken(id) || isKnownNonUserRuntimeId(id)) return false;
+  if (/^\d+$/.test(String(id)) && String(id).length >= 10) return false;
+  if (/^E-\d+$/i.test(String(id))) return false;
+
+  // 운영 계정 선택은 로그인 가능한 계정 원본만 기준으로 합니다.
+  // 과거 색인 파일이 아이템/디자인/패키지 키를 계정처럼 저장한 경우를 다시 섞지 않습니다.
+  const source = String(user?.source || "");
+  if (source === "online") return true;
+  return hasRuntimeUserAuthEvidence(user);
+}
+
 function writeRuntimeUserIndexes(userRows) {
   try {
-    const safeRows = mergeRuntimeUsers(userRows).map((user) => ({
-      id: getRuntimeUserId(user),
-      type: user.type || user.role || "owner",
-      indexedByServer: true,
-    })).filter((user) => user.id && user.id !== "PLC");
+    const safeRows = mergeRuntimeUsers(userRows)
+      .filter(isDisplayableAdminAccount)
+      .map((user) => ({
+        id: getRuntimeAccountId(user) || getRuntimeUserId(user),
+        type: user.type || user.role || "owner",
+        indexedByServer: true,
+      }))
+      .filter((user) => user.id && user.id !== "PLC");
     if (safeRows.length === 0) return;
     ["registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json"].forEach((filename) => {
       const indexPath = resolveDataPath(filename);
-      const current = readRuntimeArrayFromExactPath(indexPath);
-      writeJsonAtomicSync(indexPath, mergeRuntimeUsers(current, safeRows));
+      writeJsonAtomicSync(indexPath, mergeRuntimeUsers(safeRows));
     });
   } catch (error) {
     console.error("writeRuntimeUserIndexes failed", error);
@@ -795,7 +936,7 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
   const pendingPayload = pendingJsonWrites.get(pendingUsersPath)?.payload;
   let pendingRows = [];
   if (pendingPayload) {
-    try { pendingRows = pendingPayload.length <= MAX_STARTUP_JSON_PARSE_BYTES ? extractRuntimeUserRows(JSON.parse(pendingPayload)) : []; } catch {}
+    try { pendingRows = pendingPayload.length <= MAX_STARTUP_JSON_PARSE_BYTES ? extractRuntimeUserRows(JSON.parse(pendingPayload), 0, "", { sourceKind: "account" }) : []; } catch {}
   }
 
   const paths = collectKnownRuntimeJsonPaths("users.json", { deep });
@@ -958,10 +1099,11 @@ function getOnlineRuntimeUserRows() {
   try {
     return Object.values(socketUsers || {})
       .map((user) => ({
-        id: getRuntimeUserId(user),
+        id: getRuntimeAccountId(user) || normalizeUserIdText(user?.accountKey) || getRuntimeUserId(user),
         type: user?.type || "owner",
+        source: "online",
       }))
-      .filter((user) => user.id);
+      .filter((user) => user.id && isDisplayableAdminAccount(user));
   } catch {
     return [];
   }
@@ -969,16 +1111,12 @@ function getOnlineRuntimeUserRows() {
 
 function getSafeUsersForAdmin(searchText = "") {
   refreshUsersFromKnownSources({ deep: true });
-  const ownerRows = (Array.isArray(charactersDB) ? charactersDB : [])
-    .map((character) => normalizeUserIdText(character?.ownerId))
-    .filter(Boolean)
-    .map((id) => ({ id, type: "owner" }));
 
   const knownDiskRows = getAllKnownRuntimeUsersFromDisk();
-  const safeRows = mergeRuntimeUsers(knownDiskRows, usersDB, ownerRows, getOnlineRuntimeUserRows())
-    .filter((user) => getRuntimeUserId(user))
+  const safeRows = mergeRuntimeUsers(knownDiskRows, usersDB, getOnlineRuntimeUserRows())
+    .filter(isDisplayableAdminAccount)
     .map((user) => ({
-      id: getRuntimeUserId(user),
+      id: getRuntimeAccountId(user) || getRuntimeUserId(user),
       type: user.type || "owner",
     }));
 
@@ -5145,4 +5283,7 @@ if (fs.existsSync(clientBuildPath)) {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`서버 실행됨: ${PORT}`);
+  // Render 헬스체크가 먼저 HTTP 응답을 받을 수 있도록,
+  // 이미지/JSON 정리 작업은 서버가 포트를 연 뒤 백그라운드 자식 프로세스로 실행합니다.
+  setTimeout(runAssetCompactChildProcess, 1000);
 });

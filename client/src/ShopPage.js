@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
 import { buildApiUrl } from "./api";
 
@@ -376,6 +376,9 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
   const [session, setSession] = useState(null);
   const [localCharacter, setLocalCharacter] = useState(activeCharacter || null);
   const [orderSaving, setOrderSaving] = useState(false);
+  const catalogRef = useRef(catalog);
+  const orderSaveSeqRef = useRef(0);
+  const orderSaveTimerRef = useRef(null);
 
   useEffect(() => {
     setLocalCharacter(activeCharacter || null);
@@ -401,9 +404,57 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
     writeCachedJson(SHOP_CONFIG_CACHE_KEY, next);
   };
 
-  const moveShopItem = async (itemId, direction) => {
-    if (!isAdmin || orderSaving) return;
-    const visible = catalog.filter((item) => !item.hidden);
+  useEffect(() => {
+    catalogRef.current = catalog;
+  }, [catalog]);
+
+  useEffect(() => () => {
+    if (orderSaveTimerRef.current) clearTimeout(orderSaveTimerRef.current);
+  }, []);
+
+  const persistShopOrder = (nextCatalog) => {
+    const ids = nextCatalog.map((item) => item?.id).filter(Boolean);
+    if (ids.length === 0) return;
+
+    const seq = orderSaveSeqRef.current + 1;
+    orderSaveSeqRef.current = seq;
+    if (orderSaveTimerRef.current) clearTimeout(orderSaveTimerRef.current);
+
+    orderSaveTimerRef.current = setTimeout(async () => {
+      setOrderSaving(true);
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(buildApiUrl("/shopItems/reorder"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.message || "순서 저장에 실패했습니다.");
+        if (seq === orderSaveSeqRef.current && Array.isArray(data.items)) {
+          catalogRef.current = data.items;
+          setCatalog(data.items);
+          writeCachedJson(SHOP_CATALOG_CACHE_KEY, data.items);
+        }
+      } catch (err) {
+        if (seq === orderSaveSeqRef.current) {
+          console.error("shop item reorder failed", err);
+          alert(err?.name === "AbortError" ? "순서 저장 응답이 지연되었습니다. 화면은 계속 조작할 수 있습니다." : (err?.message || "순서 저장에 실패했습니다."));
+          loadItems().catch(() => {});
+        }
+      } finally {
+        clearTimeout(abortTimer);
+        if (seq === orderSaveSeqRef.current) setOrderSaving(false);
+      }
+    }, 120);
+  };
+
+  const moveShopItem = (itemId, direction) => {
+    if (!isAdmin) return;
+    const currentCatalog = Array.isArray(catalogRef.current) ? catalogRef.current : [];
+    const visible = currentCatalog.filter((item) => !item.hidden);
     const currentIndex = visible.findIndex((item) => String(item.id) === String(itemId));
     const nextIndex = currentIndex + direction;
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visible.length) return;
@@ -411,29 +462,12 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
     const reorderedVisible = [...visible];
     [reorderedVisible[currentIndex], reorderedVisible[nextIndex]] = [reorderedVisible[nextIndex], reorderedVisible[currentIndex]];
     const queue = [...reorderedVisible];
-    const nextCatalog = catalog.map((item) => item.hidden ? item : queue.shift());
+    const nextCatalog = currentCatalog.map((item) => item.hidden ? item : queue.shift());
 
+    catalogRef.current = nextCatalog;
     setCatalog(nextCatalog);
     writeCachedJson(SHOP_CATALOG_CACHE_KEY, nextCatalog);
-    setOrderSaving(true);
-    try {
-      const res = await fetch(buildApiUrl("/shopItems/reorder"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: nextCatalog.map((item) => item.id).filter(Boolean) }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message || "순서 저장에 실패했습니다.");
-      if (Array.isArray(data.items)) {
-        setCatalog(data.items);
-        writeCachedJson(SHOP_CATALOG_CACHE_KEY, data.items);
-      }
-    } catch (err) {
-      alert(err?.message || "순서 저장에 실패했습니다.");
-      loadItems().catch(() => {});
-    } finally {
-      setOrderSaving(false);
-    }
+    persistShopOrder(nextCatalog);
   };
 
   useEffect(() => {
@@ -579,8 +613,8 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
                     <div style={{ fontWeight: 900, fontSize: 20 }}>{item.name}</div>
                     {isAdmin ? (
                       <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
-                        <button type="button" className="ghost-button" onClick={() => moveShopItem(item.id, -1)} disabled={orderSaving || visibleIndex === 0} title="위로 이동">▲</button>
-                        <button type="button" className="ghost-button" onClick={() => moveShopItem(item.id, 1)} disabled={orderSaving || visibleIndex === visibleItems.length - 1} title="아래로 이동">▼</button>
+                        <button type="button" className="ghost-button" onClick={() => moveShopItem(item.id, -1)} disabled={visibleIndex === 0} title={orderSaving ? "저장 중에도 이동할 수 있습니다" : "위로 이동"}>▲</button>
+                        <button type="button" className="ghost-button" onClick={() => moveShopItem(item.id, 1)} disabled={visibleIndex === visibleItems.length - 1} title={orderSaving ? "저장 중에도 이동할 수 있습니다" : "아래로 이동"}>▼</button>
                       </div>
                     ) : null}
                   </div>
