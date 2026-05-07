@@ -71,7 +71,7 @@ function compactBase64DataUrlsInText(raw, namespace) {
   fs.mkdirSync(targetDir, { recursive: true });
 
   let changed = false;
-  const dataUrlPattern = /data:([a-zA-Z0-9.+-]+)\?\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+\/_=-]+)/g;
+  const dataUrlPattern = /data:([a-zA-Z0-9.+-]+)(?:\\?\/)([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+\/_=-]+)/g;
   const text = source.replace(dataUrlPattern, (full, major, minor, base64Text) => {
     try {
       const mime = `${major}/${minor}`;
@@ -300,8 +300,15 @@ const io = new Server(server, { cors: corsOptions });
 
 const pendingJsonWrites = new Map();
 
+function stringifyRuntimeJsonPayload(filePath, value) {
+  const rawPayload = JSON.stringify(value === undefined ? null : value, null, 2);
+  const namespace = path.basename(String(filePath || "assets"), ".json");
+  const compacted = compactBase64DataUrlsInText(rawPayload, namespace);
+  return compacted.text;
+}
+
 function writeJsonAtomicSync(filePath, value) {
-  const payload = JSON.stringify(value, null, 2);
+  const payload = stringifyRuntimeJsonPayload(filePath, value);
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
@@ -310,7 +317,7 @@ function writeJsonAtomicSync(filePath, value) {
 }
 
 function scheduleJsonWrite(filePath, value, { delay = 12 } = {}) {
-  const payload = JSON.stringify(value, null, 2);
+  const payload = stringifyRuntimeJsonPayload(filePath, value);
   const existing = pendingJsonWrites.get(filePath);
   if (existing?.timer) clearTimeout(existing.timer);
   const timer = setTimeout(async () => {
