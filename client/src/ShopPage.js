@@ -361,7 +361,7 @@ function EBeastGame({ bet, onClose, onResolve, beastImages = [] }) {
   );
 }
 
-export default function ShopPage({ activeCharacter, onApplyCharacter, design, theme, initialTab = "shop", pageKeyOverride = "" }) {
+export default function ShopPage({ activeCharacter, onApplyCharacter, design, theme, initialTab = "shop", pageKeyOverride = "", isAdmin = false }) {
   const [catalog, setCatalog] = useState(() => {
     const cached = readCachedJson(SHOP_CATALOG_CACHE_KEY, []);
     return Array.isArray(cached) ? cached : [];
@@ -375,6 +375,7 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
   const [gameChoice, setGameChoice] = useState("");
   const [session, setSession] = useState(null);
   const [localCharacter, setLocalCharacter] = useState(activeCharacter || null);
+  const [orderSaving, setOrderSaving] = useState(false);
 
   useEffect(() => {
     setLocalCharacter(activeCharacter || null);
@@ -399,6 +400,42 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
     setShopConfig(next);
     writeCachedJson(SHOP_CONFIG_CACHE_KEY, next);
   };
+
+  const moveShopItem = async (itemId, direction) => {
+    if (!isAdmin || orderSaving) return;
+    const visible = catalog.filter((item) => !item.hidden);
+    const currentIndex = visible.findIndex((item) => String(item.id) === String(itemId));
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visible.length) return;
+
+    const reorderedVisible = [...visible];
+    [reorderedVisible[currentIndex], reorderedVisible[nextIndex]] = [reorderedVisible[nextIndex], reorderedVisible[currentIndex]];
+    const queue = [...reorderedVisible];
+    const nextCatalog = catalog.map((item) => item.hidden ? item : queue.shift());
+
+    setCatalog(nextCatalog);
+    writeCachedJson(SHOP_CATALOG_CACHE_KEY, nextCatalog);
+    setOrderSaving(true);
+    try {
+      const res = await fetch(buildApiUrl("/shopItems/reorder"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: nextCatalog.map((item) => item.id).filter(Boolean) }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "순서 저장에 실패했습니다.");
+      if (Array.isArray(data.items)) {
+        setCatalog(data.items);
+        writeCachedJson(SHOP_CATALOG_CACHE_KEY, data.items);
+      }
+    } catch (err) {
+      alert(err?.message || "순서 저장에 실패했습니다.");
+      loadItems().catch(() => {});
+    } finally {
+      setOrderSaving(false);
+    }
+  };
+
   useEffect(() => {
     loadItems().catch(() => {
       setCatalog((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : readCachedJson(SHOP_CATALOG_CACHE_KEY, [])));
@@ -534,11 +571,19 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
         </div>
                 {tab === "shop" ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
-            {visibleItems.map((item) => (
+            {visibleItems.map((item, visibleIndex) => (
               <div key={item.id} style={box(theme, { display: "grid", gridTemplateColumns: item.image ? "96px minmax(0, 1fr)" : "1fr", gap: 14, alignItems: "start" })}>
                 {item.image ? <div style={{ width: 96, height: 96, borderRadius: 20, overflow: "hidden", background: "rgba(255,255,255,0.7)" }}><img src={item.image} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /></div> : null}
                 <div>
-                  <div style={{ fontWeight: 900, fontSize: 20 }}>{item.name}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ fontWeight: 900, fontSize: 20 }}>{item.name}</div>
+                    {isAdmin ? (
+                      <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
+                        <button type="button" className="ghost-button" onClick={() => moveShopItem(item.id, -1)} disabled={orderSaving || visibleIndex === 0} title="위로 이동">▲</button>
+                        <button type="button" className="ghost-button" onClick={() => moveShopItem(item.id, 1)} disabled={orderSaving || visibleIndex === visibleItems.length - 1} title="아래로 이동">▼</button>
+                      </div>
+                    ) : null}
+                  </div>
                   <div style={{ color: theme?.textSoft || "#4f7390", lineHeight: 1.75, marginTop: 8 }}>{item.description || ""}</div>
                   <div style={{ marginTop: 12, color: theme?.textSoft || "#4f7390" }}>가격 {item.price || 0}</div>
                   <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>

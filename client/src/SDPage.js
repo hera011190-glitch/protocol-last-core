@@ -631,7 +631,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   );
 });
 
-export default function SDPage({ activeCharacter, design, theme }) {
+export default function SDPage({ activeCharacter, design, theme, isActive = true }) {
   const [characters, setCharacters] = useState(() => readCachedSdCharacters());
   const [activeMapId, setActiveMapId] = useState(() => readLastViewedMapId());
   const [quotes, setQuotes] = useState({});
@@ -689,6 +689,10 @@ export default function SDPage({ activeCharacter, design, theme }) {
   useEffect(() => {
     startInstantImageBoot();
   }, []);
+
+  useEffect(() => {
+    if (!isActive) setSelectedCharacter(null);
+  }, [isActive]);
 
   useEffect(() => {
     if (!activeCharacter) return;

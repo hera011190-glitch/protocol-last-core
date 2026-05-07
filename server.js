@@ -4838,6 +4838,29 @@ app.get("/shopItems", (req, res) => {
   syncShopItemsWithKnownItems();
   res.json(shopItemsDB.map(normalizeShopItem));
 });
+app.post("/shopItems/reorder", (req, res) => {
+  syncShopItemsWithKnownItems();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => String(id || "")).filter(Boolean) : [];
+  if (ids.length === 0) return res.status(400).json({ success: false, message: "저장할 물품 순서가 없습니다." });
+
+  const byId = new Map(shopItemsDB.map((item) => [String(item?.id || ""), item]));
+  const nextItems = [];
+  ids.forEach((id) => {
+    if (!byId.has(id)) return;
+    nextItems.push(byId.get(id));
+    byId.delete(id);
+  });
+  shopItemsDB.forEach((item) => {
+    const id = String(item?.id || "");
+    if (!byId.has(id)) return;
+    nextItems.push(item);
+    byId.delete(id);
+  });
+
+  shopItemsDB = nextItems.map(normalizeShopItem);
+  writeJsonFileSafe(shopItemsPath, shopItemsDB);
+  res.json({ success: true, items: shopItemsDB.map(normalizeShopItem) });
+});
 app.post("/shopItems", (req, res) => {
   syncShopItemsWithKnownItems();
   const payload = normalizeShopItem(req.body || {});

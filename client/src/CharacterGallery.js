@@ -73,7 +73,7 @@ function rankOrderValue(rank) {
   return 2;
 }
 
-export default function CharacterGallery({ user, activeCharacter, design, theme }) {
+export default function CharacterGallery({ user, activeCharacter, design, theme, isActive = true }) {
   const [characters, setCharacters] = useState(() => readCachedCharacters());
   const [search, setSearch] = useState("");
   const [selectedCharacter, setSelectedCharacter] = useState(null);
@@ -82,6 +82,10 @@ export default function CharacterGallery({ user, activeCharacter, design, theme 
   const onlineSeenRef = useRef({});
   const loadStampRef = useRef(0);
   const content = design?.siteContent?.characters || {};
+
+  useEffect(() => {
+    if (!isActive) setSelectedCharacter(null);
+  }, [isActive]);
 
   const loadCharacters = () => {
     fetchCharactersWithFallback()

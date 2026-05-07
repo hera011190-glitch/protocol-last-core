@@ -816,10 +816,10 @@ function App() {
       content = <HomePage user={user} activeCharacter={runtimeCharacter} openMy={() => setActivePage(PAGE.MY)} goCharacters={() => setActivePage(PAGE.CHARACTERS)} goInvestigations={() => setActivePage(PAGE.INVESTIGATIONS)} goShop={() => setActivePage(PAGE.SHOP)} goSD={() => setActivePage(PAGE.SD)} theme={theme} design={designConfig} />;
       break;
     case PAGE.SD:
-      content = <SDPage user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} />;
+      content = <></>;
       break;
     case PAGE.CHARACTERS:
-      content = <CharacterGallery user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} />;
+      content = <></>;
       break;
     case PAGE.INVESTIGATIONS:
       content = runtimeCharacter || isAdmin
@@ -855,7 +855,7 @@ function App() {
       break;
     case PAGE.SHOP:
       content = runtimeCharacter || isAdmin
-        ? <ShopPage activeCharacter={runtimeCharacter} onApplyCharacter={applyActiveCharacter} design={designConfig} theme={theme} />
+        ? <ShopPage activeCharacter={runtimeCharacter} onApplyCharacter={applyActiveCharacter} design={designConfig} theme={theme} isAdmin={isAdmin} />
         : <NeedCharacterCard openMy={() => setActivePage(PAGE.MY)} design={designConfig} theme={theme} pageKey="shop" />;
       break;
     case PAGE.MY:
@@ -908,6 +908,9 @@ function App() {
     content = <HomePage user={user} activeCharacter={runtimeCharacter} openMy={() => setActivePage(PAGE.MY)} goCharacters={() => setActivePage(PAGE.CHARACTERS)} goInvestigations={() => setActivePage(PAGE.INVESTIGATIONS)} goShop={() => setActivePage(PAGE.SHOP)} goSD={() => setActivePage(PAGE.SD)} theme={theme} design={designConfig} />;
   }
 
+  const keepSdMounted = true;
+  const keepCharactersMounted = true;
+
   const shellPageKey = (() => {
     if (activePage === PAGE.MY && !user) return "login";
     if (activePage === PAGE.LOBBY) return PAGE.INVESTIGATIONS;
@@ -919,7 +922,17 @@ function App() {
     <div data-design-ready={designReady ? "1" : "0"} style={buildThemeVars(theme)}>
       <audio ref={audioRef} style={{ display: "none" }} playsInline />
       <AppShellFrame user={user} activePage={activePage} shellPageKey={shellPageKey} onNavigate={setActivePage} onLogout={logout} onLogin={() => setActivePage(PAGE.MY)} designConfig={designConfig} myUnread={myUnread}>
-        {content}
+        {keepSdMounted ? (
+          <div style={{ display: activePage === PAGE.SD ? "block" : "none" }} aria-hidden={activePage !== PAGE.SD}>
+            <SDPage user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} isActive={activePage === PAGE.SD} />
+          </div>
+        ) : null}
+        {keepCharactersMounted ? (
+          <div style={{ display: activePage === PAGE.CHARACTERS ? "block" : "none" }} aria-hidden={activePage !== PAGE.CHARACTERS}>
+            <CharacterGallery user={user} activeCharacter={runtimeCharacter} design={designConfig} theme={theme} isActive={activePage === PAGE.CHARACTERS} />
+          </div>
+        ) : null}
+        {activePage !== PAGE.SD && activePage !== PAGE.CHARACTERS ? content : null}
       </AppShellFrame>
       {effectiveAudio.url && effectiveAudio.placement !== "profile" ? (
         <SpeakerButton muted={audioMuted} onToggle={() => setAudioMuted((prev) => !prev)} />
