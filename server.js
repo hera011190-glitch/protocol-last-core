@@ -695,15 +695,22 @@ function readRuntimeArrayFromExactPath(filePath) {
 
     const raw = fs.readFileSync(filePath, "utf-8");
     const sourceKind = getRuntimeUserSourceKind(filePath);
+    const sourceFile = path.basename(String(filePath || "")).toLowerCase();
+    const markRuntimeUserSource = (rows) => mergeRuntimeUsers(rows).map((row) => ({
+      ...row,
+      __runtimeUserSourceKind: sourceKind,
+      __runtimeUserSourceFile: sourceFile,
+    }));
+
     let parsedRows = [];
     if (stat.size <= MAX_STARTUP_JSON_PARSE_BYTES) {
       try {
-        parsedRows = extractRuntimeUserRows(JSON.parse(raw), 0, "", { sourceKind });
+        parsedRows = markRuntimeUserSource(extractRuntimeUserRows(JSON.parse(raw), 0, "", { sourceKind }));
       } catch {}
     }
 
     const looseRows = raw.length <= MAX_LOOSE_TEXT_SCAN_BYTES
-      ? extractRuntimeUserRowsFromLooseText(raw, { sourceKind })
+      ? markRuntimeUserSource(extractRuntimeUserRowsFromLooseText(raw, { sourceKind }))
       : [];
 
     return mergeRuntimeUsers(parsedRows, looseRows);
@@ -902,11 +909,31 @@ function isDisplayableAdminAccount(user) {
   if (/^\d+$/.test(String(id)) && String(id).length >= 10) return false;
   if (/^E-\d+$/i.test(String(id))) return false;
 
-  // 운영 계정 선택은 로그인 가능한 계정 원본만 기준으로 합니다.
-  // 과거 색인 파일이 아이템/디자인/패키지 키를 계정처럼 저장한 경우를 다시 섞지 않습니다.
+  // 운영 계정 선택은 실제 회원가입/로그인 계정 저장소와 서버가 만든 계정 색인만 표시합니다.
+  // 아이템/디자인/패키지 데이터처럼 id만 있는 일반 JSON 객체는 계속 차단합니다.
   const source = String(user?.source || "");
   if (source === "online") return true;
-  return hasRuntimeUserAuthEvidence(user);
+  if (hasRuntimeUserAuthEvidence(user)) return true;
+
+  const sourceFile = path.basename(String(user?.__runtimeUserSourceFile || "")).toLowerCase();
+  const sourceKind = String(user?.__runtimeUserSourceKind || "");
+  const fromAccountFile = sourceKind === "account" || sourceFile === "users.json" || RUNTIME_USER_SOURCE_NAMES.has(sourceFile);
+  const fromServerIndexFile = RUNTIME_USER_INDEX_SOURCE_NAMES.has(sourceFile);
+
+  if (hasRuntimeUserIndexEvidence(user) && (fromServerIndexFile || fromAccountFile)) return true;
+
+  // 과거 배포에서 비밀번호 필드 없이 id/type/createdAt 형태로 저장된 users.json 계정도
+  // 운영 목록에서 빠지지 않게 하되, 범용 data/db 파일에서는 허용하지 않습니다.
+  if (fromAccountFile && (
+    Object.prototype.hasOwnProperty.call(user, "type") ||
+    Object.prototype.hasOwnProperty.call(user, "role") ||
+    Object.prototype.hasOwnProperty.call(user, "createdAt") ||
+    Object.prototype.hasOwnProperty.call(user, "registeredAt")
+  )) {
+    return true;
+  }
+
+  return false;
 }
 
 function writeRuntimeUserIndexes(userRows) {
