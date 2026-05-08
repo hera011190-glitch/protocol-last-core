@@ -439,6 +439,16 @@ const RUNTIME_USER_INDEX_SOURCE_NAMES = new Set([
 ]);
 
 const RUNTIME_GENERIC_USER_SCAN_NAMES = new Set(["database.json", "db.json", "data.json", "backup.json", "index.json"]);
+const RUNTIME_USER_CONTAINER_KEYS = new Set([
+  "user", "users", "account", "accounts", "member", "members", "owner", "owners",
+  "login", "logins", "auth", "auths", "registered", "registeredusers",
+  "registeredUsers", "userdb", "usersdb", "userDB", "usersDB", "userlist", "userList"
+].map((key) => String(key).toLowerCase()));
+
+function isRuntimeUserContainerKey(key = "") {
+  const normalized = normalizeUserIdText(key).replace(/[\s_-]/g, "").toLowerCase();
+  return RUNTIME_USER_CONTAINER_KEYS.has(normalized);
+}
 
 function getRuntimeUserSourceKind(filePath = "") {
   const name = path.basename(String(filePath || "")).toLowerCase();
@@ -560,10 +570,15 @@ function getRuntimeUserId(user) {
 }
 
 function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "", options = {}) {
-  if (depth > 5) return [];
+  if (depth > 7) return [];
   const sourceKind = options.sourceKind || "account";
   const sourceAllowsPlainIds = sourceKind === "account" || sourceKind === "index";
-  const blockedFallbacks = new Set(["users", "accounts", "members", "userList", "data", "rows", "items"]);
+  const inRuntimeUserContainer = options.inUserContainer === true;
+  const blockedFallbacks = new Set([
+    "user", "users", "account", "accounts", "member", "members", "owner", "owners", "userList", "data", "rows", "items",
+    "id", "name", "type", "role", "pw", "password", "pass", "passwd", "createdAt", "updatedAt", "registeredAt",
+    "count", "total", "length", "version", "theme", "design", "characters", "shop", "shopItems", "investigations"
+  ]);
 
   if (Array.isArray(parsed)) {
     return parsed.flatMap((user, index) => extractRuntimeUserRows(user, depth + 1, String(index), options));
@@ -573,15 +588,15 @@ function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "", options = {
     const fallbackId = normalizeUserIdText(fallbackKey);
     const valueId = normalizeUserIdText(parsed);
     const fallbackIsIndex = /^\d+$/.test(fallbackId);
+    const primitiveLooksLikeStoredPassword = typeof parsed === "string" || typeof parsed === "number";
 
-    // users.json이 ["id1", "id2"]처럼 문자열 배열로 저장된 경우도 운영 목록에서 놓치지 않습니다.
-    if (sourceAllowsPlainIds && fallbackIsIndex && valueId && !isKnownNonUserRuntimeId(valueId)) {
-      return [{ id: valueId, type: "owner" }];
+    if ((sourceAllowsPlainIds || inRuntimeUserContainer) && fallbackIsIndex && valueId && !isKnownNonUserRuntimeId(valueId)) {
+      return [{ id: valueId, type: "owner", indexedByServer: inRuntimeUserContainer || sourceKind === "index" }];
     }
 
-    // users.json이 { "id1": "password" }처럼 객체 key를 아이디로 쓰는 경우를 보존합니다.
-    if (!sourceAllowsPlainIds || depth > 1 || !fallbackId || blockedFallbacks.has(fallbackId) || isKnownNonUserRuntimeId(fallbackId)) return [];
-    return [{ id: fallbackId, pw: parsed, type: "owner" }];
+    if ((!sourceAllowsPlainIds && !inRuntimeUserContainer) || (depth > 1 && !inRuntimeUserContainer) || !fallbackId || blockedFallbacks.has(fallbackId) || isKnownNonUserRuntimeId(fallbackId)) return [];
+    if (inRuntimeUserContainer && !primitiveLooksLikeStoredPassword) return [];
+    return [{ id: fallbackId, pw: primitiveLooksLikeStoredPassword ? parsed : undefined, type: "owner", indexedByServer: inRuntimeUserContainer || sourceKind === "index" }];
   }
 
   const rows = [];
@@ -589,11 +604,16 @@ function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "", options = {
   const directId = getRuntimeAccountId(parsed, { allowNameFallback: hasAuthEvidence });
   const fallbackId = normalizeUserIdText(fallbackKey);
   const hasIndexEvidence = hasRuntimeUserIndexEvidence(parsed);
-  const hasAccountLikeDate = Object.prototype.hasOwnProperty.call(parsed, "createdAt") || Object.prototype.hasOwnProperty.call(parsed, "updatedAt");
+  const hasAccountLikeDate = Object.prototype.hasOwnProperty.call(parsed, "createdAt") || Object.prototype.hasOwnProperty.call(parsed, "updatedAt") || Object.prototype.hasOwnProperty.call(parsed, "registeredAt");
   const hasTypeEvidence = Object.prototype.hasOwnProperty.call(parsed, "type") || Object.prototype.hasOwnProperty.call(parsed, "role");
-  const fallbackLooksLikeUser = !!fallbackId && !blockedFallbacks.has(fallbackId) && !isKnownNonUserRuntimeId(fallbackId) && (hasAuthEvidence || (sourceAllowsPlainIds && (hasTypeEvidence || hasAccountLikeDate || hasIndexEvidence)));
+  const fallbackLooksLikeUser = !!fallbackId && !blockedFallbacks.has(fallbackId) && !isKnownNonUserRuntimeId(fallbackId) && (
+    hasAuthEvidence ||
+    (sourceAllowsPlainIds && (hasTypeEvidence || hasAccountLikeDate || hasIndexEvidence)) ||
+    (inRuntimeUserContainer && (hasAuthEvidence || hasTypeEvidence || hasAccountLikeDate || hasIndexEvidence || Object.keys(parsed).length <= 12))
+  );
   const directLooksLikeUser = !!directId && !isKnownNonUserRuntimeId(directId) && (
     sourceAllowsPlainIds ||
+    inRuntimeUserContainer ||
     hasAuthEvidence ||
     hasIndexEvidence ||
     hasAccountLikeDate
@@ -604,18 +624,20 @@ function extractRuntimeUserRows(parsed, depth = 0, fallbackKey = "", options = {
       ...parsed,
       id: directLooksLikeUser ? directId : fallbackId,
       type: parsed.type || parsed.role || "owner",
+      indexedByServer: parsed.indexedByServer === true || inRuntimeUserContainer || sourceKind === "index",
     });
   }
 
   Object.entries(parsed).forEach(([key, value]) => {
+    const nextInRuntimeUserContainer = inRuntimeUserContainer || isRuntimeUserContainerKey(key);
     if (value && typeof value === "object") {
-      rows.push(...extractRuntimeUserRows(value, depth + 1, key, options));
+      rows.push(...extractRuntimeUserRows(value, depth + 1, key, { ...options, inUserContainer: nextInRuntimeUserContainer }));
       return;
     }
     if (directLooksLikeUser || fallbackLooksLikeUser) return;
     const keyId = normalizeUserIdText(key);
-    if (sourceAllowsPlainIds && keyId && !["pw", "password", "pass", "passwd", "type", "role", "users", "accounts", "members", "data", "rows", "items"].includes(keyId) && !isKnownNonUserRuntimeId(keyId)) {
-      rows.push(...extractRuntimeUserRows(value, depth + 1, key, options));
+    if ((sourceAllowsPlainIds || nextInRuntimeUserContainer) && keyId && !blockedFallbacks.has(keyId) && !isKnownNonUserRuntimeId(keyId)) {
+      rows.push(...extractRuntimeUserRows(value, depth + 1, key, { ...options, inUserContainer: nextInRuntimeUserContainer }));
     }
   });
 
@@ -968,6 +990,8 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
 
   const paths = collectKnownRuntimeJsonPaths("users.json", { deep });
 
+  const backupRows = deep ? getRuntimeUserBackupRows() : [];
+
   const rows = mergeRuntimeUsers(
     readRuntimeArrayFromExactPath(resolveDataPath("users.json")),
     readRuntimeArrayFromExactPath(resolveBundledPath("users.json")),
@@ -976,7 +1000,7 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
     readRuntimeArrayFromExactPath(resolveDataPath("adminUserIndex.json")),
     readRuntimeArrayFromExactPath(resolveDataPath("allUserIds.json")),
     readRuntimeArrayFromExactPath(resolveDataPath("publicUserIndex.json")),
-    getRuntimeUserBackupRows(),
+    backupRows,
     ...paths.reverse().map(readRuntimeArrayFromExactPath),
     pendingRows
   );
@@ -1160,7 +1184,7 @@ function getSafeUsersForAdmin(searchText = "") {
 }
 
 
-function getDirectAdminAccountRows(searchText = "") {
+function getDirectAdminAccountRows(searchText = "", options = {}) {
   // 운영 계정 선택 전용: 실제 계정 저장/색인 파일만 직접 읽습니다.
   // data/db/backup처럼 아이템·디자인 객체가 섞일 수 있는 범용 JSON은 여기서 읽지 않습니다.
   const directFiles = [
@@ -1185,8 +1209,10 @@ function getDirectAdminAccountRows(searchText = "") {
     directPaths.push(path.join(process.cwd(), filename));
   });
 
+  const deep = options.deep === true;
   const rows = mergeRuntimeUsers(
     ...directPaths.map(readRuntimeArrayFromExactPath),
+    ...(deep ? [getAllKnownRuntimeUsersFromDisk({ deep: true })] : []),
     usersDB,
     getOnlineRuntimeUserRows()
   )
@@ -4016,8 +4042,9 @@ io.on("connection", (socket) => {
 
 
 app.get("/admin/accountIds", (req, res) => {
-  refreshUsersFromKnownSources({ deep: false });
-  const users = getDirectAdminAccountRows(req.query?.q || req.query?.search || "");
+  const deep = req.query?.deep === "1" || req.query?.deep === "true";
+  refreshUsersFromKnownSources({ deep });
+  const users = getDirectAdminAccountRows(req.query?.q || req.query?.search || "", { deep });
   if (users.length > 0) writeRuntimeUserIndexes(users);
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.json({
@@ -4026,6 +4053,7 @@ app.get("/admin/accountIds", (req, res) => {
     accounts: users,
     accountIds: users.map((user) => user.id).filter(Boolean),
     count: users.length,
+    deep,
   });
 });
 
@@ -5375,7 +5403,8 @@ if (fs.existsSync(clientBuildPath)) {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`서버 실행됨: ${PORT}`);
-  // Render 헬스체크가 먼저 HTTP 응답을 받을 수 있도록,
-  // 이미지/JSON 정리 작업은 서버가 포트를 연 뒤 백그라운드 자식 프로세스로 실행합니다.
-  setTimeout(runAssetCompactChildProcess, 1000);
+  // Render 헬스체크가 안정적으로 통과한 뒤에만 이미지/JSON 정리 작업을 시작합니다.
+  // 시작 직후 1초 안에 별도 프로세스가 대형 JSON을 훑으면 5초 헬스체크가 다시 밀릴 수 있어 지연 시간을 둡니다.
+  const assetCompactDelayMs = Number(process.env.PLC_ASSET_COMPACT_DELAY_MS || (process.env.RENDER ? 30000 : 3000));
+  setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);
 });

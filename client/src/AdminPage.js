@@ -557,7 +557,7 @@ export default function AdminPage({
       setUsersLoading(true);
       const stamp = Date.now();
       const endpoints = [
-        `/admin/accountIds?t=${stamp}`,
+        `/admin/accountIds?deep=1&t=${stamp}`,
         `/admin/users?deep=1&t=${stamp}`,
         `/admin/users/rebuild?deep=1&t=${stamp}`,
       ];
@@ -614,7 +614,7 @@ export default function AdminPage({
       let foundUser = data?.exists && data?.user ? data.user : null;
 
       if (!foundUser) {
-        const directRes = await fetch(adminApi(`/admin/accountIds?q=${encodeURIComponent(keyword)}&t=${Date.now()}`), {
+        const directRes = await fetch(adminApi(`/admin/accountIds?q=${encodeURIComponent(keyword)}&deep=1&t=${Date.now()}`), {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache" },
         });
