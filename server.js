@@ -5475,7 +5475,8 @@ if (fs.existsSync(clientBuildPath)) {
       }
     },
   }));
-  app.get("*", (req, res) => {
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
     if (req.path.startsWith("/socket.io")) return res.status(404).end();
     res.sendFile(path.join(clientBuildPath, "index.html"));
   });
