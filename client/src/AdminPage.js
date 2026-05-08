@@ -13,11 +13,13 @@ function normalizeUserIdText(value) {
 }
 
 function pickAdminUserRows(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.users)) return payload.users;
-  if (Array.isArray(payload?.accounts)) return payload.accounts;
-  if (Array.isArray(payload?.rows)) return payload.rows;
-  if (Array.isArray(payload?.data)) return payload.data;
+  const normalizeRows = (rows) => rows.map((row) => (typeof row === "string" ? { id: row, type: "owner" } : row));
+  if (Array.isArray(payload)) return normalizeRows(payload);
+  if (Array.isArray(payload?.users)) return normalizeRows(payload.users);
+  if (Array.isArray(payload?.accounts)) return normalizeRows(payload.accounts);
+  if (Array.isArray(payload?.accountIds)) return normalizeRows(payload.accountIds);
+  if (Array.isArray(payload?.rows)) return normalizeRows(payload.rows);
+  if (Array.isArray(payload?.data)) return normalizeRows(payload.data);
   return [];
 }
 
@@ -555,6 +557,7 @@ export default function AdminPage({
       setUsersLoading(true);
       const stamp = Date.now();
       const endpoints = [
+        `/admin/accountIds?t=${stamp}`,
         `/admin/users?deep=1&t=${stamp}`,
         `/admin/users/rebuild?deep=1&t=${stamp}`,
       ];
@@ -609,6 +612,19 @@ export default function AdminPage({
       });
       const data = await res.json();
       let foundUser = data?.exists && data?.user ? data.user : null;
+
+      if (!foundUser) {
+        const directRes = await fetch(adminApi(`/admin/accountIds?q=${encodeURIComponent(keyword)}&t=${Date.now()}`), {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+        const directData = await directRes.json();
+        const directRows = pickAdminUserRows(directData);
+        if (Array.isArray(directRows) && directRows.length > 0) {
+          setUsers((prev) => mergeUsersById(prev, directRows));
+          foundUser = directRows.find((user) => normalizeUserIdText(user?.id).toLowerCase() === keyword.toLowerCase()) || null;
+        }
+      }
 
       if (!foundUser) {
         const rebuildRes = await fetch(adminApi(`/admin/users/rebuild?q=${encodeURIComponent(keyword)}&deep=1&t=${Date.now()}`), {

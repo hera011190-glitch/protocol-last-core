@@ -1159,6 +1159,56 @@ function getSafeUsersForAdmin(searchText = "") {
   return filteredRows.sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
 }
 
+
+function getDirectAdminAccountRows(searchText = "") {
+  // 운영 계정 선택 전용: 실제 계정 저장/색인 파일만 직접 읽습니다.
+  // data/db/backup처럼 아이템·디자인 객체가 섞일 수 있는 범용 JSON은 여기서 읽지 않습니다.
+  const directFiles = [
+    "users.json",
+    "accounts.json",
+    "members.json",
+    "owners.json",
+    "userList.json",
+    "usersDB.json",
+    "registeredUsers.json",
+    "adminUserIndex.json",
+    "allUserIds.json",
+    "publicUserIndex.json",
+    "auth.json",
+    "login.json",
+  ];
+
+  const directPaths = [];
+  directFiles.forEach((filename) => {
+    directPaths.push(resolveDataPath(filename));
+    directPaths.push(resolveBundledPath(filename));
+    directPaths.push(path.join(process.cwd(), filename));
+  });
+
+  const rows = mergeRuntimeUsers(
+    ...directPaths.map(readRuntimeArrayFromExactPath),
+    usersDB,
+    getOnlineRuntimeUserRows()
+  )
+    .filter(isDisplayableAdminAccount)
+    .map((user) => ({
+      id: getRuntimeAccountId(user) || getRuntimeUserId(user),
+      type: user.type || user.role || "owner",
+    }))
+    .filter((user) => user.id && !isKnownNonUserRuntimeId(user.id));
+
+  const keyword = normalizeUserIdText(searchText).toLowerCase();
+  const filteredRows = keyword
+    ? rows.filter((user) => {
+        const id = normalizeUserIdText(user.id).toLowerCase();
+        const type = String(user.type || "").toLowerCase();
+        return id.includes(keyword) || type.includes(keyword);
+      })
+    : rows;
+
+  return mergeRuntimeUsers(filteredRows).sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
+}
+
 function getExactAdminUser(userId = "") {
   refreshProtectedRuntimeArraysIfNeeded();
   const keyword = normalizeUserIdText(userId).toLowerCase();
@@ -3963,6 +4013,21 @@ io.on("connection", (socket) => {
 });
 
 // --- add these routes anywhere after app initialization and before server.listen ---
+
+
+app.get("/admin/accountIds", (req, res) => {
+  refreshUsersFromKnownSources({ deep: false });
+  const users = getDirectAdminAccountRows(req.query?.q || req.query?.search || "");
+  if (users.length > 0) writeRuntimeUserIndexes(users);
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.json({
+    success: true,
+    users,
+    accounts: users,
+    accountIds: users.map((user) => user.id).filter(Boolean),
+    count: users.length,
+  });
+});
 
 app.get("/admin/users/check", (req, res) => {
   const id = normalizeUserIdText(req.query?.id || req.query?.q || req.query?.search || "");
