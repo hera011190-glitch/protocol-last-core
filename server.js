@@ -14,6 +14,29 @@ const REQUEST_BODY_LIMIT = "100mb";
 const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
 const LEGACY_DATA_DIR = __dirname;
+const IS_ASSET_COMPACT_CHILD = process.env.PLC_ASSET_COMPACT_CHILD === "1";
+
+let appBootReady = false;
+const server = http.createServer(app);
+
+if (!IS_ASSET_COMPACT_CHILD) {
+  app.get(["/health", "/healthz", "/ping"], (req, res) => {
+    res.status(200).type("text/plain").send("ok");
+  });
+
+  app.head(["/health", "/healthz", "/ping", "/"], (req, res) => {
+    res.status(200).end();
+  });
+
+  app.get("/", (req, res, next) => {
+    if (appBootReady) return next();
+    return res.status(200).type("text/plain").send("ok");
+  });
+
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`서버 실행됨: ${PORT}`);
+  });
+}
 
 function pickRuntimeDataDir() {
   const candidates = [
@@ -256,7 +279,7 @@ function ensureRuntimeFile(filename, fallbackValue) {
 ["users.json", "registeredUsers.json", "adminUserIndex.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
 
-if (process.env.PLC_ASSET_COMPACT_CHILD === "1") {
+if (IS_ASSET_COMPACT_CHILD) {
   const changedCount = compactAllTopLevelJsonImages();
   console.log(`[asset-compact] 별도 프로세스 완료: ${changedCount}개 JSON 파일 정리`);
   process.exit(0);
@@ -296,7 +319,6 @@ app.use((req, res, next) => {
   next();
 });
 
-const server = http.createServer(app);
 const io = new Server(server, { cors: corsOptions });
 
 const pendingJsonWrites = new Map();
@@ -934,7 +956,7 @@ function isDisplayableAdminAccount(user) {
   // 운영 계정 선택은 실제 회원가입/로그인 계정 저장소와 서버가 만든 계정 색인만 표시합니다.
   // 아이템/디자인/패키지 데이터처럼 id만 있는 일반 JSON 객체는 계속 차단합니다.
   const source = String(user?.source || "");
-  if (source === "online") return true;
+  if (source === "online" || source === "character-owner") return true;
   if (hasRuntimeUserAuthEvidence(user)) return true;
 
   const sourceFile = path.basename(String(user?.__runtimeUserSourceFile || "")).toLowerCase();
@@ -971,7 +993,8 @@ function writeRuntimeUserIndexes(userRows) {
     if (safeRows.length === 0) return;
     ["registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json"].forEach((filename) => {
       const indexPath = resolveDataPath(filename);
-      writeJsonAtomicSync(indexPath, mergeRuntimeUsers(safeRows));
+      const existingRows = readRuntimeArrayFromExactPath(indexPath);
+      writeJsonAtomicSync(indexPath, mergeRuntimeUsers(existingRows, safeRows));
     });
   } catch (error) {
     console.error("writeRuntimeUserIndexes failed", error);
@@ -1160,11 +1183,57 @@ function getOnlineRuntimeUserRows() {
   }
 }
 
-function getSafeUsersForAdmin(searchText = "") {
-  refreshUsersFromKnownSources({ deep: true });
+function getRuntimeAccountRowsFromCharacters() {
+  try {
+    const rows = [];
+    const seenCharacterKeys = new Set();
+    const sourceCharacters = [];
+    [charactersDB, getRuntimeArrayFromDisk("characters.json")].forEach((list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((character, index) => {
+        if (!character || typeof character !== "object") return;
+        const key = normalizeUserIdText(character.id || character.name || character.characterId || String(index));
+        if (key && seenCharacterKeys.has(key.toLowerCase())) return;
+        if (key) seenCharacterKeys.add(key.toLowerCase());
+        sourceCharacters.push(character);
+      });
+    });
+    sourceCharacters.forEach((character) => {
+      if (!character || typeof character !== "object") return;
+      [
+        character.ownerId,
+        character.ownerID,
+        character.owner_id,
+        character.accountId,
+        character.accountID,
+        character.account_id,
+        character.userId,
+        character.userID,
+        character.user_id,
+        character.loginId,
+        character.loginID,
+        character.login_id,
+        character.createdBy,
+        character.updatedBy,
+      ].forEach((value) => {
+        const id = normalizeUserIdText(value);
+        if (id && !isKnownNonUserRuntimeId(id) && !isBlockedRuntimeUserToken(id)) {
+          rows.push({ id, type: "owner", source: "character-owner" });
+        }
+      });
+    });
+    return mergeRuntimeUsers(rows);
+  } catch {
+    return [];
+  }
+}
 
-  const knownDiskRows = getAllKnownRuntimeUsersFromDisk();
-  const safeRows = mergeRuntimeUsers(knownDiskRows, usersDB, getOnlineRuntimeUserRows())
+function getSafeUsersForAdmin(searchText = "", options = {}) {
+  const deep = options.deep === true || !!normalizeUserIdText(searchText);
+  refreshUsersFromKnownSources({ deep: false });
+
+  const knownDiskRows = getAllKnownRuntimeUsersFromDisk({ deep });
+  const safeRows = mergeRuntimeUsers(knownDiskRows, usersDB, getRuntimeAccountRowsFromCharacters(), getOnlineRuntimeUserRows())
     .filter(isDisplayableAdminAccount)
     .map((user) => ({
       id: getRuntimeAccountId(user) || getRuntimeUserId(user),
@@ -1214,6 +1283,7 @@ function getDirectAdminAccountRows(searchText = "", options = {}) {
     ...directPaths.map(readRuntimeArrayFromExactPath),
     ...(deep ? [getAllKnownRuntimeUsersFromDisk({ deep: true })] : []),
     usersDB,
+    getRuntimeAccountRowsFromCharacters(),
     getOnlineRuntimeUserRows()
   )
     .filter(isDisplayableAdminAccount)
@@ -4042,9 +4112,10 @@ io.on("connection", (socket) => {
 
 
 app.get("/admin/accountIds", (req, res) => {
-  const deep = req.query?.deep === "1" || req.query?.deep === "true";
-  refreshUsersFromKnownSources({ deep });
-  const users = getDirectAdminAccountRows(req.query?.q || req.query?.search || "", { deep });
+  const keyword = normalizeUserIdText(req.query?.q || req.query?.search || "");
+  const deep = req.query?.deep === "1" || req.query?.deep === "true" || !!keyword;
+  refreshUsersFromKnownSources({ deep: false });
+  const users = getDirectAdminAccountRows(keyword, { deep });
   if (users.length > 0) writeRuntimeUserIndexes(users);
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.json({
@@ -4059,8 +4130,16 @@ app.get("/admin/accountIds", (req, res) => {
 
 app.get("/admin/users/check", (req, res) => {
   const id = normalizeUserIdText(req.query?.id || req.query?.q || req.query?.search || "");
-  refreshUsersFromKnownSources({ deep: true });
-  const user = getExactAdminUser(id);
+  refreshUsersFromKnownSources({ deep: false });
+  let user = getExactAdminUser(id);
+  if (!user && id) {
+    const recovered = getDirectAdminAccountRows(id, { deep: true }).find((row) => normalizeUserIdText(row?.id).toLowerCase() === id.toLowerCase());
+    if (recovered) {
+      usersDB = mergeRuntimeUsers(usersDB, [recovered]);
+      writeRuntimeUserIndexes([recovered]);
+      user = recovered;
+    }
+  }
   res.json({
     success: true,
     exists: !!user,
@@ -4069,9 +4148,10 @@ app.get("/admin/users/check", (req, res) => {
 });
 
 app.get("/admin/users", (req, res) => {
-  refreshUsersFromKnownSources({ deep: true });
+  const deep = req.query?.deep === "1" || req.query?.deep === "true";
+  refreshUsersFromKnownSources({ deep: false });
   refreshCharactersFromDiskIfNeeded();
-  const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "");
+  const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "", { deep });
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.json({ success: true, users, count: users.length });
 });
@@ -4079,7 +4159,7 @@ app.get("/admin/users", (req, res) => {
 app.get("/admin/users/rebuild", (req, res) => {
   refreshUsersFromKnownSources({ deep: true });
   refreshCharactersFromDiskIfNeeded({ force: true });
-  const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "");
+  const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "", { deep: true });
   writeRuntimeUserIndexes(users);
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.json({ success: true, users, count: users.length, rebuilt: true });
@@ -5401,10 +5481,14 @@ if (fs.existsSync(clientBuildPath)) {
   });
 }
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`서버 실행됨: ${PORT}`);
+appBootReady = true;
+
+if (!IS_ASSET_COMPACT_CHILD) {
   // Render 헬스체크가 안정적으로 통과한 뒤에만 이미지/JSON 정리 작업을 시작합니다.
-  // 시작 직후 1초 안에 별도 프로세스가 대형 JSON을 훑으면 5초 헬스체크가 다시 밀릴 수 있어 지연 시간을 둡니다.
-  const assetCompactDelayMs = Number(process.env.PLC_ASSET_COMPACT_DELAY_MS || (process.env.RENDER ? 30000 : 3000));
-  setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);
-});
+  // Render에서는 기본 자동 실행을 끄고, 필요할 때 PLC_ASSET_COMPACT_ON_RENDER=1로만 켭니다.
+  const shouldRunAssetCompact = process.env.PLC_DISABLE_ASSET_COMPACT !== "1" && (!process.env.RENDER || process.env.PLC_ASSET_COMPACT_ON_RENDER === "1");
+  if (shouldRunAssetCompact) {
+    const assetCompactDelayMs = Number(process.env.PLC_ASSET_COMPACT_DELAY_MS || (process.env.RENDER ? 600000 : 3000));
+    setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);
+  }
+}

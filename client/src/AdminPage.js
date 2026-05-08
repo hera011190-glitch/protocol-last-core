@@ -557,9 +557,8 @@ export default function AdminPage({
       setUsersLoading(true);
       const stamp = Date.now();
       const endpoints = [
-        `/admin/accountIds?deep=1&t=${stamp}`,
-        `/admin/users?deep=1&t=${stamp}`,
-        `/admin/users/rebuild?deep=1&t=${stamp}`,
+        `/admin/accountIds?t=${stamp}`,
+        `/admin/users?t=${stamp}`,
       ];
       let mergedRows = [];
 
