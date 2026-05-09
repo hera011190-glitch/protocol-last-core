@@ -214,6 +214,21 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     return `${Number(source?.battleTurn || 0)}:${rounds.map((entry) => `${entry?.phase || ""}:${entry?.actor || ""}:${entry?.target || ""}:${entry?.effect || ""}:${entry?.text || ""}`).join("|")}`;
   };
 
+  const getBattleFromRoundSnapshot = (rounds = []) => {
+    const entries = Array.isArray(rounds) ? rounds : [];
+    const snapshotEntry = entries.find((entry) => entry?.snapshot && (Array.isArray(entry.snapshot.battleEnemies) || entry.snapshot.battleHp !== undefined));
+    const snapshot = snapshotEntry?.snapshot || null;
+    if (!snapshot) return null;
+    const enemies = Array.isArray(snapshot.battleEnemies) ? JSON.parse(JSON.stringify(snapshot.battleEnemies)) : [];
+    return {
+      id: "playback-battle",
+      name: enemies.length === 1 ? enemies[0]?.name || "E-Beast" : "E-Beast",
+      hp: Number(snapshot.battleHp ?? enemies.reduce((sum, enemy) => sum + Number(enemy?.hp || 0), 0)),
+      maxHp: Number(snapshot.battleMaxHp ?? enemies.reduce((sum, enemy) => sum + Number(enemy?.maxHp || enemy?.hp || 0), 0)),
+      enemies,
+    };
+  };
+
   const isHandledBattleRound = (source) => {
     const roundKey = getBattleRoundKey(source);
     return !!roundKey && roundKey === handledBattleRoundKeyRef.current;
@@ -244,9 +259,11 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       const prevNodeId = investigation?.currentNodeId || currentNodeId || investigation?.data?.start || nodeId;
       const prevNode = investigation?.data?.nodes?.[prevNodeId] || null;
       const nextNode = data?.data?.nodes?.[nodeId] || null;
+      const fallbackBattle = getBattleFromRoundSnapshot(data?.lastBattleRound || []);
+      const playbackBattle = prevNode?.battle || nextNode?.battle || fallbackBattle || null;
       const playbackSource = {
         participantStates: JSON.parse(JSON.stringify(investigation?.participantStates || data?.participantStates || {})),
-        battle: JSON.parse(JSON.stringify(prevNode?.battle || nextNode?.battle || null)),
+        battle: playbackBattle ? JSON.parse(JSON.stringify(playbackBattle)) : null,
       };
       playbackSourceRef.current = playbackSource;
       setPlaybackState({
@@ -1011,6 +1028,7 @@ useEffect(() => {
       })
     : [];
   const aliveEnemyOptions = getNodeBattleEnemies(displayCurrentNode);
+  const battleOverlayEnemies = getBattleEnemyList(displayCurrentNode?.battle || null);
   const aliveAllyOptions = aliveParticipants.map((participant) => ({ id: participant.name, name: participant.name }));
   useEffect(() => {
     if (!battleActive) {
@@ -1836,7 +1854,7 @@ useEffect(() => {
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "0 18px", borderRadius: 0, background: "transparent", border: "none", boxShadow: "none", backdropFilter: "none", zIndex: 1045 }}>
                       <div style={{ position: "relative", paddingTop: currentBattleMotionEntry ? 34 : 0 }}>
-                        <BattleMotionOverlay entry={currentBattleMotionEntry} participants={participants} nowTick={nowTick} />
+                        <BattleMotionOverlay entry={currentBattleMotionEntry} participants={participants} enemies={battleOverlayEnemies} nowTick={nowTick} />
                         <BattleHero node={displayCurrentNode} investigation={investigation} rounds={animatedBattleRounds} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
                         <div style={{ marginTop: 12 }}>
                           <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={animatedBattleRounds} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
@@ -2221,39 +2239,12 @@ function getBattleRoundTone(text) {
 
 const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='360' height='360' viewBox='0 0 360 360'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23dbeafe'/><stop offset='1' stop-color='%2393c5fd'/></linearGradient></defs><rect rx='40' width='360' height='360' fill='url(%23g)'/><circle cx='180' cy='122' r='68' fill='%23eff6ff'/><path d='M92 258c18-56 54-84 88-84s70 28 88 84' fill='%23bfdbfe'/><circle cx='154' cy='118' r='10' fill='%231e3a8a'/><circle cx='206' cy='118' r='10' fill='%231e3a8a'/><path d='M145 154c21 18 49 18 70 0' stroke='%231e3a8a' stroke-width='10' fill='none' stroke-linecap='round'/><path d='M118 70l30 18M242 70l-30 18' stroke='%2360a5fa' stroke-width='14' stroke-linecap='round'/></svg>";
 
-function getBattleSkillMotionKey(entry) {
-  const direct = String(entry?.skillName || entry?.skill || entry?.skillKey || "").trim();
-  const text = String(entry?.text || "");
-  const raw = `${direct} ${text}`.replace(/\s+/g, "").toLowerCase();
-  if (!raw) return "generic";
-  const checks = [
-    ["일격", ["일격", "singleblow", "singlestrike"]],
-    ["연격", ["연격", "combo", "multistrike", "doublehit"]],
-    ["축복", ["축복", "bless", "blessing"]],
-    ["저주", ["저주", "curse"]],
-    ["희생", ["희생", "sacrifice", "cover", "protectone"]],
-    ["가호", ["가호", "barrier", "protection", "protectall", "guardian"]],
-    ["구원", ["구원", "salvation", "rescue", "singleheal"]],
-    ["격려", ["격려", "encourage", "rally", "aoeheal", "cheer"]],
-  ];
-  const found = checks.find(([, aliases]) => aliases.some((alias) => raw.includes(String(alias).replace(/\s+/g, "").toLowerCase())));
-  return found ? found[0] : (direct || "generic");
-}
-
-function isSkillMotionEntry(entry) {
-  const text = String(entry?.text || "");
-  const effect = String(entry?.effect || "");
-  if (["skill", "buff", "debuff", "shield", "heal", "drain"].includes(effect) && /의\s*[^!！]+[!！]/.test(text)) return true;
-  return ["일격", "연격", "축복", "저주", "희생", "가호", "구원", "격려"].some((name) => text.includes(name));
-}
-
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const safeName = String(name || "");
   const recent = Array.isArray(rounds)
     ? rounds.filter((entry) => {
-        if (!entry || isBattlePhaseHeader(entry)) return false;
         const age = nowTick - Number(entry?.appearedAt || 0);
-        return age >= 0 && age < 1400;
+        return age >= 0 && age < 1200;
       })
     : [];
 
@@ -2265,33 +2256,31 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
     const isActor = actor === safeName;
 
     if (!isActor) continue;
-    if (isSkillMotionEntry(entry)) return { effect: "skill", entry };
     if (effect === "damage") return { effect: "attack", entry };
-    if (["attack", "drain"].includes(effect)) return { effect: "attack", entry };
-    if (["guard", "shield"].includes(effect)) return { effect: "guard", entry };
+    if (effect === "attack") return { effect: "attack", entry };
+    if (effect === "drain") return { effect: "drain", entry };
+    if (effect === "guard") return { effect: "guard", entry };
+    if (effect === "shield") return { effect: "shield", entry };
+    if (["skill", "debuff", "buff"].includes(effect)) return { effect, entry };
     if (effect === "item" && /회복/.test(text)) return { effect: "heal", entry };
     if (effect === "item") return { effect: "item", entry };
     if (effect === "heal") return { effect: "heal", entry };
     if (effect === "evade") return { effect: "evade", entry };
-    if (effect === "buff") return { effect: "buff", entry };
-    if (effect === "debuff") return { effect: "debuff", entry };
   }
 
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
     const actor = String(entry?.actor || "");
-    const target = String(entry?.target || "");
     const effect = String(entry?.effect || "");
     const text = String(entry?.text || "");
     const isActor = actor === safeName;
-    const isTarget = target === safeName;
+    const isTarget = battleEntryMatchesTarget(entry, safeName);
 
-    if (["damage", "hit", "defeat"].includes(effect) && isTarget) return { effect: "damage", entry };
-    if (["attack", "drain"].includes(effect) && isTarget) return { effect: "damage", entry };
-    if (effect === "skill" && isTarget) return { effect: "damage", entry };
-    if (effect === "debuff" && isTarget) return { effect: "debuff", entry };
-    if (effect === "shield" && (isActor || isTarget)) return { effect: "guard", entry };
     if (effect === "buff" && (isActor || isTarget)) return { effect: "buff", entry };
+    if (effect === "shield" && (isActor || isTarget)) return { effect: "shield", entry };
+    if (effect === "debuff" && isTarget) return { effect: "debuff", entry };
+    if (["damage", "hit", "defeat"].includes(effect) && isTarget) return { effect: "damage", entry };
+    if (["attack", "drain", "skill"].includes(effect) && isTarget) return { effect: "damage", entry };
     if (effect === "item" && /회복/.test(text) && (isActor || isTarget)) return { effect: "heal", entry };
     if (effect === "heal" && (isActor || isTarget)) return { effect: "heal", entry };
     if (effect === "evade" && (isActor || isTarget)) return { effect: "evade", entry };
@@ -2309,7 +2298,11 @@ function getBattleEffectLabel(effect = "") {
     damage: "피격!",
     attack: "공격!",
     guard: "방어",
+    shield: "보호",
     skill: "스킬",
+    buff: "강화",
+    debuff: "저주",
+    drain: "흡수",
     heal: "회복",
     item: "아이템",
     evade: "회피",
@@ -2330,6 +2323,43 @@ function getBattleEffectLabelColor(effect = "") {
     item: "#67e8f9",
     evade: "#c4b5fd",
   }[effect] || "#e2e8f0";
+}
+
+function getBattleEntryTargetNames(entry = {}) {
+  const names = [];
+  if (Array.isArray(entry?.targets)) {
+    entry.targets.forEach((target) => {
+      const value = String(target || "").trim();
+      if (value) names.push(value);
+    });
+  }
+  const target = String(entry?.target || "").trim();
+  if (target && target !== "전체") names.push(target);
+  return Array.from(new Set(names));
+}
+
+function battleEntryMatchesTarget(entry = {}, name = "") {
+  const safeName = String(name || "").trim();
+  if (!safeName) return false;
+  return getBattleEntryTargetNames(entry).some((target) => target === safeName);
+}
+
+function getBattleMotionConcept(entry = {}, effect = "") {
+  const text = `${entry?.skillName || ""} ${entry?.skillKey || ""} ${entry?.skillMode || ""} ${entry?.text || ""}`;
+  if (/연격|aoeDamage|전체 공격/.test(text)) return "multiSlash";
+  if (/일격|singleDamage|치명타|공격/.test(text) && ["attack", "skill", "damage"].includes(effect)) return "slash";
+  if (/축복|allyAtkBuff/.test(text) || effect === "buff") return "blessing";
+  if (/저주|enemyDamageTakenDebuff/.test(text) || effect === "debuff") return "curse";
+  if (/희생|protectOne/.test(text)) return "sacrifice";
+  if (/가호|protectAll/.test(text) || effect === "shield" || effect === "guard") return "aegis";
+  if (/구원|singleHeal/.test(text)) return "salvation";
+  if (/격려|aoeHeal/.test(text)) return "cheer";
+  if (effect === "drain") return "drain";
+  if (effect === "heal") return "salvation";
+  if (effect === "item") return "item";
+  if (effect === "evade") return "evade";
+  if (effect === "damage") return "impact";
+  return effect || "normal";
 }
 
 function isBattlePhaseHeader(entry) {
@@ -2386,300 +2416,14 @@ function getActiveBattleMotionEntry(rounds, nowTick = Date.now()) {
   return visible.length > 0 ? visible[visible.length - 1] : null;
 }
 
-function getSkillMotionProfile(entry, side = "ally") {
-  const skillKey = getBattleSkillMotionKey(entry);
-  const direction = side === "enemy" ? -1 : 1;
-  const base = {
-    skillKey,
-    label: skillKey === "generic" ? "스킬" : skillKey,
-    color: "#fde68a",
-    glow: "rgba(250,204,21,0.86)",
-    soft: "rgba(254,240,138,0.62)",
-    duration: 860,
-    translateX: (pulse) => direction * 12 * pulse,
-    translateY: (pulse) => -7 * pulse,
-    scale: (pulse) => 1 + 0.055 * pulse,
-    overlay: (pulse) => ({
-      background: "radial-gradient(circle at 50% 50%, rgba(254,240,138,0.44), rgba(250,204,21,0.14) 56%, transparent 74%)",
-      opacity: 0.16 + pulse * 0.36,
-      mixBlendMode: "screen",
-    }),
-    outer: (pulse) => ({
-      position: "absolute",
-      inset: -12,
-      borderRadius: 999,
-      border: `1px solid rgba(250,204,21,${(0.24 + pulse * 0.26).toFixed(3)})`,
-      boxShadow: `0 0 28px rgba(250,204,21,${(0.16 + pulse * 0.24).toFixed(3)})`,
-      opacity: 0.18 + pulse * 0.44,
-      pointerEvents: "none",
-      zIndex: 3,
-    }),
-  };
-
-  if (skillKey === "일격") {
-    return {
-      ...base,
-      label: "일격",
-      color: "#bfdbfe",
-      glow: "rgba(96,165,250,0.92)",
-      soft: "rgba(191,219,254,0.68)",
-      duration: 760,
-      translateX: (pulse) => direction * 30 * pulse,
-      translateY: (pulse) => -6 * pulse,
-      scale: (pulse) => 1 + 0.09 * pulse,
-      overlay: (pulse) => ({
-        background: "linear-gradient(90deg, transparent 6%, rgba(147,197,253,0.12) 28%, rgba(96,165,250,0.46) 50%, rgba(219,234,254,0.18) 72%, transparent 94%)",
-        opacity: 0.18 + pulse * 0.46,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse) => ({
-        position: "absolute",
-        top: "50%",
-        [direction > 0 ? "left" : "right"]: "-4%",
-        width: "62%",
-        height: 12,
-        transform: `translateY(-50%) rotate(${direction > 0 ? -10 : 10}deg) scaleX(${(0.42 + pulse * 0.54).toFixed(3)})`,
-        transformOrigin: direction > 0 ? "left center" : "right center",
-        borderRadius: 999,
-        background: direction > 0 ? "linear-gradient(90deg, rgba(191,219,254,0), rgba(96,165,250,0.76), rgba(255,255,255,0.9))" : "linear-gradient(270deg, rgba(191,219,254,0), rgba(96,165,250,0.76), rgba(255,255,255,0.9))",
-        opacity: 0.18 + pulse * 0.48,
-        filter: "blur(0.8px)",
-        pointerEvents: "none",
-        zIndex: 4,
-      }),
-    };
-  }
-
-  if (skillKey === "연격") {
-    return {
-      ...base,
-      label: "연격",
-      color: "#c7d2fe",
-      glow: "rgba(129,140,248,0.88)",
-      soft: "rgba(199,210,254,0.66)",
-      duration: 980,
-      translateX: (_pulse, age, decay) => direction * 12 + Math.sin(age / 35) * 13 * decay,
-      translateY: (_pulse, age, decay) => Math.sin(age / 27) * 5 * decay,
-      scale: (pulse) => 1 + 0.05 * pulse,
-      overlay: (pulse, age) => ({
-        background: `radial-gradient(circle at ${50 + direction * 12}% ${42 + Math.sin(age / 76) * 8}%, rgba(199,210,254,0.48), rgba(99,102,241,0.16) 48%, transparent 74%)`,
-        opacity: 0.14 + pulse * 0.40,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse, age) => ({
-        position: "absolute",
-        inset: -12,
-        borderRadius: 999,
-        border: `1px dashed rgba(165,180,252,${(0.22 + pulse * 0.28).toFixed(3)})`,
-        boxShadow: `0 0 26px rgba(99,102,241,${(0.16 + pulse * 0.20).toFixed(3)})`,
-        transform: `rotate(${Math.sin(age / 65) * 8}deg) scale(${(0.98 + pulse * 0.05).toFixed(3)})`,
-        opacity: 0.18 + pulse * 0.42,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  if (skillKey === "축복") {
-    return {
-      ...base,
-      label: "축복",
-      color: "#fde68a",
-      glow: "rgba(251,191,36,0.90)",
-      soft: "rgba(254,240,138,0.72)",
-      duration: 960,
-      translateX: () => 0,
-      translateY: (pulse) => -9 * pulse,
-      scale: (pulse) => 1 + 0.04 * pulse,
-      overlay: (pulse) => ({
-        background: "radial-gradient(circle at 50% 42%, rgba(254,249,195,0.60), rgba(250,204,21,0.18) 50%, transparent 76%)",
-        opacity: 0.18 + pulse * 0.48,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse) => ({
-        position: "absolute",
-        inset: -16,
-        borderRadius: 999,
-        border: `1px solid rgba(254,240,138,${(0.28 + pulse * 0.30).toFixed(3)})`,
-        boxShadow: `0 0 34px rgba(250,204,21,${(0.16 + pulse * 0.26).toFixed(3)})`,
-        opacity: 0.2 + pulse * 0.48,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  if (skillKey === "저주") {
-    return {
-      ...base,
-      label: "저주",
-      color: "#e9d5ff",
-      glow: "rgba(168,85,247,0.90)",
-      soft: "rgba(216,180,254,0.68)",
-      duration: 980,
-      translateX: (_pulse, age, decay) => Math.sin(age / 38) * 11 * decay,
-      translateY: (pulse) => -4 * pulse,
-      scale: (pulse) => 1 - 0.025 * pulse,
-      overlay: (pulse) => ({
-        background: "radial-gradient(circle at 50% 50%, rgba(233,213,255,0.48), rgba(147,51,234,0.20) 48%, transparent 74%)",
-        opacity: 0.18 + pulse * 0.44,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse, age) => ({
-        position: "absolute",
-        inset: -12,
-        borderRadius: 999,
-        border: `1px solid rgba(216,180,254,${(0.24 + pulse * 0.30).toFixed(3)})`,
-        boxShadow: `0 0 30px rgba(147,51,234,${(0.18 + pulse * 0.24).toFixed(3)})`,
-        transform: `rotate(${Math.sin(age / 80) * 5}deg) scale(${(0.99 + pulse * 0.04).toFixed(3)})`,
-        opacity: 0.18 + pulse * 0.46,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  if (skillKey === "희생") {
-    return {
-      ...base,
-      label: "희생",
-      color: "#fecaca",
-      glow: "rgba(248,113,113,0.90)",
-      soft: "rgba(254,202,202,0.68)",
-      duration: 880,
-      translateX: (pulse) => direction * 18 * pulse,
-      translateY: (pulse) => -2 * pulse,
-      scale: (pulse) => 1 + 0.035 * pulse,
-      overlay: (pulse) => ({
-        background: "radial-gradient(circle at 50% 50%, rgba(254,202,202,0.48), rgba(239,68,68,0.16) 54%, transparent 76%)",
-        opacity: 0.16 + pulse * 0.44,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse) => ({
-        position: "absolute",
-        inset: -12,
-        borderRadius: 999,
-        border: `2px solid rgba(252,165,165,${(0.22 + pulse * 0.28).toFixed(3)})`,
-        boxShadow: `0 0 30px rgba(239,68,68,${(0.14 + pulse * 0.22).toFixed(3)})`,
-        opacity: 0.18 + pulse * 0.42,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  if (skillKey === "가호") {
-    return {
-      ...base,
-      label: "가호",
-      color: "#bae6fd",
-      glow: "rgba(56,189,248,0.88)",
-      soft: "rgba(186,230,253,0.72)",
-      duration: 1000,
-      translateX: () => 0,
-      translateY: (pulse) => -3 * pulse,
-      scale: (pulse) => 1 + 0.025 * pulse,
-      overlay: (pulse) => ({
-        background: "radial-gradient(circle at 50% 50%, rgba(186,230,253,0.54), rgba(56,189,248,0.16) 52%, transparent 78%)",
-        opacity: 0.20 + pulse * 0.42,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse) => ({
-        position: "absolute",
-        inset: -18,
-        borderRadius: 999,
-        border: `1px solid rgba(125,211,252,${(0.28 + pulse * 0.30).toFixed(3)})`,
-        boxShadow: `0 0 36px rgba(14,165,233,${(0.15 + pulse * 0.24).toFixed(3)})`,
-        opacity: 0.2 + pulse * 0.46,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  if (skillKey === "구원") {
-    return {
-      ...base,
-      label: "구원",
-      color: "#bbf7d0",
-      glow: "rgba(74,222,128,0.88)",
-      soft: "rgba(187,247,208,0.72)",
-      duration: 940,
-      translateX: () => 0,
-      translateY: (pulse) => -10 * pulse,
-      scale: (pulse) => 1 + 0.04 * pulse,
-      overlay: (pulse) => ({
-        background: "radial-gradient(circle at 50% 42%, rgba(187,247,208,0.56), rgba(34,197,94,0.16) 50%, transparent 76%)",
-        opacity: 0.18 + pulse * 0.48,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse) => ({
-        position: "absolute",
-        inset: -14,
-        borderRadius: 999,
-        border: `1px solid rgba(134,239,172,${(0.28 + pulse * 0.28).toFixed(3)})`,
-        boxShadow: `0 0 32px rgba(34,197,94,${(0.16 + pulse * 0.24).toFixed(3)})`,
-        opacity: 0.18 + pulse * 0.48,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  if (skillKey === "격려") {
-    return {
-      ...base,
-      label: "격려",
-      color: "#fed7aa",
-      glow: "rgba(251,146,60,0.88)",
-      soft: "rgba(255,237,213,0.70)",
-      duration: 1000,
-      translateX: () => 0,
-      translateY: (pulse) => -7 * pulse,
-      scale: (pulse) => 1 + 0.036 * pulse,
-      overlay: (pulse) => ({
-        background: "radial-gradient(circle at 50% 42%, rgba(255,237,213,0.52), rgba(251,146,60,0.15) 50%, transparent 76%)",
-        opacity: 0.18 + pulse * 0.44,
-        mixBlendMode: "screen",
-      }),
-      outer: (pulse) => ({
-        position: "absolute",
-        inset: -16,
-        borderRadius: 999,
-        border: `1px solid rgba(253,186,116,${(0.26 + pulse * 0.28).toFixed(3)})`,
-        boxShadow: `0 0 34px rgba(251,146,60,${(0.14 + pulse * 0.22).toFixed(3)})`,
-        opacity: 0.18 + pulse * 0.46,
-        pointerEvents: "none",
-        zIndex: 3,
-      }),
-    };
-  }
-
-  return base;
-}
-
-function getBattleOverlayPalette(entry, effect) {
-  const skillProfile = isSkillMotionEntry(entry) ? getSkillMotionProfile(entry) : null;
-  if (skillProfile) {
-    return { glow: skillProfile.glow, soft: skillProfile.soft, text: skillProfile.color };
-  }
-  if (effect === "damage") return { glow: "rgba(248,113,113,0.98)", soft: "rgba(254,202,202,0.72)", text: "#fecaca" };
-  if (effect === "heal") return { glow: "rgba(74,222,128,0.98)", soft: "rgba(187,247,208,0.72)", text: "#bbf7d0" };
-  if (["guard", "shield", "buff"].includes(effect)) return { glow: "rgba(96,165,250,0.98)", soft: "rgba(191,219,254,0.72)", text: "#bfdbfe" };
-  if (effect === "evade") return { glow: "rgba(196,181,253,0.98)", soft: "rgba(221,214,254,0.72)", text: "#ddd6fe" };
-  if (effect === "item") return { glow: "rgba(103,232,249,0.98)", soft: "rgba(207,250,254,0.72)", text: "#cffafe" };
-  return { glow: "rgba(250,204,21,0.98)", soft: "rgba(254,240,138,0.72)", text: "#fde68a" };
-}
-
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
   const recent = getRecentBattleEntry(name, rounds, state, nowTick);
   const effect = recent?.effect || "";
+  const concept = getBattleMotionConcept(recent?.entry || {}, effect);
   const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : 0;
-  const skillProfile = effect === "skill" ? getSkillMotionProfile(recent?.entry, side) : null;
-  const duration = skillProfile?.duration || ({ damage: 760, attack: 620, skill: 860, heal: 700, item: 720, guard: 560, shield: 640, buff: 680, debuff: 760, evade: 520, defeat: 820 })[effect] || 620;
+  const duration = ({ damage: 760, attack: 620, skill: 900, buff: 860, debuff: 860, drain: 880, shield: 820, heal: 760, item: 720, guard: 560, evade: 520 })[effect] || 620;
   const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : 1;
   const pulse = recent?.entry ? Math.sin(progress * Math.PI) : 0;
-  const decay = recent?.entry ? 1 - progress : 0;
   const persistentGuard = effect === "guard" && !recent?.entry && !!state?.defending;
   const direction = side === "enemy" ? -1 : 1;
   let translateX = 0;
@@ -2690,10 +2434,9 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
   let overlayStyle = null;
   let fxOuterStyle = null;
   let fxInnerStyle = null;
-  let badge = getBattleEffectLabel(effect);
-  let badgeColor = getBattleEffectLabelColor(effect);
 
   if (effect === "damage") {
+    const decay = 1 - progress;
     translateX = Math.sin(age / 22) * 20 * decay;
     translateY = Math.sin(age / 18) * 5.4 * decay;
     scale = 1 - 0.06 * pulse;
@@ -2756,57 +2499,120 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
       pointerEvents: "none",
       zIndex: 3,
     };
-  } else if (effect === "skill") {
-    const profile = skillProfile || getSkillMotionProfile(recent?.entry, side);
-    badge = profile.label;
-    badgeColor = profile.color;
-    translateX = Number(profile.translateX?.(pulse, age, decay, progress, direction) || 0);
-    translateY = Number(profile.translateY?.(pulse, age, decay, progress, direction) || 0);
-    scale = Number(profile.scale?.(pulse, age, decay, progress, direction) || 1);
-    glow = `drop-shadow(0 0 18px ${profile.glow}) drop-shadow(0 10px 18px rgba(0,0,0,0.28))`;
-    frameBoxShadow = `0 0 0 2px ${profile.soft}, 0 0 26px ${String(profile.glow).replace(/0\.\d+\)/, "0.24)")}`;
-    overlayStyle = profile.overlay?.(pulse, age, decay, progress, direction) || null;
-    fxOuterStyle = profile.outer?.(pulse, age, decay, progress, direction) || null;
   } else if (effect === "guard") {
     const brace = persistentGuard ? (0.55 + (Math.sin(nowTick / 170) + 1) * 0.12) : pulse;
     translateX = persistentGuard ? Math.sin(nowTick / 120) * 2.8 : Math.sin(progress * Math.PI * 2) * 2.2;
-    translateY = persistentGuard ? -2.2 * Math.abs(Math.sin(nowTick / 190)) : -2 * brace;
-    scale = 1 + 0.022 * brace;
-    glow = "drop-shadow(0 0 14px rgba(96,165,250,0.82)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
-    frameBoxShadow = `0 0 0 2px rgba(96,165,250,${(0.22 + brace * 0.28).toFixed(3)}), 0 0 24px rgba(59,130,246,${(0.16 + brace * 0.22).toFixed(3)})`;
+    translateY = persistentGuard ? -2.2 * Math.sin(nowTick / 190) : -3.4 * pulse;
+    scale = 1 + (persistentGuard ? 0.024 : 0.034) * brace;
+    glow = "drop-shadow(0 0 12px rgba(96,165,250,0.68)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
+    frameBoxShadow = persistentGuard
+      ? "0 0 0 2px rgba(96,165,250,0.72), 0 0 26px rgba(59,130,246,0.32)"
+      : `0 0 0 2px rgba(96,165,250,${(0.3 + pulse * 0.34).toFixed(3)}), 0 0 22px rgba(59,130,246,${(0.18 + pulse * 0.22).toFixed(3)})`;
     overlayStyle = {
-      background: "radial-gradient(circle at 50% 50%, rgba(191,219,254,0.34), rgba(96,165,250,0.1) 58%, transparent 74%)",
-      opacity: 0.22 + brace * 0.22,
+      background: "radial-gradient(circle at 50% 50%, rgba(147,197,253,0.22), rgba(59,130,246,0.08) 62%, transparent 74%)",
+      opacity: persistentGuard ? 0.72 : 0.38 + pulse * 0.22,
+    };
+    fxOuterStyle = {
+      position: "absolute",
+      inset: 8,
+      borderRadius: 999,
+      border: `2px solid ${persistentGuard ? "rgba(147,197,253,0.92)" : `rgba(147,197,253,${(0.38 + pulse * 0.28).toFixed(3)})`}`,
+      boxShadow: persistentGuard ? "0 0 22px rgba(59,130,246,0.28)" : `0 0 18px rgba(59,130,246,${(0.14 + pulse * 0.18).toFixed(3)})`,
+      pointerEvents: "none",
+      zIndex: 3,
+    };
+  } else if (["buff", "debuff", "shield", "drain"].includes(effect)) {
+    const cast = Math.sin(progress * Math.PI);
+    const isCurse = effect === "debuff" || concept === "curse";
+    const isDrain = effect === "drain" || concept === "drain";
+    const isShield = effect === "shield" || concept === "aegis" || concept === "sacrifice";
+    translateX = isCurse ? Math.sin(age / 18) * 7 * (1 - progress) : isDrain ? direction * (18 * cast) : 0;
+    translateY = isShield ? -5 * cast : isCurse ? 2 * cast : -8 * cast;
+    scale = 1 + (isCurse ? -0.025 : 0.055) * cast;
+    const glowColor = isCurse ? "rgba(190,18,60,0.78)" : isDrain ? "rgba(244,114,182,0.78)" : isShield ? "rgba(96,165,250,0.82)" : "rgba(74,222,128,0.78)";
+    const softColor = isCurse ? "rgba(248,113,113,0.28)" : isDrain ? "rgba(249,168,212,0.26)" : isShield ? "rgba(147,197,253,0.28)" : "rgba(187,247,208,0.30)";
+    glow = `drop-shadow(0 0 18px ${glowColor}) drop-shadow(0 10px 18px rgba(0,0,0,0.26))`;
+    frameBoxShadow = `0 0 0 2px ${glowColor.replace("0.78", (0.24 + cast * 0.32).toFixed(3))}, 0 0 28px ${glowColor.replace("0.78", (0.18 + cast * 0.28).toFixed(3))}`;
+    overlayStyle = {
+      background: isCurse
+        ? "radial-gradient(circle at 50% 50%, rgba(127,29,29,0.38), rgba(88,28,135,0.2) 54%, transparent 76%)"
+        : `radial-gradient(circle at 50% 50%, ${softColor}, transparent 74%)`,
+      opacity: 0.22 + cast * 0.34,
       mixBlendMode: "screen",
     };
     fxOuterStyle = {
       position: "absolute",
-      inset: 4,
+      inset: isShield ? 2 : 12,
       borderRadius: 999,
-      border: `2px solid rgba(147,197,253,${(0.28 + brace * 0.34).toFixed(3)})`,
-      boxShadow: `0 0 20px rgba(96,165,250,${(0.16 + brace * 0.24).toFixed(3)})`,
+      border: `2px solid ${glowColor.replace("0.78", (0.36 + cast * 0.34).toFixed(3))}`,
+      boxShadow: `0 0 22px ${glowColor.replace("0.78", (0.22 + cast * 0.3).toFixed(3))}`,
+      transform: isCurse ? `rotate(${(age / 12).toFixed(1)}deg)` : `scale(${(0.92 + cast * 0.18).toFixed(3)})`,
       pointerEvents: "none",
       zIndex: 3,
     };
-  } else if (effect === "buff") {
-    translateY = -5 * pulse;
-    scale = 1 + 0.034 * pulse;
-    glow = "drop-shadow(0 0 16px rgba(134,239,172,0.74)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
-    frameBoxShadow = `0 0 0 2px rgba(134,239,172,${(0.18 + pulse * 0.26).toFixed(3)}), 0 0 20px rgba(34,197,94,${(0.12 + pulse * 0.20).toFixed(3)})`;
-    overlayStyle = { background: "radial-gradient(circle at 50% 46%, rgba(187,247,208,0.32), rgba(34,197,94,0.10) 58%, transparent 74%)", opacity: 0.16 + pulse * 0.24, mixBlendMode: "screen" };
-  } else if (effect === "debuff") {
-    translateX = Math.sin(age / 34) * 8 * decay;
-    scale = 1 - 0.025 * pulse;
-    glow = "drop-shadow(0 0 16px rgba(216,180,254,0.72)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
-    frameBoxShadow = `0 0 0 2px rgba(216,180,254,${(0.18 + pulse * 0.26).toFixed(3)}), 0 0 20px rgba(147,51,234,${(0.14 + pulse * 0.22).toFixed(3)})`;
-    overlayStyle = { background: "radial-gradient(circle at 50% 50%, rgba(216,180,254,0.34), rgba(147,51,234,0.12) 58%, transparent 74%)", opacity: 0.16 + pulse * 0.24, mixBlendMode: "screen" };
+    if (isCurse || isDrain) {
+      fxInnerStyle = {
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        width: `${54 + cast * 24}px`,
+        height: 8,
+        transform: `translate(-50%, -50%) rotate(${isCurse ? 90 + age / 7 : direction > 0 ? -18 : 18}deg)`,
+        borderRadius: 999,
+        background: isCurse ? "linear-gradient(90deg, transparent, rgba(244,63,94,0.92), transparent)" : "linear-gradient(90deg, transparent, rgba(249,168,212,0.94), transparent)",
+        filter: "blur(1px)",
+        pointerEvents: "none",
+        zIndex: 4,
+      };
+    }
+  } else if (effect === "skill") {
+    const cast = Math.sin(progress * Math.PI);
+    const snap = Math.sin(progress * Math.PI * 2) * (1 - progress) * 0.82;
+    translateX = direction * ((30 * cast) + (12 * snap));
+    translateY = -12 * cast;
+    scale = 1 + 0.1 * cast;
+    glow = "drop-shadow(0 0 18px rgba(250,204,21,0.92)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
+    frameBoxShadow = `0 0 0 2px rgba(250,204,21,${(0.34 + cast * 0.34).toFixed(3)}), 0 0 30px rgba(234,179,8,${(0.28 + cast * 0.32).toFixed(3)})`;
+    overlayStyle = {
+      background: "radial-gradient(circle at 50% 50%, rgba(254,240,138,0.54), rgba(250,204,21,0.26) 56%, transparent 72%)",
+      opacity: 0.34 + cast * 0.28,
+      mixBlendMode: "screen",
+    };
+    fxOuterStyle = {
+      position: "absolute",
+      top: "50%",
+      [direction > 0 ? "left" : "right"]: "-14%",
+      width: "84%",
+      height: 26,
+      transform: `translateY(-50%) rotate(${direction > 0 ? -14 : 14}deg) scaleX(${(0.46 + cast * 0.82).toFixed(3)})`,
+      transformOrigin: direction > 0 ? "left center" : "right center",
+      borderRadius: 999,
+      background: direction > 0 ? "linear-gradient(90deg, rgba(254,240,138,0), rgba(250,204,21,0.98), rgba(255,255,255,1))" : "linear-gradient(270deg, rgba(254,240,138,0), rgba(250,204,21,0.98), rgba(255,255,255,1))",
+      opacity: 0.26 + cast * 0.7,
+      filter: "blur(2.4px)",
+      pointerEvents: "none",
+      zIndex: 3,
+    };
+    fxInnerStyle = {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: `${58 + cast * 28}px`,
+      height: `${58 + cast * 28}px`,
+      transform: "translate(-50%, -50%)",
+      borderRadius: "50%",
+      border: `2px solid rgba(254,240,138,${(0.44 + cast * 0.36).toFixed(3)})`,
+      boxShadow: `0 0 22px rgba(250,204,21,${(0.22 + cast * 0.32).toFixed(3)})`,
+      pointerEvents: "none",
+      zIndex: 4,
+    };
   } else if (effect === "evade") {
     const dodge = Math.sin(progress * Math.PI);
-    translateX = -direction * 20 * dodge;
-    translateY = -8 * dodge;
-    scale = 0.98 + 0.03 * dodge;
-    glow = "drop-shadow(0 0 13px rgba(196,181,253,0.72)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
-    frameBoxShadow = `0 0 18px rgba(139,92,246,${(0.12 + dodge * 0.2).toFixed(3)})`;
+    translateX = direction * (-30 * dodge);
+    translateY = -10 * dodge;
+    scale = 1 - 0.05 * dodge;
+    glow = "drop-shadow(0 0 12px rgba(196,181,253,0.66)) drop-shadow(0 10px 18px rgba(0,0,0,0.26))";
+    frameBoxShadow = `0 0 0 2px rgba(196,181,253,${(0.2 + dodge * 0.22).toFixed(3)}), 0 0 20px rgba(139,92,246,${(0.14 + dodge * 0.2).toFixed(3)})`;
     overlayStyle = {
       background: "radial-gradient(circle at 50% 50%, rgba(221,214,254,0.24), rgba(139,92,246,0.08) 58%, transparent 72%)",
       opacity: 0.16 + dodge * 0.2,
@@ -2856,22 +2662,10 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
     };
   }
 
-  if (effect && !fxInnerStyle && recent?.entry) {
-    fxInnerStyle = {
-      position: "absolute",
-      inset: 10,
-      borderRadius: 999,
-      border: "1px solid rgba(255,255,255,0.14)",
-      opacity: 0.08 + pulse * 0.18,
-      pointerEvents: "none",
-      zIndex: 2,
-    };
-  }
-
   return {
     effect,
-    badge,
-    badgeColor,
+    badge: getBattleEffectLabel(effect),
+    badgeColor: getBattleEffectLabelColor(effect),
     wrapperStyle: {
       transform: `translate(${translateX.toFixed(2)}px, ${translateY.toFixed(2)}px) scale(${scale.toFixed(3)})`,
       transition: persistentGuard ? "box-shadow 0.2s ease, opacity 0.2s ease" : "transform 0.12s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease, opacity 0.16s ease",
@@ -2887,49 +2681,103 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
   };
 }
 
-function BattleMotionOverlay({ entry, participants = [], nowTick = Date.now() }) {
+function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick = Date.now() }) {
   if (!entry) return null;
   const appearedAt = Number(entry?.appearedAt || 0);
   const age = Math.max(0, nowTick - appearedAt);
-  const duration = 860;
+  const duration = 1040;
   if (age > duration) return null;
 
   const progress = Math.max(0, Math.min(1, age / duration));
   const pulse = Math.sin(progress * Math.PI);
   const participantNames = new Set((participants || []).map((participant) => String(participant?.name || "")).filter(Boolean));
+  const enemyNames = (enemies || []).map((enemy) => String(enemy?.name || "")).filter(Boolean);
   const actor = String(entry?.actor || "");
   const target = String(entry?.target || "");
+  const targets = getBattleEntryTargetNames(entry);
   const effect = String(entry?.effect || "");
+  const concept = getBattleMotionConcept(entry, effect);
   const actorSide = participantNames.has(actor) ? "ally" : "enemy";
-  let targetSide = participantNames.has(target) ? "ally" : "enemy";
+  const targetName = targets[0] || target;
+  let targetSide = participantNames.has(targetName) ? "ally" : "enemy";
+  if (!targetName && ["guard", "shield", "buff", "heal", "item"].includes(effect)) targetSide = actorSide;
 
-  if (!target && ["guard", "shield", "buff", "heal", "item"].includes(effect)) {
-    targetSide = actorSide;
-  }
+  const getPoint = (side, name, useCenter = false) => {
+    if (side === "ally") {
+      const names = (participants || []).map((participant) => String(participant?.name || "")).filter(Boolean);
+      const count = Math.max(1, names.length);
+      const index = Math.max(0, names.findIndex((value) => value === String(name || "")));
+      const spread = Math.min(22, Math.max(8, (count - 1) * 7));
+      const x = count <= 1 || useCenter ? 42 : 42 - spread / 2 + (spread * index) / Math.max(1, count - 1);
+      return { x, y: 77 };
+    }
+    const count = Math.max(1, enemyNames.length);
+    const index = Math.max(0, enemyNames.findIndex((value) => value === String(name || "")));
+    const spread = Math.min(28, Math.max(10, (count - 1) * 8));
+    const x = count <= 1 || useCenter ? 58 : 58 - spread / 2 + (spread * index) / Math.max(1, count - 1);
+    return { x, y: 24 };
+  };
 
-  const startX = actorSide === "ally" ? 42 : 58;
-  const startY = actorSide === "ally" ? 76 : 24;
-  const endX = targetSide === "ally" ? 42 : 58;
-  const endY = targetSide === "ally" ? 76 : 24;
-  const orbX = startX + (endX - startX) * progress;
-  const orbY = startY + (endY - startY) * progress;
+  const start = getPoint(actorSide, actor, false);
+  const useGroupTarget = target === "전체" || targets.length > 1 || ["protectAll", "aoeHeal", "aoeDamage"].includes(String(entry?.skillMode || ""));
+  const end = getPoint(targetSide, targetName, useGroupTarget);
+  const orbX = start.x + (end.x - start.x) * progress;
+  const orbY = start.y + (end.y - start.y) * progress;
 
-  const palette = getBattleOverlayPalette(entry, effect);
+  const palette = concept === "curse"
+    ? { glow: "rgba(190,18,60,0.98)", soft: "rgba(248,113,113,0.74)", text: "#fecaca" }
+    : concept === "blessing" || concept === "salvation" || concept === "cheer"
+      ? { glow: "rgba(74,222,128,0.98)", soft: "rgba(187,247,208,0.76)", text: "#bbf7d0" }
+      : concept === "aegis" || concept === "sacrifice" || effect === "guard" || effect === "shield"
+        ? { glow: "rgba(96,165,250,0.98)", soft: "rgba(191,219,254,0.74)", text: "#bfdbfe" }
+        : concept === "drain"
+          ? { glow: "rgba(244,114,182,0.98)", soft: "rgba(249,168,212,0.74)", text: "#fbcfe8" }
+          : effect === "damage"
+            ? { glow: "rgba(248,113,113,0.98)", soft: "rgba(254,202,202,0.72)", text: "#fecaca" }
+            : effect === "evade"
+              ? { glow: "rgba(196,181,253,0.98)", soft: "rgba(221,214,254,0.72)", text: "#ddd6fe" }
+              : effect === "item"
+                ? { glow: "rgba(103,232,249,0.98)", soft: "rgba(207,250,254,0.72)", text: "#cffafe" }
+                : { glow: "rgba(250,204,21,0.98)", soft: "rgba(254,240,138,0.72)", text: "#fde68a" };
 
-  const needsTravel = actorSide !== targetSide || isSkillMotionEntry(entry) || ["attack", "skill", "damage", "drain", "evade"].includes(effect);
-  const orbSize = ["skill", "drain"].includes(effect) ? 30 : effect === "damage" ? 24 : 22;
-  const shieldPulse = 0.45 + pulse * 0.55;
+  const drawSlash = concept === "slash" || effect === "attack";
+  const drawMultiSlash = concept === "multiSlash";
+  const drawAura = ["blessing", "curse", "aegis", "sacrifice", "salvation", "cheer", "drain"].includes(concept) || ["buff", "debuff", "heal", "shield", "guard", "drain"].includes(effect);
+  const needsTravel = actorSide !== targetSide || ["attack", "skill", "damage", "drain", "evade"].includes(effect);
+  const label = entry?.skillName || (drawMultiSlash ? "연격" : drawSlash ? "공격" : getBattleEffectLabel(effect));
+  const slashBase = targetSide === "enemy" ? -24 : 24;
+
+  const slashLayer = drawMultiSlash ? (
+    <div style={{ position: "absolute", left: `${end.x}%`, top: `${end.y}%`, width: 180 + pulse * 44, height: 132 + pulse * 32, transform: `translate(-50%, -50%) rotate(${slashBase}deg)`, opacity: 0.28 + pulse * 0.58, filter: `drop-shadow(0 0 16px ${palette.glow})`, zIndex: 3 }}>
+      {[0, 1, 2, 3].map((line) => (
+        <div key={line} style={{ position: "absolute", left: `${line * 18}%`, top: `${18 + line * 14}%`, width: "72%", height: 9 + line, borderRadius: 999, background: `linear-gradient(90deg, transparent, rgba(255,255,255,0.96), ${palette.glow}, transparent)`, transform: `rotate(${line % 2 ? 32 : -8}deg)`, boxShadow: `0 0 16px ${palette.glow}` }} />
+      ))}
+    </div>
+  ) : drawSlash ? (
+    <div style={{ position: "absolute", left: `${end.x}%`, top: `${end.y}%`, width: 150 + pulse * 54, height: 16 + pulse * 8, transform: `translate(-50%, -50%) rotate(${slashBase}deg) scaleX(${(0.7 + pulse * 0.52).toFixed(3)})`, transformOrigin: "center", borderRadius: 999, background: `linear-gradient(90deg, transparent, rgba(255,255,255,0.98), ${palette.glow}, transparent)`, boxShadow: `0 0 18px ${palette.glow}, 0 0 34px ${palette.glow.replace("0.98", "0.34")}`, opacity: 0.24 + pulse * 0.66, filter: "blur(0.2px)", zIndex: 3 }} />
+  ) : null;
+
+  const auraShape = drawAura ? (
+    <div style={{ position: "absolute", left: `${end.x}%`, top: `${end.y}%`, width: concept === "aegis" || concept === "sacrifice" ? 118 + pulse * 58 : 72 + pulse * 62, height: concept === "aegis" || concept === "sacrifice" ? 118 + pulse * 58 : 72 + pulse * 62, transform: `translate(-50%, -50%) rotate(${concept === "curse" ? age / 10 : 0}deg)`, borderRadius: concept === "curse" ? "32% 68% 46% 54%" : "50%", border: concept === "aegis" || concept === "sacrifice" || concept === "curse" ? `3px solid ${palette.soft}` : "none", background: concept === "curse" ? `radial-gradient(circle, rgba(15,23,42,0.05), ${palette.soft} 46%, transparent 73%)` : `radial-gradient(circle, ${palette.soft}, transparent 72%)`, opacity: 0.22 + pulse * 0.52, boxShadow: `0 0 28px ${palette.glow.replace("0.98", "0.34")}`, zIndex: 2 }} />
+  ) : null;
+
+  const tether = concept === "sacrifice" ? (
+    <div style={{ position: "absolute", left: `${(start.x + end.x) / 2}%`, top: `${(start.y + end.y) / 2}%`, width: Math.max(80, Math.abs(end.x - start.x) * 7), height: 7, transform: `translate(-50%, -50%) rotate(${Math.atan2(end.y - start.y, end.x - start.x) * 57.2958}deg)`, transformOrigin: "center", borderRadius: 999, background: `linear-gradient(90deg, transparent, ${palette.glow}, rgba(255,255,255,0.86), ${palette.glow}, transparent)`, boxShadow: `0 0 18px ${palette.glow}`, opacity: 0.24 + pulse * 0.52, zIndex: 1 }} />
+  ) : null;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 7, overflow: "visible" }}>
-      <div style={{ position: "absolute", left: "50%", top: 0, transform: `translateX(-50%) translateY(${-4 + Math.sin(nowTick / 170) * 2}px)`, padding: "8px 14px", borderRadius: 999, background: "rgba(8,15,30,0.78)", border: `1px solid ${palette.soft}`, color: palette.text, fontSize: 12, fontWeight: 900, letterSpacing: "0.02em", boxShadow: `0 0 22px ${palette.glow.replace('0.98', '0.18')}` }}>
-        {entry.text}
+      <div style={{ position: "absolute", left: "50%", top: 0, transform: `translateX(-50%) translateY(${-4 + Math.sin(nowTick / 170) * 2}px)`, padding: "8px 14px", borderRadius: 999, background: "rgba(8,15,30,0.78)", border: `1px solid ${palette.soft}`, color: palette.text, fontSize: 12, fontWeight: 900, letterSpacing: "0.02em", boxShadow: `0 0 22px ${palette.glow.replace('0.98', '0.18')}`, maxWidth: "min(760px, calc(100% - 24px))", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {label ? `${label} · ` : ""}{entry.text}
       </div>
-      <div style={{ position: "absolute", left: `${startX}%`, top: `${startY}%`, width: 18 + pulse * 18, height: 18 + pulse * 18, transform: "translate(-50%, -50%)", borderRadius: "50%", background: `radial-gradient(circle, ${palette.soft}, transparent 70%)`, opacity: 0.2 + pulse * 0.4, filter: "blur(1px)" }} />
-      {needsTravel ? (
-        <div style={{ position: "absolute", left: `${orbX}%`, top: `${orbY}%`, width: orbSize + pulse * 14, height: orbSize + pulse * 14, transform: `translate(-50%, -50%) scale(${(0.92 + pulse * 0.28).toFixed(3)})`, borderRadius: "50%", background: `radial-gradient(circle, rgba(255,255,255,0.98), ${palette.glow} 42%, transparent 74%)`, boxShadow: `0 0 18px ${palette.glow}, 0 0 34px ${palette.glow.replace('0.98', '0.42')}` }} />
+      <div style={{ position: "absolute", left: `${start.x}%`, top: `${start.y}%`, width: 18 + pulse * 18, height: 18 + pulse * 18, transform: "translate(-50%, -50%)", borderRadius: "50%", background: `radial-gradient(circle, ${palette.soft}, transparent 70%)`, opacity: 0.2 + pulse * 0.4, filter: "blur(1px)" }} />
+      {needsTravel && !drawMultiSlash ? (
+        <div style={{ position: "absolute", left: `${orbX}%`, top: `${orbY}%`, width: concept === "drain" ? 18 + pulse * 28 : 24 + pulse * 18, height: concept === "drain" ? 18 + pulse * 28 : 24 + pulse * 18, transform: `translate(-50%, -50%) scale(${(0.92 + pulse * 0.28).toFixed(3)})`, borderRadius: "50%", background: `radial-gradient(circle, rgba(255,255,255,0.98), ${palette.glow} 42%, transparent 74%)`, boxShadow: `0 0 18px ${palette.glow}, 0 0 34px ${palette.glow.replace('0.98', '0.42')}`, zIndex: 4 }} />
       ) : null}
-      <div style={{ position: "absolute", left: `${endX}%`, top: `${endY}%`, width: ["guard", "shield", "buff"].includes(effect) ? 86 + pulse * 46 : 34 + pulse * 54, height: ["guard", "shield", "buff"].includes(effect) ? 86 + pulse * 46 : 34 + pulse * 54, transform: "translate(-50%, -50%)", borderRadius: "50%", border: ["guard", "shield", "buff"].includes(effect) ? `3px solid ${palette.soft}` : "none", background: ["guard", "shield", "buff"].includes(effect) ? `radial-gradient(circle, transparent 56%, ${palette.soft} 66%, transparent 78%)` : `radial-gradient(circle, ${palette.soft}, transparent 72%)`, opacity: ["guard", "shield", "buff"].includes(effect) ? shieldPulse : 0.18 + pulse * 0.58, boxShadow: `0 0 26px ${palette.glow.replace('0.98', '0.34')}` }} />
+      {tether}
+      {auraShape}
+      {slashLayer}
+      <div style={{ position: "absolute", left: `${end.x}%`, top: `${end.y}%`, width: drawMultiSlash ? 110 + pulse * 70 : drawSlash ? 72 + pulse * 58 : drawAura ? 40 + pulse * 42 : 34 + pulse * 54, height: drawMultiSlash ? 110 + pulse * 70 : drawSlash ? 72 + pulse * 58 : drawAura ? 40 + pulse * 42 : 34 + pulse * 54, transform: "translate(-50%, -50%)", borderRadius: "50%", background: `radial-gradient(circle, ${palette.soft}, transparent 72%)`, opacity: 0.16 + pulse * 0.46, boxShadow: `0 0 26px ${palette.glow.replace('0.98', '0.34')}`, zIndex: 1 }} />
     </div>
   );
 }

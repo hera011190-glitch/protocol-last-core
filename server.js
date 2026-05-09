@@ -2852,7 +2852,7 @@ function applyBattleTurn(item, actions) {
 
   item.pendingBattleActions = clone(actions);
   item.lastBattleRound = [];
-  const roundLogs = [createBattleLogEntry("[아군 행동]", "allies", { isPhaseHeader: true })];
+  const roundLogs = [createBattleLogEntry("[아군 행동]", "allies", { isPhaseHeader: true, snapshot: makeBattleSnapshot(item, battle) })];
   const persistRoundLogsToShared = (entries) => {
     (Array.isArray(entries) ? entries : []).forEach((entry) => {
       if (!entry?.text) return;
@@ -2901,15 +2901,36 @@ function applyBattleTurn(item, actions) {
       }
       if (Number(spec.cooldownTurns || 0) > 0) state.skillCooldowns[parsed.payload] = Number(spec.cooldownTurns || 0) + 1;
       const actorAtk = getEffectiveAttack(state);
-      if (spec.mode === "allyAtkBuff") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; addBuff(ally, "atkRateUp", Number(spec.duration || 2), Number(spec.rate || 0.5)); ally.status = "축복"; state.status = "지원"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name}의 공격력이 증가했습니다.`, "allies", { actor: actor.name, target: ally.name, effect: "buff", snapshot: makeBattleSnapshot(item, battle) })); return; }
-      if (spec.mode === "enemyDamageTakenDebuff") { const enemyTarget = findTargetEnemy(battle, parsed.target); if (!enemyTarget) return; addBuff(enemyTarget, "damageTakenRateUp", Number(spec.duration || 2), Number(spec.rate || 0.5)); state.status = "저주"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${enemyTarget.name}이(가) 받는 피해가 증가했습니다.`, "allies", { actor: actor.name, target: enemyTarget.name, effect: "debuff", snapshot: makeBattleSnapshot(item, battle) })); return; }
-      if (spec.mode === "protectOne") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; addBuff(state, "protect", Number(spec.duration || 1), 1); state.buffs[state.buffs.length - 1].target = ally.name; state.status = "희생 보호"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name}에게 향하는 공격을 대신 받습니다.`, "allies", { actor: actor.name, target: ally.name, effect: "shield", snapshot: makeBattleSnapshot(item, battle) })); return; }
-      if (spec.mode === "protectAll") { const shield = Math.max(1, Math.round(Number(state.def || 0) / 2)); Object.values(item.participantStates || {}).forEach((ally) => { if (!ally || Number(ally.hp || 0) <= 0) return; addBuff(ally, "guardUp", Number(spec.duration || 2), shield); ally.status = "가호"; }); state.status = "가호"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! 아군 전체에게 보호막을 씌웠습니다.`, "allies", { actor: actor.name, effect: "shield", snapshot: makeBattleSnapshot(item, battle) })); return; }
-      if (spec.mode === "singleHeal") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; const heal = Math.max(1, Math.round(actorAtk * 2)); ally.hp = Math.min(ally.maxHp, Number(ally.hp || 0) + heal); ally.status = "구원"; state.status = "회복"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name} HP ${heal} 회복`, "allies", { actor: actor.name, target: ally.name, effect: "heal", snapshot: makeBattleSnapshot(item, battle) })); return; }
-      if (spec.mode === "aoeHeal") { const heal = Math.max(1, Math.round(actorAtk / 2)); Object.values(item.participantStates || {}).forEach((ally) => { if (!ally || Number(ally.hp || 0) <= 0) return; ally.hp = Math.min(ally.maxHp, Number(ally.hp || 0) + heal); ally.status = "격려"; }); state.status = "회복"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! 아군 전체 HP ${heal} 회복`, "allies", { actor: actor.name, effect: "heal", snapshot: makeBattleSnapshot(item, battle) })); return; }
-      if (spec.mode === "aoeDamage") { const crit = rollCritical(state.agi); getAliveBattleEnemies(battle).forEach((enemyTarget) => { let raw = Math.max(1, Math.round(actorAtk * Number(spec.multiplier || 0.75) - Math.floor(Number(enemyTarget.def || 0) / 2))); if (crit) raw *= 2; const damage = applyEnemyDamage(enemyTarget, raw); syncBattleEnemyTotals(battle); roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${enemyTarget.name}에게 ${damage}데미지${crit ? " / 치명타" : ""}`, "allies", { actor: actor.name, target: enemyTarget.name, effect: "skill", snapshot: makeBattleSnapshot(item, battle) })); if (enemyTarget.hp <= 0) roundLogs.push(createBattleLogEntry(`${enemyTarget.name}가 쓰러졌습니다.`, "allies", { target: enemyTarget.name, effect: "defeat", snapshot: makeBattleSnapshot(item, battle) })); }); state.status = crit ? "치명타" : "연격"; return; }
+      if (spec.mode === "allyAtkBuff") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; addBuff(ally, "atkRateUp", Number(spec.duration || 2), Number(spec.rate || 0.5)); ally.status = "축복"; state.status = "지원"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name}의 공격력이 증가했습니다.`, "allies", { actor: actor.name, target: ally.name, effect: "buff", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
+      if (spec.mode === "enemyDamageTakenDebuff") { const enemyTarget = findTargetEnemy(battle, parsed.target); if (!enemyTarget) return; addBuff(enemyTarget, "damageTakenRateUp", Number(spec.duration || 2), Number(spec.rate || 0.5)); state.status = "저주"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${enemyTarget.name}이(가) 받는 피해가 증가했습니다.`, "allies", { actor: actor.name, target: enemyTarget.name, effect: "debuff", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
+      if (spec.mode === "protectOne") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; addBuff(state, "protect", Number(spec.duration || 1), 1); state.buffs[state.buffs.length - 1].target = ally.name; state.status = "희생 보호"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name}에게 향하는 공격을 대신 받습니다.`, "allies", { actor: actor.name, target: ally.name, effect: "shield", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
+      if (spec.mode === "protectAll") { const shield = Math.max(1, Math.round(Number(state.def || 0) / 2)); Object.values(item.participantStates || {}).forEach((ally) => { if (!ally || Number(ally.hp || 0) <= 0) return; addBuff(ally, "guardUp", Number(spec.duration || 2), shield); ally.status = "가호"; }); state.status = "가호"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! 아군 전체에게 보호막을 씌웠습니다.`, "allies", { actor: actor.name, effect: "shield", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
+      if (spec.mode === "singleHeal") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; const heal = Math.max(1, Math.round(actorAtk * 2)); ally.hp = Math.min(ally.maxHp, Number(ally.hp || 0) + heal); ally.status = "구원"; state.status = "회복"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name} HP ${heal} 회복`, "allies", { actor: actor.name, target: ally.name, effect: "heal", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
+      if (spec.mode === "aoeHeal") { const heal = Math.max(1, Math.round(actorAtk / 2)); Object.values(item.participantStates || {}).forEach((ally) => { if (!ally || Number(ally.hp || 0) <= 0) return; ally.hp = Math.min(ally.maxHp, Number(ally.hp || 0) + heal); ally.status = "격려"; }); state.status = "회복"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! 아군 전체 HP ${heal} 회복`, "allies", { actor: actor.name, effect: "heal", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
+      if (spec.mode === "aoeDamage") {
+        const crit = rollCritical(state.agi);
+        const hitResults = [];
+        getAliveBattleEnemies(battle).forEach((enemyTarget) => {
+          let raw = Math.max(1, Math.round(actorAtk * Number(spec.multiplier || 0.75) - Math.floor(Number(enemyTarget.def || 0) / 2)));
+          if (crit) raw *= 2;
+          const damage = applyEnemyDamage(enemyTarget, raw);
+          hitResults.push({ name: enemyTarget.name, damage });
+        });
+        syncBattleEnemyTotals(battle);
+        if (hitResults.length > 0) {
+          roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${hitResults.map((result) => `${result.name} ${result.damage}데미지`).join(", ")}${crit ? " / 치명타" : ""}`, "allies", { actor: actor.name, target: "전체", targets: hitResults.map((result) => result.name), effect: "skill", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) }));
+          hitResults.forEach((result) => {
+            const defeated = getBattleEnemies(battle).find((enemyTarget) => String(enemyTarget.name) === String(result.name));
+            if (defeated && Number(defeated.hp || 0) <= 0) {
+              roundLogs.push(createBattleLogEntry(`${defeated.name}가 쓰러졌습니다.`, "allies", { target: defeated.name, effect: "defeat", snapshot: makeBattleSnapshot(item, battle) }));
+            }
+          });
+        }
+        state.status = crit ? "치명타" : "연격";
+        return;
+      }
       if (rollEvasion(Number(state.agi || 0), Number(targetEnemy.agi || 0))) {
-        roundLogs.push(createBattleLogEntry(`${targetEnemy.name}가 ${actor.name}의 ${spec.label}을(를) 피해냈습니다!`, "allies", { actor: actor.name, target: targetEnemy.name, effect: "evade", snapshot: makeBattleSnapshot(item, battle) }));
+        roundLogs.push(createBattleLogEntry(`${targetEnemy.name}가 ${actor.name}의 ${spec.label}을(를) 피해냈습니다!`, "allies", { actor: actor.name, target: targetEnemy.name, effect: "evade", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) }));
         state.status = "회피당함";
         return;
       }
@@ -2919,7 +2940,7 @@ function applyBattleTurn(item, actions) {
       const damage = applyEnemyDamage(targetEnemy, rawDamage);
       syncBattleEnemyTotals(battle);
       state.status = crit ? "치명타" : "스킬";
-      roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${targetEnemy.name}에게 ${damage}데미지${crit ? " / 치명타" : ""}`, "allies", { actor: actor.name, target: targetEnemy.name, effect: spec.mode === "drain" ? "drain" : "skill", snapshot: makeBattleSnapshot(item, battle) }));
+      roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${targetEnemy.name}에게 ${damage}데미지${crit ? " / 치명타" : ""}`, "allies", { actor: actor.name, target: targetEnemy.name, effect: spec.mode === "drain" ? "drain" : "skill", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) }));
       if (targetEnemy.hp <= 0) roundLogs.push(createBattleLogEntry(`${targetEnemy.name}가 쓰러졌습니다.`, "allies", { target: targetEnemy.name, effect: "defeat", snapshot: makeBattleSnapshot(item, battle) }));
       return;
     }

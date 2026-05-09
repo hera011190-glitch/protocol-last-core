@@ -81,7 +81,7 @@ function isUsableItem(meta) {
   return useType && useType !== "none" && useType !== "unusable";
 }
 
-function ItemUsePanel({ items, catalog, onUse, style = {} }) {
+function ItemUsePanel({ items, catalog, onUse, onDelete, style = {} }) {
   const entries = useMemo(
     () => (Array.isArray(items) ? items : []).map((item, index) => {
       const meta = findItemMeta(catalog, item);
@@ -159,7 +159,26 @@ function ItemUsePanel({ items, catalog, onUse, style = {} }) {
                       <div style={{ fontSize: 12, color: "#5d7a95", marginBottom: 4 }}>아이템 이름</div>
                       <div style={{ fontSize: 22, fontWeight: 900, color: "#16324a" }}>{selected.displayName}</div>
                     </div>
-                    <button type="button" className="ghost-button" onClick={() => setSelectedKey("")}>닫기</button>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {typeof onDelete === "function" ? (
+                        <button
+                          type="button"
+                          title="아이템 삭제"
+                          aria-label="아이템 삭제"
+                          onClick={async () => {
+                            const ok = await onDelete(selected.item, selected.meta, selected.index);
+                            if (ok !== false) setSelectedKey("");
+                          }}
+                          style={{ width: 40, height: 40, borderRadius: 14, border: "1px solid rgba(148,163,184,0.34)", background: "rgba(248,250,252,0.92)", color: "#475569", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "0 8px 18px rgba(15,23,42,0.08)" }}
+                        >
+                          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M9 4h6l1 2h4v2H4V6h4l1-2Z" fill="currentColor" />
+                            <path d="M6.5 10h11l-.7 9.1c-.08 1.08-.98 1.9-2.06 1.9H9.26c-1.08 0-1.98-.82-2.06-1.9L6.5 10Z" fill="currentColor" />
+                          </svg>
+                        </button>
+                      ) : null}
+                      <button type="button" className="ghost-button" onClick={() => setSelectedKey("")}>닫기</button>
+                    </div>
                   </div>
                   <div style={{ padding: "14px 16px", borderRadius: 18, background: "rgba(240,248,255,0.86)", color: "#35566f", lineHeight: 1.75, minHeight: 120 }}>
                     {selected.meta?.description || "등록된 설명이 없습니다."}
@@ -747,6 +766,45 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     return true;
   };
 
+  const deleteItem = async (itemName, meta = {}, itemIndex = -1) => {
+    if (!currentUser?.id) {
+      alert("삭제할 캐릭터를 찾을 수 없습니다.");
+      return false;
+    }
+    const nextItems = [...inventory];
+    const itemKey = typeof itemName === "object" && itemName !== null
+      ? String(itemName.id || itemName.name || itemName.itemId || itemName.itemName || "")
+      : String(itemName || "");
+    let index = Number.isInteger(Number(itemIndex)) && Number(itemIndex) >= 0 && Number(itemIndex) < nextItems.length
+      ? Number(itemIndex)
+      : -1;
+    if (index >= 0) {
+      const current = nextItems[index];
+      const currentKey = typeof current === "object" && current !== null ? String(current.id || current.name || current.itemId || current.itemName || "") : String(current || "");
+      const metaKey = String(meta?.id || meta?.name || itemKey || "");
+      if (itemKey && currentKey !== itemKey && metaKey && currentKey !== metaKey) index = -1;
+    }
+    if (index < 0) {
+      const metaKey = String(meta?.id || meta?.name || itemKey || "");
+      index = nextItems.findIndex((value) => {
+        const valueKey = typeof value === "object" && value !== null ? String(value.id || value.name || value.itemId || value.itemName || "") : String(value || "");
+        return valueKey === itemKey || (!!metaKey && valueKey === metaKey);
+      });
+    }
+    if (index < 0) {
+      alert("선택한 아이템을 찾지 못했습니다.");
+      return false;
+    }
+    nextItems.splice(index, 1);
+    const data = await saveCharacterPatch({ items: nextItems, replaceItems: true });
+    if (!data.success) {
+      alert(data.message || "아이템 삭제에 실패했습니다.");
+      return false;
+    }
+    setSaveNotice("아이템 삭제 완료");
+    return true;
+  };
+
   const sendMail = async () => {
     if (!receiverOptions.length) await loadAllCharacters();
     if (!receiverId) return alert("받는 사람을 선택해주세요.");
@@ -775,6 +833,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     if (!data.success) return alert(data.message || "우편 보내기 실패");
     await saveCharacterPatch({
       items: nextItems,
+      replaceItems: true,
       coins: Number(currentUser.coins || 0) - Number(coinToSend || 0),
     });
     setReceiverId("");
@@ -985,7 +1044,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
           </div>
         </div>
 
-        <ItemUsePanel items={inventory} catalog={catalog} onUse={useItem} />
+        <ItemUsePanel items={inventory} catalog={catalog} onUse={useItem} onDelete={deleteItem} />
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 840px) minmax(240px, 0.72fr)", gap: 12, alignItems: "stretch", marginBottom: "18px" }}>
           <div style={card({ padding: "12px 14px", borderRadius: "18px", maxWidth: 780, width: "100%" })}>
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>캐릭터 수정</h3>

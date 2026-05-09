@@ -856,6 +856,7 @@ export default function AdminPage({
         stats: { atk: Number(edit.atk || 0), hp: Number(edit.hp || 0), def: Number(edit.def || 0), agi: Number(edit.agi || 0) },
         currentHp: Number(edit.currentHp || 0),
         items: Array.isArray(edit.items) ? edit.items : (Array.isArray(latestDetail.items) ? latestDetail.items : []),
+        replaceItems: true,
         skills: Array.isArray(edit.skills) ? edit.skills : (Array.isArray(latestDetail.skills) ? latestDetail.skills : []),
         age: edit.age,
         bodyInfo: edit.bodyInfo,
