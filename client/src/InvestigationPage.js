@@ -123,7 +123,11 @@ function buildFallbackParticipants(investigation) {
       ownerId: existing.ownerId || String(name),
       name: existing.name || String(name),
       image: existing.image || state?.image || "",
-      investigationImage: existing.investigationImage || existing.image || state?.image || "",
+      investigationImage: existing.investigationImage || existing.spriteImage || existing.sdImage || existing.sdImageUrl || existing.sd || existing.image || state?.image || "",
+      spriteImage: existing.spriteImage || existing.investigationImage || existing.sdImage || existing.sdImageUrl || existing.sd || state?.spriteImage || state?.image || "",
+      sdImage: existing.sdImage || state?.sdImage || "",
+      sdImageUrl: existing.sdImageUrl || state?.sdImageUrl || "",
+      sd: existing.sd || state?.sd || "",
       level: existing.level || 1,
       stats: existing.stats || {
         hp: Math.max(0, Math.round((maxHp - 100) / 10)),
@@ -132,6 +136,12 @@ function buildFallbackParticipants(investigation) {
         agi: Number(state?.agi || 0),
       },
       ...existing,
+      image: existing.image || state?.image || "",
+      investigationImage: existing.investigationImage || existing.spriteImage || existing.sdImage || existing.sdImageUrl || existing.sd || existing.image || state?.image || "",
+      spriteImage: existing.spriteImage || existing.investigationImage || existing.sdImage || existing.sdImageUrl || existing.sd || state?.spriteImage || state?.image || "",
+      sdImage: existing.sdImage || state?.sdImage || "",
+      sdImageUrl: existing.sdImageUrl || state?.sdImageUrl || "",
+      sd: existing.sd || state?.sd || "",
     });
   });
   return Array.from(roster.values());
@@ -2204,7 +2214,7 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
 
   const leader = (participants || []).find((participant) => (leaders || []).includes(participant.name)) || (investigation?.type === "daily" ? participants?.[0] : null);
   const currentPos = positions[currentId];
-  const leaderImage = leader?.investigationImage || leader?.image;
+  const leaderImage = getInvestigationSpriteSource(leader);
   const visibleNodeIds = new Set([...visited, currentId].filter(Boolean));
   const visibleEntries = entries.filter(([nodeId]) => visibleNodeIds.has(nodeId));
   const visibleEdges = edges.filter(([fromId, toId]) => visibleNodeIds.has(fromId) && visibleNodeIds.has(toId));
@@ -2250,6 +2260,46 @@ function getBattleRoundTone(text) {
   if (/회복|치명타|승리|제압|획득/.test(value)) return "success";
   if (/방어|회피|도주|집중/.test(value)) return "info";
   return "normal";
+}
+
+function getInvestigationSpriteSource(source = {}) {
+  return [
+    source?.spriteImage,
+    source?.sdImage,
+    source?.sdImageUrl,
+    source?.sd,
+    source?.investigationImage,
+    source?.image,
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function getVisibleBattleBuffs(state = {}) {
+  return (Array.isArray(state?.buffs) ? state.buffs : [])
+    .filter((buff) => buff && Number(buff.duration || 0) > 0 && String(buff.type || "").trim());
+}
+
+function getBattleBuffMeta(buff = {}) {
+  const type = String(buff?.type || "");
+  const duration = Number(buff?.duration || 0);
+  const suffix = duration > 0 ? `${duration}T` : "";
+  if (type === "atkRateUp" || type === "atkUp") return { effect: "buff", label: suffix ? `공격 강화 ${suffix}` : "공격 강화", color: "#86efac", background: "rgba(22,163,74,0.18)", border: "rgba(134,239,172,0.36)" };
+  if (type === "damageTakenRateUp" || type === "defDown" || type === "damageTakenUp") return { effect: "debuff", label: suffix ? `피해 증가 ${suffix}` : "피해 증가", color: "#fca5a5", background: "rgba(127,29,29,0.2)", border: "rgba(252,165,165,0.38)" };
+  if (type === "protect") return { effect: "shield", label: suffix ? `희생 보호 ${suffix}` : "희생 보호", color: "#bfdbfe", background: "rgba(37,99,235,0.2)", border: "rgba(191,219,254,0.38)" };
+  if (type === "guardUp" || type === "shield" || type === "defUp") return { effect: "guard", label: suffix ? `방어 강화 ${suffix}` : "방어 강화", color: "#93c5fd", background: "rgba(30,64,175,0.2)", border: "rgba(147,197,253,0.4)" };
+  return { effect: "buff", label: suffix ? `${type} ${suffix}` : type, color: "#e2e8f0", background: "rgba(148,163,184,0.16)", border: "rgba(226,232,240,0.26)" };
+}
+
+function getVisibleBattleEffectBadges(state = {}) {
+  return getVisibleBattleBuffs(state).map(getBattleBuffMeta);
+}
+
+function getPersistentBattleEffectFromBuffs(state = {}) {
+  const badges = getVisibleBattleEffectBadges(state);
+  if (badges.some((badge) => badge.effect === "debuff")) return "debuff";
+  if (badges.some((badge) => badge.effect === "shield" || badge.effect === "guard")) return "guard";
+  if (badges.some((badge) => badge.effect === "buff")) return "buff";
+  if (state?.defending) return "guard";
+  return "";
 }
 
 const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='360' height='360' viewBox='0 0 360 360'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23dbeafe'/><stop offset='1' stop-color='%2393c5fd'/></linearGradient></defs><rect rx='40' width='360' height='360' fill='url(%23g)'/><circle cx='180' cy='122' r='68' fill='%23eff6ff'/><path d='M92 258c18-56 54-84 88-84s70 28 88 84' fill='%23bfdbfe'/><circle cx='154' cy='118' r='10' fill='%231e3a8a'/><circle cx='206' cy='118' r='10' fill='%231e3a8a'/><path d='M145 154c21 18 49 18 70 0' stroke='%231e3a8a' stroke-width='10' fill='none' stroke-linecap='round'/><path d='M118 70l30 18M242 70l-30 18' stroke='%2360a5fa' stroke-width='14' stroke-linecap='round'/></svg>";
@@ -2300,7 +2350,8 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
     if (effect === "heal" && (isActor || isTarget)) return { effect: "heal", entry };
     if (effect === "evade" && (isActor || isTarget)) return { effect: "evade", entry };
   }
-  if (state?.defending) return { effect: "guard", entry: null, persistent: true };
+  const persistentEffect = getPersistentBattleEffectFromBuffs(state);
+  if (persistentEffect) return { effect: persistentEffect, entry: null, persistent: true };
   return { effect: "", entry: null, persistent: false };
 }
 
@@ -2601,12 +2652,14 @@ function getActiveBattleMotionEntry(rounds, nowTick = Date.now()) {
 function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), side = "ally" }) {
   const recent = getRecentBattleEntry(name, rounds, state, nowTick);
   const effect = recent?.effect || "";
-  const concept = getBattleMotionConcept(recent?.entry || {}, effect);
-  const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : 0;
+  const activeBadges = getVisibleBattleEffectBadges(state);
+  const concept = getBattleMotionConcept(recent?.entry || { skillName: activeBadges[0]?.label || "" }, effect);
+  const isPersistentEffect = !!effect && !recent?.entry;
+  const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : nowTick % 1200;
   const duration = ({ damage: 760, attack: 620, skill: 900, buff: 860, debuff: 860, drain: 880, shield: 820, heal: 760, item: 720, guard: 560, evade: 520 })[effect] || 620;
-  const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : 1;
-  const pulse = recent?.entry ? Math.sin(progress * Math.PI) : 0;
-  const persistentGuard = effect === "guard" && !recent?.entry && !!state?.defending;
+  const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : isPersistentEffect ? 0.48 + Math.sin(nowTick / 680) * 0.08 : 1;
+  const pulse = recent?.entry ? Math.sin(progress * Math.PI) : isPersistentEffect ? 0.58 + (Math.sin(nowTick / 360) + 1) * 0.14 : 0;
+  const persistentGuard = effect === "guard" && !recent?.entry;
   const direction = side === "enemy" ? -1 : 1;
   let translateX = 0;
   let translateY = 0;
@@ -3000,6 +3053,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
   const wobble = pendingReward ? Math.abs(Math.sin(nowTick / 220)) * -10 : battleActive ? Math.sin(nowTick / 220) * 8 : 0;
 
   const sceneBackgroundImage = currentNode?.image || investigationBackgroundImage || "";
+  const leaderSpriteImage = getInvestigationSpriteSource(leader);
 
   return (
     <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
@@ -3009,7 +3063,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
       {leader && !battleActive ? (
         <div style={{ position: "absolute", left: "50%", bottom: 188, transform: `translateX(-50%) translateY(${wobble}px)`, transition: "transform 0.18s ease", textAlign: "center" }}>
           {bubble ? <div style={{ position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)", minWidth: 36, height: 36, padding: "0 12px", borderRadius: 999, background: battleActive ? "rgba(127,29,29,0.88)" : pendingReward ? "rgba(120,53,15,0.88)" : "rgba(30,64,175,0.88)", color: "white", display: "grid", placeItems: "center", fontWeight: 900, boxShadow: "0 10px 22px rgba(0,0,0,0.28)" }}>{bubble}</div> : null}
-          {(leader.investigationImage || leader.image) ? <LazyImage src={leader.investigationImage || leader.image} alt={leader.name} eager fit="contain" style={{ width: 156, height: 156, filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))", background: "transparent" }} /> : null}
+          {leaderSpriteImage ? <LazyImage src={leaderSpriteImage} alt={leader.name} eager fit="contain" style={{ width: 144, height: 144, maxWidth: "28vw", maxHeight: "28vh", filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))", background: "transparent", objectFit: "contain" }} /> : null}
           <div style={{ marginTop: 8, textAlign: "center", color: "white", fontWeight: 900 }}>{leader.name}</div>
         </div>
       ) : null}
@@ -3033,6 +3087,8 @@ function getBattleEnemyList(battle) {
     aoe_chance: Number(enemy?.aoe_chance ?? battle.aoe_chance ?? 0),
     finisher_chance: Number(enemy?.finisher_chance ?? battle.finisher_chance ?? 0),
     image: enemy?.image || battle.image || "",
+    buffs: Array.isArray(enemy?.buffs) ? enemy.buffs : [],
+    status: enemy?.status || "",
   }));
 }
 
@@ -3052,8 +3108,9 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           const hp = Number(enemy.hp || 0);
           const maxHp = Number(enemy.maxHp || enemy.hp || 1);
           const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
-          const effect = getRecentBattleEffect(enemy.name, rounds, {}, nowTick);
-          const visual = getBattleVisualState({ name: enemy.name, rounds, nowTick, side: "enemy" });
+          const effect = getRecentBattleEffect(enemy.name, rounds, enemy, nowTick);
+          const visual = getBattleVisualState({ name: enemy.name, rounds, state: enemy, nowTick, side: "enemy" });
+          const activeEffectBadges = getVisibleBattleEffectBadges(enemy);
           const imageSrc = enemy.image || investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || currentMonsterPlaceholder;
           return (
             <div key={enemy.id || enemy.name} style={{ minWidth: compact ? 132 : 180, maxWidth: compact ? 160 : 220, display: "grid", justifyItems: "center", gap: 7, opacity: hp <= 0 ? 0.42 : 1, filter: hp <= 0 ? "grayscale(0.8)" : "none" }}>
@@ -3071,6 +3128,13 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
                 <div style={{ marginTop: 5, color: "#fce7f3", fontWeight: 800, fontSize: 12 }}>HP {hp}/{maxHp}</div>
               </div>
               {effect ? <div style={{ color: visual.badgeColor, fontWeight: 900, fontSize: 11, textShadow: "0 0 12px rgba(255,255,255,0.18)" }}>{visual.badge}</div> : null}
+              {activeEffectBadges.length > 0 ? (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center", marginTop: 2 }}>
+                  {activeEffectBadges.map((badge, badgeIndex) => (
+                    <span key={`${enemy.id || enemy.name}-buff-${badgeIndex}`} style={{ padding: "3px 7px", borderRadius: 999, background: badge.background, border: `1px solid ${badge.border}`, color: badge.color, fontSize: 10, fontWeight: 900, boxShadow: `0 0 12px ${badge.border}` }}>{badge.label}</span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -3113,13 +3177,15 @@ function BattlePartyStrip({ participants, participantStates, pendingActions, rou
         const dead = maxHp > 0 && hp <= 0;
         const effect = getRecentBattleEffect(participant.name, rounds, state, nowTick);
         const visual = getBattleVisualState({ name: participant.name, rounds, state, nowTick, side: "ally" });
+        const activeEffectBadges = getVisibleBattleEffectBadges(state);
+        const participantSpriteImage = getInvestigationSpriteSource(participant);
         return (
           <div key={participant.name} style={{ minWidth: compact ? 116 : 132, maxWidth: compact ? 116 : 132, textAlign: "center", filter: dead ? "grayscale(1)" : "none", opacity: dead ? 0.66 : 1, ...visual.wrapperStyle }}>
             <div style={{ width: compact ? 96 : 112, height: compact ? 96 : 112, margin: "0 auto 8px", display: "grid", placeItems: "center", position: "relative", borderRadius: 24, overflow: "visible" }}>
               {visual.overlayStyle ? <div style={{ position: "absolute", inset: 4, borderRadius: 999, pointerEvents: "none", ...visual.overlayStyle }} /> : null}
               {visual.fxOuterStyle ? <div style={visual.fxOuterStyle} /> : null}
               {visual.fxInnerStyle ? <div style={visual.fxInnerStyle} /> : null}
-              {participant.investigationImage || participant.image ? <img src={participant.investigationImage || participant.image} alt={participant.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} /> : null}
+              {participantSpriteImage ? <img src={participantSpriteImage} alt={participant.name} style={{ width: "100%", height: "100%", objectFit: "contain", position: "relative", zIndex: 2, ...visual.imageStyle }} /> : null}
             </div>
             <div style={{ fontWeight: 900, fontSize: compact ? "13px" : "14px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{participant.name}</div>
             <div style={{ marginTop: "6px", height: "8px", borderRadius: "999px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}><div style={{ width: `${hpPercent}%`, height: "100%", background: "linear-gradient(90deg, #93c5fd, #38bdf8)" }} /></div>
@@ -3127,6 +3193,13 @@ function BattlePartyStrip({ participants, participantStates, pendingActions, rou
             {dead ? <div style={{ marginTop: "6px", fontSize: "11px", color: "#fecaca", fontWeight: 800 }}>관전</div> : null}
             {!dead ? <div style={{ marginTop: 4, fontSize: 11, color: pendingActions?.[participant.name] ? "#bae6fd" : battlePlaybackLocked ? "#fef08a" : "#cbd5e1", fontWeight: 900 }}>{battlePlaybackLocked ? "행동 연출 중" : pendingActions?.[participant.name] ? "선택 완료" : "대기 중"}</div> : null}
             {effect ? <div style={{ marginTop: 4, fontSize: 11, color: visual.badgeColor, fontWeight: 900, textShadow: "0 0 10px rgba(255,255,255,0.16)" }}>{visual.badge}</div> : null}
+            {activeEffectBadges.length > 0 ? (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>
+                {activeEffectBadges.map((badge, badgeIndex) => (
+                  <span key={`${participant.name}-buff-${badgeIndex}`} style={{ padding: "3px 7px", borderRadius: 999, background: badge.background, border: `1px solid ${badge.border}`, color: badge.color, fontSize: 10, fontWeight: 900, boxShadow: `0 0 12px ${badge.border}` }}>{badge.label}</span>
+                ))}
+              </div>
+            ) : null}
           </div>
         );
       })}
