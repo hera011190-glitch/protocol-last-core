@@ -1170,7 +1170,7 @@ useEffect(() => {
       const tweenEndAt = entry?.snapshot ? Math.max(tweenStartAt + 180, snapshotAt || appearedAt + 280) : 0;
       const fromFrame = cloneBattlePlaybackValue(frameCursor);
       const scheduledEntry = { ...entry, appearedAt, snapshotAt, tweenStartAt, tweenEndAt, fromFrame };
-      if (entry?.snapshot) frameCursor = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame);
+      if (entry?.snapshot) frameCursor = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame, entry);
       cursor = appearedAt + Number(timings.totalAfterLog || 0);
       return scheduledEntry;
     });
@@ -2262,6 +2262,17 @@ function getBattleRoundTone(text) {
   return "normal";
 }
 
+function isUsableInvestigationImageSource(value) {
+  const src = String(value || "").trim();
+  if (!src) return false;
+  const lowered = src.toLowerCase();
+  if (["null", "undefined", "none", "sd", "sd 이미지", "이미지", "[object object]"].includes(lowered)) return false;
+  if (src.startsWith("data:image/") || src.startsWith("blob:")) return true;
+  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("/") || src.startsWith("./") || src.startsWith("../")) return true;
+  if (/^(uploads|assets|images|img)\//i.test(src)) return true;
+  return /\.(png|jpe?g|gif|webp|svg|avif)(\?|#|$)/i.test(src);
+}
+
 function getInvestigationSpriteSource(source = {}) {
   return [
     source?.spriteImage,
@@ -2269,8 +2280,7 @@ function getInvestigationSpriteSource(source = {}) {
     source?.sdImageUrl,
     source?.sd,
     source?.investigationImage,
-    source?.image,
-  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  ].map((value) => String(value || "").trim()).find(isUsableInvestigationImageSource) || "";
 }
 
 function getVisibleBattleBuffs(state = {}) {
@@ -2422,7 +2432,51 @@ function getEnemyIdentity(enemy = {}, index = 0) {
   return String(enemy?.id || enemy?.name || `enemy-${index + 1}`);
 }
 
-function makeBattleFrameFromSnapshot(snapshot = {}, fallbackFrame = {}) {
+function isBattleHealingPlaybackEntry(entry = {}) {
+  const effect = String(entry?.effect || "");
+  const text = `${entry?.skillName || ""} ${entry?.skillKey || ""} ${entry?.skillMode || ""} ${entry?.text || ""}`;
+  return effect === "heal" || (effect === "item" && /회복|HP/.test(text)) || /구원|격려|singleHeal|aoeHeal/.test(text);
+}
+
+function preventUnrelatedPlaybackHpIncrease(nextFrame = {}, fromFrame = {}, entry = {}) {
+  const allowAllyHpIncrease = isBattleHealingPlaybackEntry(entry);
+  const fromStates = fromFrame?.participantStates || {};
+  const nextStates = nextFrame?.participantStates || {};
+  Object.entries(nextStates).forEach(([name, state]) => {
+    const fromState = fromStates?.[name];
+    if (!fromState || fromState.hp === undefined || state?.hp === undefined) return;
+    const fromHp = Number(fromState.hp);
+    const nextHp = Number(state.hp);
+    if (!allowAllyHpIncrease && Number.isFinite(fromHp) && Number.isFinite(nextHp) && nextHp > fromHp) {
+      state.hp = fromState.hp;
+    }
+  });
+
+  const fromBattle = fromFrame?.battle || {};
+  const nextBattle = nextFrame?.battle || {};
+  if (fromBattle?.hp !== undefined && nextBattle?.hp !== undefined) {
+    const fromHp = Number(fromBattle.hp);
+    const nextHp = Number(nextBattle.hp);
+    if (Number.isFinite(fromHp) && Number.isFinite(nextHp) && nextHp > fromHp) nextBattle.hp = fromBattle.hp;
+  }
+
+  const fromEnemies = Array.isArray(fromBattle?.enemies) ? fromBattle.enemies : [];
+  const nextEnemies = Array.isArray(nextBattle?.enemies) ? nextBattle.enemies : [];
+  const fromMap = new Map(fromEnemies.map((enemy, index) => [getEnemyIdentity(enemy, index), enemy]));
+  nextEnemies.forEach((enemy, index) => {
+    const fromEnemy = fromMap.get(getEnemyIdentity(enemy, index)) || fromEnemies.find((candidate) => String(candidate?.name || "") === String(enemy?.name || ""));
+    if (!fromEnemy || fromEnemy.hp === undefined || enemy?.hp === undefined) return;
+    const fromHp = Number(fromEnemy.hp);
+    const nextHp = Number(enemy.hp);
+    if (Number.isFinite(fromHp) && Number.isFinite(nextHp) && nextHp > fromHp) {
+      enemy.hp = fromEnemy.hp;
+    }
+  });
+
+  return nextFrame;
+}
+
+function makeBattleFrameFromSnapshot(snapshot = {}, fallbackFrame = {}, entry = {}) {
   const fallbackParticipantStates = cloneBattlePlaybackValue(fallbackFrame?.participantStates || {});
   const fallbackBattle = fallbackFrame?.battle ? cloneBattlePlaybackValue(fallbackFrame.battle) : null;
   const rawEnemies = Array.isArray(snapshot?.battleEnemies)
@@ -2449,11 +2503,11 @@ function makeBattleFrameFromSnapshot(snapshot = {}, fallbackFrame = {}) {
         }
       : null;
 
-  return {
+  return preventUnrelatedPlaybackHpIncrease({
     active: true,
     participantStates: cloneBattlePlaybackValue(snapshot?.participantStates || fallbackParticipantStates),
     battle,
-  };
+  }, fallbackFrame, entry);
 }
 
 function interpolateNumberValue(fromValue, toValue, progress) {
@@ -2517,7 +2571,7 @@ function getTweenedBattlePlaybackState(baseFrame, entries = [], nowTick = Date.n
 
   for (const entry of ordered) {
     const fromFrame = entry?.fromFrame || frame;
-    const toFrame = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame);
+    const toFrame = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame, entry);
     const startAt = Number(entry?.tweenStartAt || entry?.appearedAt || 0);
     const endAt = Math.max(startAt + 1, Number(entry?.tweenEndAt || entry?.snapshotAt || startAt + 260));
     if (nowTick < startAt) return frame;
@@ -2533,7 +2587,7 @@ function getTweenedBattlePlaybackState(baseFrame, entries = [], nowTick = Date.n
 function getBattleFloatingNumbers(entry = {}) {
   if (!entry?.snapshot || !entry?.fromFrame) return [];
   const fromFrame = entry.fromFrame;
-  const toFrame = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame);
+  const toFrame = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame, entry);
   const results = [];
 
   const fromStates = fromFrame?.participantStates || {};
@@ -2925,29 +2979,53 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
 
   const progress = Math.max(0, Math.min(1, age / duration));
   const pulse = Math.sin(progress * Math.PI);
-  const participantNames = new Set((participants || []).map((participant) => String(participant?.name || "")).filter(Boolean));
-  const enemyNames = (enemies || []).map((enemy) => String(enemy?.name || "")).filter(Boolean);
+  const normalizeBattleEntityKey = (value) => String(value ?? "").trim();
+  const makeParticipantKeys = (participant = {}, index = 0) => [
+    participant?.id,
+    participant?.name,
+    participant?.characterId,
+    participant?.ownerId,
+    participant?.userId,
+    String(index),
+  ].map(normalizeBattleEntityKey).filter(Boolean);
+  const makeEnemyKeys = (enemy = {}, index = 0) => [
+    enemy?.id,
+    enemy?.name,
+    enemy?.enemyId,
+    `enemy-${index + 1}`,
+    String(index),
+  ].map(normalizeBattleEntityKey).filter(Boolean);
+  const participantEntities = (participants || []).map((participant, index) => ({ entity: participant, keys: makeParticipantKeys(participant, index), label: String(participant?.name || participant?.id || index) }));
+  const enemyEntities = (enemies || []).map((enemy, index) => ({ entity: enemy, keys: makeEnemyKeys(enemy, index), label: String(enemy?.name || enemy?.id || index) }));
+  const participantKeySet = new Set(participantEntities.flatMap((item) => item.keys));
+  const enemyKeySet = new Set(enemyEntities.flatMap((item) => item.keys));
   const actor = String(entry?.actor || "");
   const target = String(entry?.target || "");
   const targets = getBattleEntryTargetNames(entry);
   const effect = String(entry?.effect || "");
   const concept = getBattleMotionConcept(entry, effect);
-  const actorSide = participantNames.has(actor) ? "ally" : "enemy";
+  const actorKey = normalizeBattleEntityKey(actor);
+  const actorSide = participantKeySet.has(actorKey) ? "ally" : "enemy";
   const targetName = targets[0] || target;
-  let targetSide = participantNames.has(targetName) ? "ally" : "enemy";
+  const targetKey = normalizeBattleEntityKey(targetName);
+  let targetSide = participantKeySet.has(targetKey) ? "ally" : enemyKeySet.has(targetKey) ? "enemy" : "enemy";
   if (!targetName && ["guard", "shield", "buff", "heal", "item"].includes(effect)) targetSide = actorSide;
 
   const getPoint = (side, name, useCenter = false) => {
+    const list = side === "ally" ? participantEntities : enemyEntities;
+    const count = Math.max(1, list.length);
+    const safeName = normalizeBattleEntityKey(name);
+    let index = list.findIndex((item) => item.keys.includes(safeName));
+    if (index < 0 && /^\d+$/.test(safeName)) {
+      const numericIndex = Number(safeName);
+      if (numericIndex >= 0 && numericIndex < count) index = numericIndex;
+    }
+    if (index < 0) index = 0;
     if (side === "ally") {
-      const names = (participants || []).map((participant) => String(participant?.name || "")).filter(Boolean);
-      const count = Math.max(1, names.length);
-      const index = Math.max(0, names.findIndex((value) => value === String(name || "")));
       const spread = Math.min(22, Math.max(8, (count - 1) * 7));
       const x = count <= 1 || useCenter ? 42 : 42 - spread / 2 + (spread * index) / Math.max(1, count - 1);
       return { x, y: 77 };
     }
-    const count = Math.max(1, enemyNames.length);
-    const index = Math.max(0, enemyNames.findIndex((value) => value === String(name || "")));
     const spread = Math.min(28, Math.max(10, (count - 1) * 8));
     const x = count <= 1 || useCenter ? 58 : 58 - spread / 2 + (spread * index) / Math.max(1, count - 1);
     return { x, y: 24 };
@@ -3059,11 +3137,11 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, ac
     <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
       {sceneBackgroundImage ? <LazyImage src={sceneBackgroundImage} alt="조사 배경" eager fit="cover" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} /> : null}
       <div style={{ position: "absolute", inset: 0, background: battleActive ? "rgba(48,10,18,0.42)" : currentNode?.image ? "rgba(2,6,23,0.26)" : "linear-gradient(rgba(2,6,23,0.18), rgba(2,6,23,0.42))" }} />
-      {!activeNpcScene && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} fit="contain" style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
+      {!activeNpcScene && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
       {leader && !battleActive ? (
         <div style={{ position: "absolute", left: "50%", bottom: 188, transform: `translateX(-50%) translateY(${wobble}px)`, transition: "transform 0.18s ease", textAlign: "center" }}>
           {bubble ? <div style={{ position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)", minWidth: 36, height: 36, padding: "0 12px", borderRadius: 999, background: battleActive ? "rgba(127,29,29,0.88)" : pendingReward ? "rgba(120,53,15,0.88)" : "rgba(30,64,175,0.88)", color: "white", display: "grid", placeItems: "center", fontWeight: 900, boxShadow: "0 10px 22px rgba(0,0,0,0.28)" }}>{bubble}</div> : null}
-          {leaderSpriteImage ? <LazyImage src={leaderSpriteImage} alt={leader.name} eager fit="contain" style={{ width: 144, height: 144, maxWidth: "28vw", maxHeight: "28vh", filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))", background: "transparent", objectFit: "contain" }} /> : null}
+          {leaderSpriteImage ? <LazyImage src={leaderSpriteImage} alt={leader.name} eager placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ width: 144, height: 144, maxWidth: "28vw", maxHeight: "28vh", filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))", background: "transparent", objectFit: "contain" }} /> : null}
           <div style={{ marginTop: 8, textAlign: "center", color: "white", fontWeight: 900 }}>{leader.name}</div>
         </div>
       ) : null}
