@@ -166,6 +166,8 @@ function ItemUsePanel({ items, catalog, onUse, onDelete, style = {} }) {
                           title="아이템 삭제"
                           aria-label="아이템 삭제"
                           onClick={async () => {
+                            const confirmed = typeof window === "undefined" ? true : window.confirm("삭제하시겠습니까?");
+                            if (!confirmed) return;
                             const ok = await onDelete(selected.item, selected.meta, selected.index);
                             if (ok !== false) setSelectedKey("");
                           }}

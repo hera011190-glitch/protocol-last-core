@@ -164,6 +164,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const [showClues, setShowClues] = useState(false);
   const [inventoryItems, setInventoryItems] = useState(() => Array.isArray(previewInventory) ? previewInventory : Array.isArray(previewData?.previewInventory) ? previewData.previewInventory : Array.isArray(character?.items) ? character.items : []);
   const [showResult, setShowResult] = useState(true);
+  const [delayedBattleBanner, setDelayedBattleBanner] = useState(null);
   const [stickToBottom, setStickToBottom] = useState(true);
   const [stickLogsToBottom, setStickLogsToBottom] = useState(true);
   const [showNewChatCue, setShowNewChatCue] = useState(false);
@@ -995,11 +996,26 @@ useEffect(() => {
     ? stagedBattleLogs.filter((entry) => Number(entry?.appearedAt || 0) <= nowTick)
     : stagedBattleLogs;
   const currentBattleMotionEntry = getActiveBattleMotionEntry(animatedBattleRounds, nowTick);
-  const displayParticipantStates = playbackState?.participantStates || participantStates;
-  const displayCurrentNode = playbackState?.battle
-    ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...playbackState.battle } }
+  const tweenedPlaybackState = battlePlaybackLocked && playbackState
+    ? getTweenedBattlePlaybackState(playbackState, stagedBattleLogs, nowTick)
+    : playbackState;
+  const activePlaybackState = tweenedPlaybackState || playbackState;
+  const displayParticipantStates = activePlaybackState?.participantStates || participantStates;
+  const displayCurrentNode = activePlaybackState?.battle
+    ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...activePlaybackState.battle } }
     : currentNode;
-  const showBanner = !!investigation?.eventBanner && Number(investigation?.eventBannerUntil || 0) > nowTick;
+  const playbackEndingVisible = battlePlaybackLocked || stagedBattleLogs.length > 0;
+  const liveEventBanner = investigation?.eventBanner
+    ? { text: investigation.eventBanner, type: investigation.eventBannerType, until: Number(investigation.eventBannerUntil || 0) }
+    : null;
+  const delayedEventBannerActive = delayedBattleBanner && Number(delayedBattleBanner.until || 0) > nowTick;
+  const liveBattleEndBannerSuppressed = playbackEndingVisible && isBattleEndBannerText(liveEventBanner?.text);
+  const activeEventBanner = delayedEventBannerActive
+    ? delayedBattleBanner
+    : liveEventBanner && Number(liveEventBanner.until || 0) > nowTick && !liveBattleEndBannerSuppressed
+      ? liveEventBanner
+      : null;
+  const showBanner = !!activeEventBanner;
   const pendingActions = { ...(pendingActionsEarly || {}), ...(localPendingActions || {}) };
   const aliveParticipants = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) > 0);
   const spectators = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) <= 0);
@@ -1133,32 +1149,23 @@ useEffect(() => {
     const battleSource = playbackSourceRef.current?.battle || currentNode?.battle || null;
     const baseBattle = battleSource ? JSON.parse(JSON.stringify(battleSource)) : null;
     let cursor = now;
+    let frameCursor = { active: true, participantStates: baseParticipantStates, battle: baseBattle };
     const scheduledEntries = visibleEntries.map((entry, index) => {
       const timings = getBattlePlaybackTimings(entry, index);
       const appearedAt = cursor + Number(timings.beforeLog || 0);
       const snapshotAt = entry?.snapshot ? appearedAt + Number(timings.beforeSnapshot || 0) : 0;
+      const tweenStartAt = entry?.snapshot ? appearedAt + Math.min(120, Math.max(20, Number(timings.beforeSnapshot || 240) * 0.28)) : 0;
+      const tweenEndAt = entry?.snapshot ? Math.max(tweenStartAt + 180, snapshotAt || appearedAt + 280) : 0;
+      const fromFrame = cloneBattlePlaybackValue(frameCursor);
+      const scheduledEntry = { ...entry, appearedAt, snapshotAt, tweenStartAt, tweenEndAt, fromFrame };
+      if (entry?.snapshot) frameCursor = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame);
       cursor = appearedAt + Number(timings.totalAfterLog || 0);
-      return { ...entry, appearedAt, snapshotAt };
+      return scheduledEntry;
     });
-    setPlaybackState({ active: true, participantStates: baseParticipantStates, battle: baseBattle });
+    const basePlaybackFrame = { active: true, participantStates: baseParticipantStates, battle: baseBattle };
+    setPlaybackState(basePlaybackFrame);
     setStagedBattleLogs(scheduledEntries);
-    const snapshotTimers = scheduledEntries
-      .filter((entry) => entry?.snapshot && Number(entry?.snapshotAt || 0) > 0)
-      .map((entry) => setTimeout(() => {
-        const nextBattleState = {
-          ...(JSON.parse(JSON.stringify(baseBattle || {})) || {}),
-          hp: Number(entry.snapshot.battleHp ?? baseBattle?.hp ?? 0),
-          maxHp: Number(entry.snapshot.battleMaxHp ?? baseBattle?.maxHp ?? baseBattle?.hp ?? 0),
-        };
-        if (Array.isArray(entry.snapshot.battleEnemies)) {
-          nextBattleState.enemies = JSON.parse(JSON.stringify(entry.snapshot.battleEnemies));
-        }
-        setPlaybackState({
-          active: true,
-          participantStates: JSON.parse(JSON.stringify(entry.snapshot.participantStates || baseParticipantStates)),
-          battle: nextBattleState,
-        });
-      }, Math.max(0, Number(entry.snapshotAt || 0) - now)));
+    const snapshotTimers = [];
     requestAnimationFrame(() => {
       if (logScrollRef.current && stickLogsToBottom) {
         logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
@@ -1171,6 +1178,9 @@ useEffect(() => {
       const queuedState = queuedStateUpdateRef.current;
       const skipQueuedRoundPlayback = isHandledBattleRound(queuedState);
       queuedStateUpdateRef.current = null;
+      if (isBattleEndBannerText(investigation?.eventBanner)) {
+        setDelayedBattleBanner({ text: investigation.eventBanner, type: investigation.eventBannerType || "success", until: Date.now() + 2600 });
+      }
       setPlaybackState(null);
       setBattlePlaybackLocked(false);
       battlePlaybackLockStartedRef.current = 0;
@@ -1203,6 +1213,9 @@ useEffect(() => {
     const timer = setInterval(() => {
       if (Date.now() - Number(battlePlaybackLockStartedRef.current || 0) > hardTimeoutMs) {
         battlePlaybackLockStartedRef.current = 0;
+        if (isBattleEndBannerText(investigation?.eventBanner)) {
+          setDelayedBattleBanner({ text: investigation.eventBanner, type: investigation.eventBannerType || "success", until: Date.now() + 2600 });
+        }
         setStagedBattleLogs([]);
         setPlaybackState(null);
         setBattlePlaybackLocked(false);
@@ -1570,14 +1583,14 @@ useEffect(() => {
               fontWeight: 900,
               letterSpacing: "0.02em",
               color: "white",
-              background: investigation.eventBannerType === "danger"
+              background: activeEventBanner?.type === "danger"
                 ? "rgba(127,29,29,0.88)"
-                : investigation.eventBannerType === "success"
+                : activeEventBanner?.type === "success"
                   ? "rgba(20,83,45,0.88)"
                   : "rgba(8,15,30,0.82)",
               boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
             }}>
-              {investigation.eventBanner}
+              {activeEventBanner?.text}
             </div>
           </div>
         )}
@@ -2344,6 +2357,173 @@ function battleEntryMatchesTarget(entry = {}, name = "") {
   return getBattleEntryTargetNames(entry).some((target) => target === safeName);
 }
 
+function cloneBattlePlaybackValue(value) {
+  try {
+    return JSON.parse(JSON.stringify(value || {}));
+  } catch {
+    return Array.isArray(value) ? [...value] : { ...(value || {}) };
+  }
+}
+
+function getEnemyIdentity(enemy = {}, index = 0) {
+  return String(enemy?.id || enemy?.name || `enemy-${index + 1}`);
+}
+
+function makeBattleFrameFromSnapshot(snapshot = {}, fallbackFrame = {}) {
+  const fallbackParticipantStates = cloneBattlePlaybackValue(fallbackFrame?.participantStates || {});
+  const fallbackBattle = fallbackFrame?.battle ? cloneBattlePlaybackValue(fallbackFrame.battle) : null;
+  const rawEnemies = Array.isArray(snapshot?.battleEnemies)
+    ? cloneBattlePlaybackValue(snapshot.battleEnemies)
+    : Array.isArray(fallbackBattle?.enemies)
+      ? cloneBattlePlaybackValue(fallbackBattle.enemies)
+      : [];
+  const totalEnemyHp = rawEnemies.reduce((sum, enemy) => sum + Math.max(0, Number(enemy?.hp || 0)), 0);
+  const totalEnemyMaxHp = rawEnemies.reduce((sum, enemy) => sum + Math.max(0, Number(enemy?.maxHp ?? enemy?.hp ?? 0)), 0);
+  const battle = fallbackBattle
+    ? {
+        ...fallbackBattle,
+        hp: Number(snapshot?.battleHp ?? fallbackBattle.hp ?? totalEnemyHp),
+        maxHp: Number(snapshot?.battleMaxHp ?? fallbackBattle.maxHp ?? totalEnemyMaxHp),
+        enemies: rawEnemies.length > 0 ? rawEnemies : (Array.isArray(fallbackBattle.enemies) ? fallbackBattle.enemies : []),
+      }
+    : rawEnemies.length > 0 || snapshot?.battleHp !== undefined
+      ? {
+          id: "playback-battle",
+          name: rawEnemies.length === 1 ? rawEnemies[0]?.name || "E-Beast" : "E-Beast",
+          hp: Number(snapshot?.battleHp ?? totalEnemyHp),
+          maxHp: Number(snapshot?.battleMaxHp ?? totalEnemyMaxHp),
+          enemies: rawEnemies,
+        }
+      : null;
+
+  return {
+    active: true,
+    participantStates: cloneBattlePlaybackValue(snapshot?.participantStates || fallbackParticipantStates),
+    battle,
+  };
+}
+
+function interpolateNumberValue(fromValue, toValue, progress) {
+  const from = Number(fromValue);
+  const to = Number(toValue);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return Number.isFinite(to) ? to : fromValue;
+  return Math.round(from + (to - from) * Math.max(0, Math.min(1, progress)));
+}
+
+function interpolateBattlePlaybackFrame(fromFrame = {}, toFrame = {}, progress = 1) {
+  const safeProgress = Math.max(0, Math.min(1, Number(progress || 0)));
+  const result = cloneBattlePlaybackValue(toFrame || {});
+  const fromStates = fromFrame?.participantStates || {};
+  const toStates = toFrame?.participantStates || {};
+  const mergedStates = cloneBattlePlaybackValue(toStates);
+  Object.entries(mergedStates).forEach(([name, state]) => {
+    const fromState = fromStates?.[name] || {};
+    if (fromState?.hp !== undefined && state?.hp !== undefined) {
+      state.hp = interpolateNumberValue(fromState.hp, state.hp, safeProgress);
+    }
+    if (fromState?.maxHp !== undefined && state?.maxHp !== undefined) {
+      state.maxHp = interpolateNumberValue(fromState.maxHp, state.maxHp, safeProgress);
+    }
+  });
+  result.participantStates = mergedStates;
+
+  if (toFrame?.battle) {
+    const battle = cloneBattlePlaybackValue(toFrame.battle);
+    const fromBattle = fromFrame?.battle || {};
+    if (fromBattle?.hp !== undefined && battle?.hp !== undefined) battle.hp = interpolateNumberValue(fromBattle.hp, battle.hp, safeProgress);
+    if (fromBattle?.maxHp !== undefined && battle?.maxHp !== undefined) battle.maxHp = interpolateNumberValue(fromBattle.maxHp, battle.maxHp, safeProgress);
+
+    const fromEnemies = Array.isArray(fromBattle?.enemies) ? fromBattle.enemies : [];
+    const fromMap = new Map(fromEnemies.map((enemy, index) => [getEnemyIdentity(enemy, index), enemy]));
+    if (Array.isArray(battle.enemies)) {
+      battle.enemies = battle.enemies.map((enemy, index) => {
+        const key = getEnemyIdentity(enemy, index);
+        const fromEnemy = fromMap.get(key) || fromEnemies.find((candidate) => String(candidate?.name || "") === String(enemy?.name || "")) || {};
+        const nextEnemy = { ...enemy };
+        if (fromEnemy?.hp !== undefined && nextEnemy?.hp !== undefined) {
+          nextEnemy.hp = interpolateNumberValue(fromEnemy.hp, nextEnemy.hp, safeProgress);
+        }
+        if (fromEnemy?.maxHp !== undefined && nextEnemy?.maxHp !== undefined) {
+          nextEnemy.maxHp = interpolateNumberValue(fromEnemy.maxHp, nextEnemy.maxHp, safeProgress);
+        }
+        return nextEnemy;
+      });
+    }
+    result.battle = battle;
+  }
+
+  return result;
+}
+
+function getTweenedBattlePlaybackState(baseFrame, entries = [], nowTick = Date.now()) {
+  if (!baseFrame) return null;
+  let frame = cloneBattlePlaybackValue(baseFrame);
+  const ordered = Array.isArray(entries)
+    ? [...entries].filter((entry) => entry?.snapshot).sort((a, b) => Number(a?.appearedAt || 0) - Number(b?.appearedAt || 0))
+    : [];
+
+  for (const entry of ordered) {
+    const fromFrame = entry?.fromFrame || frame;
+    const toFrame = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame);
+    const startAt = Number(entry?.tweenStartAt || entry?.appearedAt || 0);
+    const endAt = Math.max(startAt + 1, Number(entry?.tweenEndAt || entry?.snapshotAt || startAt + 260));
+    if (nowTick < startAt) return frame;
+    if (nowTick < endAt) {
+      return interpolateBattlePlaybackFrame(fromFrame, toFrame, (nowTick - startAt) / Math.max(1, endAt - startAt));
+    }
+    frame = toFrame;
+  }
+
+  return frame;
+}
+
+function getBattleFloatingNumbers(entry = {}) {
+  if (!entry?.snapshot || !entry?.fromFrame) return [];
+  const fromFrame = entry.fromFrame;
+  const toFrame = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame);
+  const results = [];
+
+  const fromStates = fromFrame?.participantStates || {};
+  const toStates = toFrame?.participantStates || {};
+  Object.entries(toStates).forEach(([name, state]) => {
+    const fromState = fromStates?.[name];
+    if (!fromState || fromState.hp === undefined || state?.hp === undefined) return;
+    const delta = Number(state.hp || 0) - Number(fromState.hp || 0);
+    if (!delta) return;
+    results.push({
+      side: "ally",
+      name,
+      value: delta,
+      label: delta > 0 ? `+${Math.abs(delta)}` : `-${Math.abs(delta)}`,
+      tone: delta > 0 ? "heal" : "damage",
+    });
+  });
+
+  const fromEnemies = Array.isArray(fromFrame?.battle?.enemies) ? fromFrame.battle.enemies : [];
+  const toEnemies = Array.isArray(toFrame?.battle?.enemies) ? toFrame.battle.enemies : [];
+  const fromMap = new Map(fromEnemies.map((enemy, index) => [getEnemyIdentity(enemy, index), enemy]));
+  toEnemies.forEach((enemy, index) => {
+    const key = getEnemyIdentity(enemy, index);
+    const fromEnemy = fromMap.get(key) || fromEnemies.find((candidate) => String(candidate?.name || "") === String(enemy?.name || ""));
+    if (!fromEnemy || fromEnemy.hp === undefined || enemy?.hp === undefined) return;
+    const delta = Number(enemy.hp || 0) - Number(fromEnemy.hp || 0);
+    if (!delta) return;
+    results.push({
+      side: "enemy",
+      name: enemy.name,
+      value: delta,
+      label: delta > 0 ? `+${Math.abs(delta)}` : `-${Math.abs(delta)}`,
+      tone: delta > 0 ? "heal" : "damage",
+    });
+  });
+
+  return results;
+}
+
+function isBattleEndBannerText(text = "") {
+  return /승리|전멸|패배|COMPLETE|FAILED/.test(String(text || ""));
+}
+
 function getBattleMotionConcept(entry = {}, effect = "") {
   const text = `${entry?.skillName || ""} ${entry?.skillKey || ""} ${entry?.skillMode || ""} ${entry?.text || ""}`;
   if (/연격|aoeDamage|전체 공격/.test(text)) return "multiSlash";
@@ -2746,6 +2926,8 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
   const needsTravel = actorSide !== targetSide || ["attack", "skill", "damage", "drain", "evade"].includes(effect);
   const label = entry?.skillName || (drawMultiSlash ? "연격" : drawSlash ? "공격" : getBattleEffectLabel(effect));
   const slashBase = targetSide === "enemy" ? -24 : 24;
+  const floatingNumbers = getBattleFloatingNumbers(entry);
+  const numberProgress = Math.max(0, Math.min(1, (age - 90) / 760));
 
   const slashLayer = drawMultiSlash ? (
     <div style={{ position: "absolute", left: `${end.x}%`, top: `${end.y}%`, width: 180 + pulse * 44, height: 132 + pulse * 32, transform: `translate(-50%, -50%) rotate(${slashBase}deg)`, opacity: 0.28 + pulse * 0.58, filter: `drop-shadow(0 0 16px ${palette.glow})`, zIndex: 3 }}>
@@ -2777,6 +2959,33 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
       {tether}
       {auraShape}
       {slashLayer}
+      {floatingNumbers.map((number, index) => {
+        const point = getPoint(number.side, number.name, floatingNumbers.length > 3);
+        const driftX = (index - (floatingNumbers.length - 1) / 2) * 10;
+        const color = number.tone === "heal" ? "#bbf7d0" : "#fecaca";
+        const glowColor = number.tone === "heal" ? "rgba(34,197,94,0.62)" : "rgba(239,68,68,0.68)";
+        return (
+          <div key={`${number.side}-${number.name}-${index}`} style={{
+            position: "absolute",
+            left: `${point.x}%`,
+            top: `${point.y}%`,
+            transform: `translate(calc(-50% + ${driftX}px), calc(-50% - ${18 + numberProgress * 46}px)) scale(${(0.86 + Math.sin(numberProgress * Math.PI) * 0.24).toFixed(3)})`,
+            opacity: numberProgress < 0.06 ? numberProgress / 0.06 : Math.max(0, 1 - Math.max(0, numberProgress - 0.82) / 0.18),
+            color,
+            fontFamily: '"Cinzel", "Rajdhani", "Segoe UI", sans-serif',
+            fontSize: number.tone === "heal" ? 26 : 32,
+            fontWeight: 950,
+            letterSpacing: "0.02em",
+            lineHeight: 1,
+            textShadow: `0 2px 0 rgba(15,23,42,0.92), 0 0 14px ${glowColor}, 0 0 28px ${glowColor}`,
+            WebkitTextStroke: "1px rgba(15,23,42,0.72)",
+            zIndex: 8,
+            whiteSpace: "nowrap",
+          }}>
+            {number.label}
+          </div>
+        );
+      })}
       <div style={{ position: "absolute", left: `${end.x}%`, top: `${end.y}%`, width: drawMultiSlash ? 110 + pulse * 70 : drawSlash ? 72 + pulse * 58 : drawAura ? 40 + pulse * 42 : 34 + pulse * 54, height: drawMultiSlash ? 110 + pulse * 70 : drawSlash ? 72 + pulse * 58 : drawAura ? 40 + pulse * 42 : 34 + pulse * 54, transform: "translate(-50%, -50%)", borderRadius: "50%", background: `radial-gradient(circle, ${palette.soft}, transparent 72%)`, opacity: 0.16 + pulse * 0.46, boxShadow: `0 0 26px ${palette.glow.replace('0.98', '0.34')}`, zIndex: 1 }} />
     </div>
   );
