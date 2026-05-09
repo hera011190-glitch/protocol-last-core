@@ -963,7 +963,9 @@ useEffect(() => {
   const foundNPCs = Array.isArray(investigation?.foundNPCs) ? investigation.foundNPCs : [];
   const rewards = Array.isArray(investigation?.rewards) ? investigation.rewards : [];
   const clues = Array.isArray(investigation?.clues) ? investigation.clues : [];
-  const pendingReward = investigation?.pendingReward || null;
+  const rawPendingReward = investigation?.pendingReward || null;
+  const rewardDisplayBlockedByBattlePlayback = battlePlaybackLocked || stagedBattleLogs.length > 0 || !!playbackState;
+  const pendingReward = rewardDisplayBlockedByBattlePlayback ? null : rawPendingReward;
 
   useEffect(() => {
     const rewardKey = pendingReward ? `${pendingReward.type || ""}:${pendingReward.label || pendingReward.value || ""}` : "";
