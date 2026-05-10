@@ -12,6 +12,108 @@ function toDataUrl(file) {
   });
 }
 
+function normalizeImageFrame(frame) {
+  return {
+    x: Math.max(0, Math.min(100, Number(frame?.x ?? 50))),
+    y: Math.max(0, Math.min(100, Number(frame?.y ?? 50))),
+    scale: Math.max(1, Math.min(3, Number(frame?.scale ?? 1))),
+  };
+}
+
+function getCoverFrameStyle(frame = {}) {
+  const safe = normalizeImageFrame(frame);
+  const offsetX = (safe.x - 50) * 0.52;
+  const offsetY = (safe.y - 50) * 0.52;
+  return {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    transform: `translate(${offsetX}%, ${offsetY}%) scale(${safe.scale})`,
+    transformOrigin: "center center",
+    userSelect: "none",
+    pointerEvents: "none",
+  };
+}
+
+function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, scale: 1 }, title = "조사 카드", onFrameChange }) {
+  const dragRef = useRef(null);
+  const safeFrame = normalizeImageFrame(frame);
+  const updateFrame = (patch = {}) => {
+    if (!onFrameChange) return;
+    onFrameChange(normalizeImageFrame({ ...safeFrame, ...patch }));
+  };
+  const startDrag = (event) => {
+    if (!image) return;
+    const rect = event.currentTarget.getBoundingClientRect?.();
+    if (!rect) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      frame: safeFrame,
+      width: Math.max(1, rect.width),
+      height: Math.max(1, rect.height),
+    };
+  };
+  const moveDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const nextX = drag.frame.x + ((event.clientX - drag.startX) / drag.width) * 100 / 0.52;
+    const nextY = drag.frame.y + ((event.clientY - drag.startY) / drag.height) * 100 / 0.52;
+    updateFrame({ x: nextX, y: nextY });
+  };
+  const endDrag = (event) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 18, background: "rgba(245,251,255,0.9)", border: "1px solid rgba(98,176,220,0.18)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "#476885" }}>카드 이미지 위치/크기</div>
+        <button type="button" className="ghost-button" onClick={() => onFrameChange?.({ x: 50, y: 50, scale: 1 })}>초기화</button>
+      </div>
+      <div
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        style={{
+          position: "relative",
+          minHeight: 150,
+          overflow: "hidden",
+          borderRadius: 18,
+          background: "linear-gradient(135deg, rgba(219,234,254,0.8), rgba(15,23,42,0.12))",
+          cursor: image ? "grab" : "default",
+          touchAction: "none",
+          border: "1px solid rgba(15,23,42,0.08)",
+        }}
+        title={image ? "마우스로 드래그해서 카드 이미지 위치를 조정할 수 있습니다." : "먼저 이미지를 넣어주세요."}
+      >
+        {image ? <img src={image} alt={title} draggable={false} style={getCoverFrameStyle(safeFrame)} /> : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#6a87a3", fontSize: 12, fontWeight: 800 }}>이미지를 넣으면 여기서 위치를 조정할 수 있습니다.</div>}
+        {image ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 35%, rgba(255,255,255,0.18) 78%, rgba(255,255,255,0.04) 100%)", pointerEvents: "none" }} /> : null}
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 800, color: "#476885" }}>
+          크기
+          <input type="range" min="1" max="3" step="0.01" value={safeFrame.scale} onChange={(event) => updateFrame({ scale: Number(event.target.value || 1) })} />
+        </label>
+        <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 800, color: "#476885" }}>
+          가로 위치
+          <input type="range" min="0" max="100" step="0.1" value={safeFrame.x} onChange={(event) => updateFrame({ x: Number(event.target.value || 50) })} />
+        </label>
+        <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 800, color: "#476885" }}>
+          세로 위치
+          <input type="range" min="0" max="100" step="0.1" value={safeFrame.y} onChange={(event) => updateFrame({ y: Number(event.target.value || 50) })} />
+        </label>
+      </div>
+      <div style={{ fontSize: 12, color: "#6a87a3" }}>이미지는 늘리지 않고 비율을 유지한 채 카드 영역을 채웁니다.</div>
+    </div>
+  );
+}
+
 function emptyAction() {
   return { label: "", log: "", points: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
 }
@@ -42,6 +144,9 @@ function emptyBuilder() {
     type: "group",
     backgroundImage: "",
     listImage: "",
+    listImageFrame: { x: 50, y: 50, scale: 1 },
+    entryImageFrame: { x: 50, y: 50, scale: 1 },
+    imageUpdatedAt: 0,
     bgmUrl: "",
     bgmVolume: 1,
     entryCorrosion: 0,
@@ -126,6 +231,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       type: builder.type,
       backgroundImage: builder.backgroundImage,
       listImage: builder.listImage,
+      listImageFrame: normalizeImageFrame(builder.listImageFrame),
+      entryImageFrame: normalizeImageFrame(builder.entryImageFrame || builder.listImageFrame),
+      imageUpdatedAt: Number(builder.imageUpdatedAt || 0),
       bgmUrl: builder.bgmUrl,
       bgmVolume: builder.bgmVolume,
       entryCorrosion: Number(builder.entryCorrosion || 0),
@@ -134,6 +242,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
         start: safeStart,
         backgroundImage: builder.backgroundImage,
         listImage: builder.listImage,
+        listImageFrame: normalizeImageFrame(builder.listImageFrame),
+        entryImageFrame: normalizeImageFrame(builder.entryImageFrame || builder.listImageFrame),
+        imageUpdatedAt: Number(builder.imageUpdatedAt || 0),
         bgmUrl: builder.bgmUrl,
         bgmVolume: builder.bgmVolume,
         entryCorrosion: Number(builder.entryCorrosion || 0),
@@ -241,11 +352,14 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const startNodeId = json?.data?.start || template?.data?.start || nodes[0]?.id || "start";
     const backgroundImage = json?.backgroundImage || json?.data?.backgroundImage || template?.backgroundImage || template?.data?.backgroundImage || "";
     const listImage = json?.listImage || json?.data?.listImage || template?.listImage || template?.data?.listImage || "";
+    const listImageFrame = normalizeImageFrame(json?.listImageFrame || json?.data?.listImageFrame || template?.listImageFrame || template?.data?.listImageFrame);
+    const entryImageFrame = normalizeImageFrame(json?.entryImageFrame || json?.data?.entryImageFrame || template?.entryImageFrame || template?.data?.entryImageFrame || listImageFrame);
+    const imageUpdatedAt = Number(json?.imageUpdatedAt ?? json?.data?.imageUpdatedAt ?? template?.imageUpdatedAt ?? template?.data?.imageUpdatedAt ?? 0);
     const bgmUrl = json?.bgmUrl || json?.data?.bgmUrl || template?.bgmUrl || template?.data?.bgmUrl || "";
     const bgmVolume = Math.max(0, Math.min(1, Number(json?.bgmVolume ?? json?.data?.bgmVolume ?? template?.bgmVolume ?? template?.data?.bgmVolume ?? 1) || 1));
     const entryCorrosion = Number(json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0);
     const endCorrosion = Number(json?.endCorrosion ?? json?.data?.endCorrosion ?? template?.endCorrosion ?? template?.data?.endCorrosion ?? 0);
-    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, listImage, bgmUrl, bgmVolume, entryCorrosion, endCorrosion, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
+    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, listImage, listImageFrame, entryImageFrame, imageUpdatedAt, bgmUrl, bgmVolume, entryCorrosion, endCorrosion, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
     setSelectedNodeId(startNodeId);
     setMessage(`${template.title} 불러오기 완료`);
   };
@@ -462,7 +576,13 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>시작 노드</div><select value={builder.start} onChange={(e) => setBuilder((prev) => ({ ...prev, start: e.target.value }))} style={inputStyle}>{builder.nodes.map((node) => <option key={node.id} value={node.id}>{node.name || node.id}</option>)}</select></div>
           <div style={{ display: "grid", gap: 8 }}>
             <label>조사 카드 이미지</label>
-            <ImageDropInput label="조사 카드 이미지" value={builder.listImage || ""} onChange={(value) => setBuilder((prev) => ({ ...prev, listImage: value }))} previewHeight={150} previewFit="cover" compact />
+            <ImageDropInput label="조사 카드 이미지" value={builder.listImage || ""} onChange={(value) => setBuilder((prev) => ({ ...prev, listImage: value, imageUpdatedAt: Date.now() }))} previewHeight={150} previewFit="cover" compact />
+            <InvestigationImageFrameEditor
+              image={builder.listImage || ""}
+              title={builder.title || "조사 카드 이미지"}
+              frame={builder.listImageFrame || { x: 50, y: 50, scale: 1 }}
+              onFrameChange={(frame) => setBuilder((prev) => ({ ...prev, listImageFrame: frame, entryImageFrame: frame, imageUpdatedAt: Date.now() }))}
+            />
           </div>
           <div style={{ display: "grid", gap: 8 }}>
             <label>조사 배경 이미지 업로드</label>

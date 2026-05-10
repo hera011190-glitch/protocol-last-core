@@ -1165,12 +1165,13 @@ useEffect(() => {
     const scheduledEntries = visibleEntries.map((entry, index) => {
       const timings = getBattlePlaybackTimings(entry, index);
       const appearedAt = cursor + Number(timings.beforeLog || 0);
-      const snapshotAt = entry?.snapshot ? appearedAt + Number(timings.beforeSnapshot || 0) : 0;
-      const tweenStartAt = entry?.snapshot ? appearedAt + Math.min(120, Math.max(20, Number(timings.beforeSnapshot || 240) * 0.28)) : 0;
-      const tweenEndAt = entry?.snapshot ? Math.max(tweenStartAt + 180, snapshotAt || appearedAt + 280) : 0;
+      const shouldAnimateSnapshot = !!entry?.snapshot && !entry?.isPhaseHeader;
+      const snapshotAt = shouldAnimateSnapshot ? appearedAt + Number(timings.beforeSnapshot || 0) : 0;
+      const tweenStartAt = shouldAnimateSnapshot ? appearedAt + Math.min(120, Math.max(20, Number(timings.beforeSnapshot || 240) * 0.28)) : 0;
+      const tweenEndAt = shouldAnimateSnapshot ? Math.max(tweenStartAt + 180, snapshotAt || appearedAt + 280) : 0;
       const fromFrame = cloneBattlePlaybackValue(frameCursor);
-      const scheduledEntry = { ...entry, appearedAt, snapshotAt, tweenStartAt, tweenEndAt, fromFrame };
-      if (entry?.snapshot) frameCursor = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame, entry);
+      const scheduledEntry = { ...entry, snapshot: shouldAnimateSnapshot ? entry.snapshot : null, appearedAt, snapshotAt, tweenStartAt, tweenEndAt, fromFrame };
+      if (shouldAnimateSnapshot) frameCursor = makeBattleFrameFromSnapshot(entry.snapshot, fromFrame, entry);
       cursor = appearedAt + Number(timings.totalAfterLog || 0);
       return scheduledEntry;
     });
@@ -1817,7 +1818,7 @@ useEffect(() => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "18px", alignItems: "start", minHeight: "100%" }}>
             <div style={{ display: "grid", gap: "18px", minHeight: "100%" }}>
               <div style={{ ...mainPanelStyle, position: "absolute", inset: 0, overflow: "hidden", paddingTop: 0, paddingLeft: isDaily ? 14 : CHAT_PANEL_WIDTH + 12, paddingRight: RIGHT_PANEL_WIDTH + 14, paddingBottom: battleActive ? 224 : 172 }}>
-                <SceneVisualPanel currentNode={currentNode} battleActive={battleActive} leaders={leaders} participants={participants} activeNpcScene={activeNpcScene} pendingReward={pendingReward} investigationBackgroundImage={investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || ""} nowTick={nowTick} isDaily={investigation?.type === "daily"} />
+                <SceneVisualPanel currentNode={currentNode} battleActive={battleActive} leaders={leaders} participants={participants} currentCharacter={character} activeNpcScene={activeNpcScene} pendingReward={pendingReward} investigationBackgroundImage={investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || ""} nowTick={nowTick} isDaily={investigation?.type === "daily"} />
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "start", marginTop: "16px" }}>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", position: "absolute", left: "50%", top: 16, transform: "translateX(-50%)", justifyContent: "center", maxWidth: isDaily ? "calc(100% - 260px)" : `calc(100% - ${CENTER_TOP_CHIP_RESERVED_WIDTH})`, zIndex: 1050 }}>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
@@ -2280,6 +2281,9 @@ function getInvestigationSpriteSource(source = {}) {
     source?.sdImageUrl,
     source?.sd,
     source?.investigationImage,
+    source?.charInvestigationImage,
+    source?.assets?.investigationImage,
+    source?.assets?.spriteImage,
   ].map((value) => String(value || "").trim()).find(isUsableInvestigationImageSource) || "";
 }
 
@@ -3021,14 +3025,9 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
       if (numericIndex >= 0 && numericIndex < count) index = numericIndex;
     }
     if (index < 0) index = 0;
-    if (side === "ally") {
-      const spread = Math.min(22, Math.max(8, (count - 1) * 7));
-      const x = count <= 1 || useCenter ? 42 : 42 - spread / 2 + (spread * index) / Math.max(1, count - 1);
-      return { x, y: 77 };
-    }
-    const spread = Math.min(28, Math.max(10, (count - 1) * 8));
-    const x = count <= 1 || useCenter ? 58 : 58 - spread / 2 + (spread * index) / Math.max(1, count - 1);
-    return { x, y: 24 };
+    const centeredSpread = count <= 1 ? 0 : Math.min(52, Math.max(16, (count - 1) * 14));
+    const x = count <= 1 || useCenter ? 50 : 50 - centeredSpread / 2 + (centeredSpread * index) / Math.max(1, count - 1);
+    return { x, y: side === "ally" ? 79 : 31 };
   };
 
   const start = getPoint(actorSide, actor, false);
@@ -3124,8 +3123,12 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
   );
 }
 
-function SceneVisualPanel({ currentNode, battleActive, leaders, participants, activeNpcScene, pendingReward, investigationBackgroundImage, nowTick, isDaily = false }) {
-  const leader = (participants || []).find((participant) => (leaders || []).includes(participant.name)) || (isDaily ? participants?.[0] : null);
+function SceneVisualPanel({ currentNode, battleActive, leaders, participants, currentCharacter, activeNpcScene, pendingReward, investigationBackgroundImage, nowTick, isDaily = false }) {
+  const participantRows = Array.isArray(participants) ? participants : [];
+  const currentName = String(currentCharacter?.name || "").trim();
+  const currentParticipant = currentName ? participantRows.find((participant) => String(participant?.name || "").trim() === currentName) : null;
+  const selectedLeader = participantRows.find((participant) => (leaders || []).includes(participant.name)) || currentParticipant || (isDaily ? participantRows?.[0] : null);
+  const leader = selectedLeader || (currentCharacter?.name ? currentCharacter : null);
   const npcVisual = activeNpcScene || currentNode?.npcScene || null;
   const bubble = getSceneBubble({ battleActive, activeNpcScene, pendingReward });
   const wobble = pendingReward ? Math.abs(Math.sin(nowTick / 220)) * -10 : battleActive ? Math.sin(nowTick / 220) * 8 : 0;

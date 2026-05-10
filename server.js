@@ -2842,8 +2842,11 @@ function applyBattleTurn(item, actions) {
     if (enemy.__engaged) return;
     const scale = Math.max(1, Math.min(2.2, 1 + Math.max(0, aliveNames.length - 1) * 0.42));
     const multiScale = Math.max(0.62, 1 - Math.max(0, aliveEnemyCount - 1) * 0.12);
-    enemy.maxHp = Math.max(Number(enemy.maxHp || enemy.hp || 0), Math.round(Number(enemy.maxHp || enemy.hp || 0) * scale * multiScale));
-    enemy.hp = Math.max(Number(enemy.hp || 0), enemy.maxHp);
+    const beforeHp = Math.max(0, Number(enemy.hp || 0));
+    const beforeMaxHp = Math.max(0, Number(enemy.maxHp || enemy.hp || 0));
+    const alreadyDamaged = beforeMaxHp > 0 && beforeHp > 0 && beforeHp < beforeMaxHp;
+    enemy.maxHp = Math.max(beforeMaxHp, Math.round(beforeMaxHp * scale * multiScale));
+    enemy.hp = alreadyDamaged ? Math.min(beforeHp, enemy.maxHp) : Math.max(beforeHp, enemy.maxHp);
     enemy.atk = Math.max(1, Math.round(Number(enemy.atk || 0) * (aliveNames.length >= 3 ? 0.92 : 1)));
     enemy.__engaged = true;
     enemy.turnsElapsed = 0;
