@@ -208,8 +208,11 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const endedResultOpenedRef = useRef(false);
   const keepEndResultOpenRef = useRef(false);
   const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
-  const displayBattle = playbackState?.battle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
-  const playbackBattleActive = !!playbackState?.battle;
+  const playbackFallbackBattle = (battlePlaybackLocked || stagedBattleLogs.length > 0) && playbackSourceRef.current?.battle
+    ? JSON.parse(JSON.stringify(playbackSourceRef.current.battle))
+    : null;
+  const displayBattle = playbackState?.battle || playbackFallbackBattle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
+  const playbackBattleActive = !!(playbackState?.battle || playbackFallbackBattle);
   const battleActive = playbackBattleActive || (!investigation?.ended && !!currentNode?.battle);
   const liveDisplayLogs = useMemo(() => {
     if (!(battlePlaybackLocked && stagedBattleLogs.length > 0)) return logs;
@@ -1011,7 +1014,14 @@ useEffect(() => {
   const tweenedPlaybackState = battlePlaybackLocked && playbackState
     ? getTweenedBattlePlaybackState(playbackState, stagedBattleLogs, nowTick)
     : playbackState;
-  const activePlaybackState = tweenedPlaybackState || playbackState;
+  const playbackFallbackState = (battlePlaybackLocked || stagedBattleLogs.length > 0) && !playbackState && playbackSourceRef.current?.battle
+    ? {
+        active: true,
+        participantStates: JSON.parse(JSON.stringify(playbackSourceRef.current.participantStates || participantStates || {})),
+        battle: JSON.parse(JSON.stringify(playbackSourceRef.current.battle)),
+      }
+    : null;
+  const activePlaybackState = tweenedPlaybackState || playbackState || playbackFallbackState;
   const displayParticipantStates = activePlaybackState?.participantStates || participantStates;
   const hydratedParticipants = useMemo(() => (Array.isArray(participants) ? participants : []).map((participant) => {
     const state = displayParticipantStates?.[participant?.name] || {};
@@ -2449,6 +2459,17 @@ function getEnemyIdentity(enemy = {}, index = 0) {
   return String(enemy?.id || enemy?.name || `enemy-${index + 1}`);
 }
 
+function keepDefeatedEnemiesAtZero(nextEnemies = [], previousEnemies = []) {
+  const previousMap = new Map((Array.isArray(previousEnemies) ? previousEnemies : []).map((enemy, index) => [getEnemyIdentity(enemy, index), enemy]));
+  return (Array.isArray(nextEnemies) ? nextEnemies : []).map((enemy, index) => {
+    const previous = previousMap.get(getEnemyIdentity(enemy, index)) || (Array.isArray(previousEnemies) ? previousEnemies : []).find((candidate) => String(candidate?.name || "") === String(enemy?.name || ""));
+    if (previous && Number(previous?.hp || 0) <= 0 && Number(enemy?.hp || 0) > 0) {
+      return { ...enemy, hp: 0 };
+    }
+    return enemy;
+  });
+}
+
 function isBattleHealingPlaybackEntry(entry = {}) {
   const effect = String(entry?.effect || "");
   const text = `${entry?.skillName || ""} ${entry?.skillKey || ""} ${entry?.skillMode || ""} ${entry?.text || ""}`;
@@ -2496,11 +2517,12 @@ function preventUnrelatedPlaybackHpIncrease(nextFrame = {}, fromFrame = {}, entr
 function makeBattleFrameFromSnapshot(snapshot = {}, fallbackFrame = {}, entry = {}) {
   const fallbackParticipantStates = cloneBattlePlaybackValue(fallbackFrame?.participantStates || {});
   const fallbackBattle = fallbackFrame?.battle ? cloneBattlePlaybackValue(fallbackFrame.battle) : null;
-  const rawEnemies = Array.isArray(snapshot?.battleEnemies)
+  let rawEnemies = Array.isArray(snapshot?.battleEnemies)
     ? cloneBattlePlaybackValue(snapshot.battleEnemies)
     : Array.isArray(fallbackBattle?.enemies)
       ? cloneBattlePlaybackValue(fallbackBattle.enemies)
       : [];
+  rawEnemies = keepDefeatedEnemiesAtZero(rawEnemies, Array.isArray(fallbackBattle?.enemies) ? fallbackBattle.enemies : []);
   const totalEnemyHp = rawEnemies.reduce((sum, enemy) => sum + Math.max(0, Number(enemy?.hp || 0)), 0);
   const totalEnemyMaxHp = rawEnemies.reduce((sum, enemy) => sum + Math.max(0, Number(enemy?.maxHp ?? enemy?.hp ?? 0)), 0);
   const battle = fallbackBattle
@@ -2560,7 +2582,7 @@ function interpolateBattlePlaybackFrame(fromFrame = {}, toFrame = {}, progress =
     const fromEnemies = Array.isArray(fromBattle?.enemies) ? fromBattle.enemies : [];
     const fromMap = new Map(fromEnemies.map((enemy, index) => [getEnemyIdentity(enemy, index), enemy]));
     if (Array.isArray(battle.enemies)) {
-      battle.enemies = battle.enemies.map((enemy, index) => {
+      battle.enemies = keepDefeatedEnemiesAtZero(battle.enemies, fromEnemies).map((enemy, index) => {
         const key = getEnemyIdentity(enemy, index);
         const fromEnemy = fromMap.get(key) || fromEnemies.find((candidate) => String(candidate?.name || "") === String(enemy?.name || "")) || {};
         const nextEnemy = { ...enemy };
@@ -3136,12 +3158,30 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
   );
 }
 
+function mergeNonEmptyVisualSources(...sources) {
+  const merged = {};
+  sources.filter(Boolean).forEach((source) => {
+    Object.entries(source || {}).forEach(([key, value]) => {
+      const isEmpty = value === undefined || value === null || value === "";
+      if (!isEmpty || !(key in merged)) merged[key] = value;
+    });
+  });
+  return merged;
+}
+
 function SceneVisualPanel({ currentNode, battleActive, leaders, participants, currentCharacter, activeNpcScene, pendingReward, investigationBackgroundImage, nowTick, isDaily = false }) {
   const participantRows = Array.isArray(participants) ? participants : [];
   const currentName = String(currentCharacter?.name || "").trim();
   const currentParticipant = currentName ? participantRows.find((participant) => String(participant?.name || "").trim() === currentName) : null;
   const selectedLeader = participantRows.find((participant) => (leaders || []).includes(participant.name)) || currentParticipant || (isDaily ? participantRows?.[0] : null);
-  const leader = selectedLeader || (currentCharacter?.name ? currentCharacter : null);
+  const sameCurrentCharacter = selectedLeader && currentName && String(selectedLeader?.name || "").trim() === currentName ? currentCharacter : null;
+  const sameNameParticipantWithImage = selectedLeader
+    ? participantRows.find((participant) => String(participant?.name || "").trim() === String(selectedLeader?.name || "").trim() && getInvestigationSpriteSource(participant))
+    : null;
+  const rawLeader = selectedLeader || (currentCharacter?.name ? currentCharacter : null);
+  const leader = rawLeader
+    ? mergeNonEmptyVisualSources(rawLeader, sameNameParticipantWithImage, sameCurrentCharacter)
+    : null;
   const npcVisual = activeNpcScene || currentNode?.npcScene || null;
   const bubble = getSceneBubble({ battleActive, activeNpcScene, pendingReward });
   const wobble = pendingReward ? Math.abs(Math.sin(nowTick / 220)) * -10 : battleActive ? Math.sin(nowTick / 220) * 8 : 0;

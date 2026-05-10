@@ -37,6 +37,23 @@ function getCoverFrameStyle(frame = {}) {
   };
 }
 
+
+async function readJsonResponseSafely(response, fallbackMessage = "응답을 읽지 못했습니다.") {
+  const text = await response.text();
+  if (!text) {
+    return { success: response.ok, message: response.ok ? "" : fallbackMessage };
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const plain = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return {
+      success: false,
+      message: plain ? `${fallbackMessage} ${plain.slice(0, 180)}` : fallbackMessage,
+    };
+  }
+}
+
 function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, scale: 1 }, title = "조사 카드", onFrameChange }) {
   const dragRef = useRef(null);
   const safeFrame = normalizeImageFrame(frame);
@@ -318,8 +335,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   const saveTemplate = async () => {
     const payload = { id: serialize().id, title: serialize().title, type: builder.type, json: serialize() };
     const res = await apiFetch("/admin/customInvestigations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await res.json();
-    if (!data.success) return alert(data.message || "저장 실패");
+    const data = await readJsonResponseSafely(res, "조사 템플릿 저장 응답을 읽지 못했습니다.");
+    if (!data.success || !res.ok) return alert(data.message || "저장 실패");
     setMessage("저장됐습니다.");
     loadSaved();
   };
@@ -327,13 +344,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   const publishTemplate = async () => {
     const payload = serialize();
     const res = await apiFetch("/admin/publishInvestigation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    let data = {};
-    try {
-      data = await res.json();
-    } catch {
-      data = { success: false, message: "조사 저장 응답을 읽지 못했습니다." };
-    }
-    if (!data.success) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
+    const data = await readJsonResponseSafely(res, "조사 저장 응답을 읽지 못했습니다.");
+    if (!data.success || !res.ok) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
     setBuilder((prev) => ({ ...prev, start: payload.data?.start || prev.start, imageUpdatedAt: payload.imageUpdatedAt || prev.imageUpdatedAt }));
     setSelectedNodeId(payload.data?.start || selectedNodeId);
     setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영됐습니다.");

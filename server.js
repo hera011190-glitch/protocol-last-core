@@ -10,7 +10,7 @@ const { spawn } = require("child_process");
 const defaultDesign = require("./defaultDesign");
 
 const app = express();
-const REQUEST_BODY_LIMIT = "100mb";
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "150mb";
 const CLIENT_URL = process.env.CLIENT_URL || "";
 const PORT = Number(process.env.PORT || 3001);
 const LEGACY_DATA_DIR = __dirname;
@@ -304,6 +304,16 @@ app.use(cors(corsOptions));
 app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: REQUEST_BODY_LIMIT }));
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  if (err.type === "entity.too.large" || err.status === 413) {
+    return res.status(413).json({ success: false, message: `업로드 용량이 너무 큽니다. 이미지 용량을 줄이거나 더 작은 파일로 다시 저장해주세요. 현재 서버 제한: ${REQUEST_BODY_LIMIT}` });
+  }
+  if (err instanceof SyntaxError && "body" in err) {
+    return res.status(400).json({ success: false, message: "요청 내용을 읽지 못했습니다. JSON 형식 또는 업로드된 이미지 데이터를 확인해주세요." });
+  }
+  return next(err);
+});
 
 app.use("/asset-file", express.static(RUNTIME_ASSET_DIR, { maxAge: "30d", immutable: true }));
 app.use("/asset-file", express.static(BUNDLED_ASSET_DIR, { maxAge: "30d", immutable: true }));
