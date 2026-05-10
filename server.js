@@ -4163,7 +4163,10 @@ io.on("connection", (socket) => {
 
 app.get("/admin/accountIds", (req, res) => {
   const keyword = normalizeUserIdText(req.query?.q || req.query?.search || "");
-  const deep = req.query?.deep === "1" || req.query?.deep === "true" || !!keyword;
+  // 운영 계정 선택창은 “회원가입만 한 계정”도 보여야 하므로 기본값을 전체 재수집으로 둡니다.
+  // 단, 필요할 때 deep=0/false를 붙이면 기존처럼 빠른 조회만 사용합니다.
+  const deepParam = String(req.query?.deep ?? "").toLowerCase();
+  const deep = !(deepParam === "0" || deepParam === "false");
   refreshUsersFromKnownSources({ deep: false });
   const users = getDirectAdminAccountRows(keyword, { deep });
   if (users.length > 0) writeRuntimeUserIndexes(users);
@@ -4198,12 +4201,27 @@ app.get("/admin/users/check", (req, res) => {
 });
 
 app.get("/admin/users", (req, res) => {
-  const deep = req.query?.deep === "1" || req.query?.deep === "true";
+  // 운영 화면에서는 캐릭터가 없는 회원가입 계정까지 누락 없이 보여야 하므로
+  // 기본 조회도 전체 계정 저장소/색인을 함께 확인합니다. deep=0/false일 때만 빠른 조회를 사용합니다.
+  const deepParam = String(req.query?.deep ?? "").toLowerCase();
+  const deep = !(deepParam === "0" || deepParam === "false");
   refreshUsersFromKnownSources({ deep: false });
   refreshCharactersFromDiskIfNeeded();
-  const users = getSafeUsersForAdmin(req.query?.q || req.query?.search || "", { deep });
+  const searchText = req.query?.q || req.query?.search || "";
+  const users = mergeRuntimeUsers(
+    getSafeUsersForAdmin(searchText, { deep }),
+    getDirectAdminAccountRows(searchText, { deep })
+  )
+    .filter(isDisplayableAdminAccount)
+    .map((user) => ({
+      id: getRuntimeAccountId(user) || getRuntimeUserId(user),
+      type: user.type || user.role || "owner",
+    }))
+    .filter((user) => user.id && !isKnownNonUserRuntimeId(user.id))
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
+  if (users.length > 0) writeRuntimeUserIndexes(users);
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.json({ success: true, users, count: users.length });
+  res.json({ success: true, users, count: users.length, deep });
 });
 
 app.get("/admin/users/rebuild", (req, res) => {
@@ -4235,7 +4253,7 @@ app.get("/admin/dataBackups", (req, res) => {
 // Place it AFTER buildInvestigation / investigationDefinitions / investigationsDB are defined
 // and BEFORE server.listen(...)
 
-const customInvestigationsPath = path.join(__dirname, "customInvestigations.json");
+const customInvestigationsPath = resolveDataPath("customInvestigations.json");
 
 function serializeInvestigationForPersistence(item) {
   const templateSource = item?.originalTemplate?.data?.nodes ? clone(item.originalTemplate) : {
@@ -4291,7 +4309,7 @@ function readCustomInvestigationsFromFile() {
 
 function writeCustomInvestigationsToFile(list) {
   try {
-    fs.writeFileSync(customInvestigationsPath, JSON.stringify(list, null, 2), "utf-8");
+    writeJsonAtomicSync(customInvestigationsPath, Array.isArray(list) ? list : []);
   } catch (err) {
     console.error("writeCustomInvestigationsToFile error", err);
   }

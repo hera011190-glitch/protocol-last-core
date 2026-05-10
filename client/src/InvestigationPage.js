@@ -930,12 +930,14 @@ useEffect(() => {
       setActionPicker("");
       setEditingSavedAction(true);
       setBattleActionSubmitting(false);
-      setStagedBattleLogs([]);
+      if (!battlePlaybackLocked && !playbackState && !(Array.isArray(investigation?.lastBattleRound) && investigation.lastBattleRound.length > 0)) {
+        setStagedBattleLogs([]);
+      }
       setLocalPendingActions({});
       setInvestigation((prev) => (prev ? { ...prev, pendingBattleActions: {} } : prev));
     }
     prevBattleTurnRef.current = turn;
-  }, [investigation?.battleTurn, character?.name]);
+  }, [investigation?.battleTurn, character?.name, battlePlaybackLocked, playbackState, investigation?.lastBattleRound]);
 
   const investigationButtons = currentNode?.investigations || [];
   const effectiveChoices = (() => {

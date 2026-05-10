@@ -118,7 +118,8 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
       setHydratedCharacter(null);
       return undefined;
     }
-    const needsFullProfile = character?.profile === undefined || character?.profileBgm === undefined || character?.relations === undefined;
+    const hasAnyProfileImage = !!String(character?.mainImage || character?.fullBodyImage || character?.fullImage || character?.profileImage || "").trim();
+    const needsFullProfile = !hasAnyProfileImage || character?.profile === undefined || character?.profileBgm === undefined || character?.relations === undefined;
     if (!needsFullProfile) {
       setHydratedCharacter(null);
       return undefined;
@@ -133,7 +134,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
         if (!cancelled) setHydratedCharacter(null);
       });
     return () => { cancelled = true; };
-  }, [character?.id, character?.profile, character?.profileBgm, character?.relations]);
+  }, [character?.id, character?.mainImage, character?.fullBodyImage, character?.fullImage, character?.profileImage, character?.profile, character?.profileBgm, character?.relations]);
 
   useLayoutEffect(() => {
     applyDomOverrides(rootRef.current, pageDesign.domOverrides || {});

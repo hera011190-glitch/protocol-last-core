@@ -54,7 +54,7 @@ async function readJsonResponseSafely(response, fallbackMessage = "응답을 읽
   }
 }
 
-function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, scale: 1 }, title = "조사 카드", onFrameChange }) {
+function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, scale: 1 }, title = "조사 카드", mode = "list", onFrameChange }) {
   const dragRef = useRef(null);
   const safeFrame = normalizeImageFrame(frame);
   const updateFrame = (patch = {}) => {
@@ -86,10 +86,15 @@ function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, sca
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
   };
 
+  const previewMinHeight = mode === "entry" ? 260 : 188;
+  const overlayBackground = mode === "entry"
+    ? "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)"
+    : "linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.82) 34%, rgba(255,255,255,0.24) 72%, rgba(255,255,255,0.06) 100%)";
+
   return (
     <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 18, background: "rgba(245,251,255,0.9)", border: "1px solid rgba(98,176,220,0.18)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-        <div style={{ fontSize: 12, fontWeight: 900, color: "#476885" }}>카드 이미지 위치/크기</div>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "#476885" }}>{mode === "entry" ? "첫 화면 카드 위치/크기" : "목록 카드 위치/크기"}</div>
         <button type="button" className="ghost-button" onClick={() => onFrameChange?.({ x: 50, y: 50, scale: 1 })}>초기화</button>
       </div>
       <div
@@ -99,7 +104,7 @@ function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, sca
         onPointerCancel={endDrag}
         style={{
           position: "relative",
-          minHeight: 150,
+          minHeight: previewMinHeight,
           overflow: "hidden",
           borderRadius: 18,
           background: "linear-gradient(135deg, rgba(219,234,254,0.8), rgba(15,23,42,0.12))",
@@ -110,7 +115,7 @@ function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, sca
         title={image ? "마우스로 드래그해서 카드 이미지 위치를 조정할 수 있습니다." : "먼저 이미지를 넣어주세요."}
       >
         {image ? <img src={image} alt={title} draggable={false} style={getCoverFrameStyle(safeFrame)} /> : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#6a87a3", fontSize: 12, fontWeight: 800 }}>이미지를 넣으면 여기서 위치를 조정할 수 있습니다.</div>}
-        {image ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 35%, rgba(255,255,255,0.18) 78%, rgba(255,255,255,0.04) 100%)", pointerEvents: "none" }} /> : null}
+        {image ? <div style={{ position: "absolute", inset: 0, background: overlayBackground, pointerEvents: "none" }} /> : null}
       </div>
       <div style={{ display: "grid", gap: 8 }}>
         <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 800, color: "#476885" }}>
@@ -601,9 +606,17 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             <ImageDropInput label="조사 카드 이미지" value={builder.listImage || ""} onChange={(value) => setBuilder((prev) => ({ ...prev, listImage: value, imageUpdatedAt: Date.now() }))} previewHeight={150} previewFit="cover" compact />
             <InvestigationImageFrameEditor
               image={builder.listImage || ""}
-              title={builder.title || "조사 카드 이미지"}
+              title={builder.title || "목록 카드 이미지"}
+              mode="list"
               frame={builder.listImageFrame || { x: 50, y: 50, scale: 1 }}
-              onFrameChange={(frame) => setBuilder((prev) => ({ ...prev, listImageFrame: frame, entryImageFrame: frame, imageUpdatedAt: Date.now() }))}
+              onFrameChange={(frame) => setBuilder((prev) => ({ ...prev, listImageFrame: frame, imageUpdatedAt: Date.now() }))}
+            />
+            <InvestigationImageFrameEditor
+              image={builder.listImage || ""}
+              title={builder.title || "첫 화면 카드 이미지"}
+              mode="entry"
+              frame={builder.entryImageFrame || builder.listImageFrame || { x: 50, y: 50, scale: 1 }}
+              onFrameChange={(frame) => setBuilder((prev) => ({ ...prev, entryImageFrame: frame, imageUpdatedAt: Date.now() }))}
             />
           </div>
           <div style={{ display: "grid", gap: 8 }}>

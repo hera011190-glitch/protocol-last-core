@@ -27,7 +27,11 @@ function withImageVersion(src = "", version = 0) {
 }
 
 function normalizeImageFrame(frame) {
-  return { x: Number(frame?.x ?? 50), y: Number(frame?.y ?? 50), scale: Number(frame?.scale ?? 1) };
+  return {
+    x: Math.max(0, Math.min(100, Number(frame?.x ?? 50))),
+    y: Math.max(0, Math.min(100, Number(frame?.y ?? 50))),
+    scale: Math.max(1, Math.min(3, Number(frame?.scale ?? 1))),
+  };
 }
 
 function getCoverImageStyle(frame = {}, grayscale = false) {
@@ -377,36 +381,45 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const updateEditorFrame = (patch) => {
     setImageEditor((prev) => {
       if (!prev) return prev;
-      const nextFrame = {
-        scale: Math.max(0.7, Math.min(1.8, Number(patch?.scale ?? prev.frame?.scale ?? 1) || 1)),
-        x: Math.max(0, Math.min(100, Number(patch?.x ?? prev.frame?.x ?? 50) || 50)),
-        y: Math.max(0, Math.min(100, Number(patch?.y ?? prev.frame?.y ?? 50) || 50)),
-      };
-      return { ...prev, frame: nextFrame };
+      return { ...prev, frame: normalizeImageFrame({ ...(prev.frame || { x: 50, y: 50, scale: 1 }), ...(patch || {}) }) };
     });
   };
 
   const startImagePreviewDrag = (event) => {
     if (!imageEditor?.image) return;
+    const rect = event.currentTarget.getBoundingClientRect?.();
     const startX = event.clientX;
     const startY = event.clientY;
-    const baseFrame = imageEditor.frame || { scale: 1, x: 50, y: 50 };
-    imagePreviewDragRef.current = { startX, startY, x: Number(baseFrame.x || 50), y: Number(baseFrame.y || 50) };
+    const baseFrame = normalizeImageFrame(imageEditor.frame || { scale: 1, x: 50, y: 50 });
+    imagePreviewDragRef.current = {
+      pointerId: event.pointerId,
+      startX,
+      startY,
+      x: baseFrame.x,
+      y: baseFrame.y,
+      width: Math.max(1, rect?.width || 1),
+      height: Math.max(1, rect?.height || 1),
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const handleMove = (moveEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
+      const drag = imagePreviewDragRef.current;
+      if (!drag) return;
+      const dx = moveEvent.clientX - drag.startX;
+      const dy = moveEvent.clientY - drag.startY;
       updateEditorFrame({
-        x: (imagePreviewDragRef.current?.x || 50) + (dx / 220) * 32,
-        y: (imagePreviewDragRef.current?.y || 50) + (dy / 220) * 32,
+        x: drag.x + (dx / drag.width) * 100 / 0.52,
+        y: drag.y + (dy / drag.height) * 100 / 0.52,
       });
     };
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
       imagePreviewDragRef.current = null;
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
   };
 
   const saveImageEditor = async () => {
@@ -627,14 +640,14 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
         )}
       {imageEditor ? (
         <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.56)", backdropFilter: "blur(8px)", zIndex: 2600, display: "grid", placeItems: "center", padding: 24 }}>
-          <div style={{ width: "min(680px, calc(100vw - 48px))", maxHeight: "calc(100vh - 48px)", overflow: "auto", padding: 22, borderRadius: 24, background: "rgba(255,255,255,0.98)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, boxShadow: theme?.shadow || "0 18px 38px rgba(73,132,170,0.16)", display: "grid", gap: 14 }}>
+          <div style={{ width: "min(1000px, calc(100vw - 48px))", maxHeight: "calc(100vh - 48px)", overflow: "auto", padding: 22, borderRadius: 24, background: "rgba(255,255,255,0.98)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, boxShadow: theme?.shadow || "0 18px 38px rgba(73,132,170,0.16)", display: "grid", gap: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
               <div>
                 <h3 style={{ marginTop: 0, marginBottom: 0 }}>{imageEditor.title} · {imageEditor.mode === "entry" ? "입구 카드 이미지" : "목록 카드 이미지"}</h3>
               </div>
               <button type="button" className="ghost-button" onClick={() => setImageEditor(null)}>닫기</button>
             </div>
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(260px, 320px) minmax(320px, 1fr)", alignItems: "stretch" }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(250px, 290px) minmax(480px, 1fr)", alignItems: "stretch" }}>
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ display: "grid", gap: 10, padding: 16, borderRadius: 18, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>{imageEditor.mode === "entry" ? "입구 카드 이미지" : "목록 카드 이미지"}</div>
@@ -659,25 +672,25 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 <div style={{ display: "grid", gap: 10, padding: 14, borderRadius: 18, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(148,163,184,0.2)" }}>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#4f7390", fontWeight: 700 }}>
                     확대
-                    <input type="range" min="0.8" max="2.2" step="0.01" value={Number(imageEditor.frame?.scale || 1)} onChange={(event) => setImageEditor((prev) => ({ ...prev, frame: { ...(prev.frame || { x: 50, y: 50, scale: 1 }), scale: Number(event.target.value || 1) } }))} />
+                    <input type="range" min="1" max="3" step="0.01" value={Number(imageEditor.frame?.scale || 1)} onChange={(event) => updateEditorFrame({ scale: Number(event.target.value || 1) })} />
                   </label>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#4f7390", fontWeight: 700 }}>
                     가로 위치
-                    <input type="range" min="0" max="100" step="0.1" value={Number(imageEditor.frame?.x ?? 50)} onChange={(event) => setImageEditor((prev) => ({ ...prev, frame: { ...(prev.frame || { x: 50, y: 50, scale: 1 }), x: Number(event.target.value || 50) } }))} />
+                    <input type="range" min="0" max="100" step="0.1" value={Number(imageEditor.frame?.x ?? 50)} onChange={(event) => updateEditorFrame({ x: Number(event.target.value || 50) })} />
                   </label>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#4f7390", fontWeight: 700 }}>
                     세로 위치
-                    <input type="range" min="0" max="100" step="0.1" value={Number(imageEditor.frame?.y ?? 50)} onChange={(event) => setImageEditor((prev) => ({ ...prev, frame: { ...(prev.frame || { x: 50, y: 50, scale: 1 }), y: Number(event.target.value || 50) } }))} />
+                    <input type="range" min="0" max="100" step="0.1" value={Number(imageEditor.frame?.y ?? 50)} onChange={(event) => updateEditorFrame({ y: Number(event.target.value || 50) })} />
                   </label>
                 </div>
               </div>
               <div style={{ display: "grid", gap: 12, padding: 16, borderRadius: 20, background: "rgba(245,251,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}` }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: theme?.textMain || "#16364b" }}>실제 카드 미리보기</div>
-                <div style={{ display: "grid", placeItems: "center", minHeight: imageEditor.mode === "list" ? 220 : 320 }}>
+                <div style={{ display: "grid", placeItems: "center", minHeight: imageEditor.mode === "list" ? 240 : 320 }}>
                   <div
                     onPointerDown={startImagePreviewDrag}
                     style={{
-                      width: imageEditor.mode === "list" ? 320 : 244,
+                      width: "100%",
                       maxWidth: "100%",
                       cursor: imageEditor.image ? "grab" : "default",
                     }}

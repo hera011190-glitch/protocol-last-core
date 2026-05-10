@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildApiUrl } from "./api";
 import { preloadImages } from "./imagePreload";
 
@@ -27,6 +27,7 @@ export default function LazyImage({
   const [index, setIndex] = useState(0);
   const currentSrc = candidates[index] || "";
   const [ready, setReady] = useState(false);
+  const imgRef = useRef(null);
   const placeholderPosition = style?.position === "absolute" || style?.position === "fixed" ? style.position : "relative";
 
   useEffect(() => {
@@ -35,9 +36,26 @@ export default function LazyImage({
   }, [candidates.join("|")]);
 
   useEffect(() => {
-    if (!currentSrc) return;
+    if (!currentSrc) return undefined;
     preloadImages([currentSrc], { highPriority, limit: 1 });
-  }, [currentSrc, highPriority]);
+    let cancelled = false;
+    const image = new Image();
+    image.decoding = highPriority ? "sync" : "async";
+    image.loading = eager ? "eager" : "lazy";
+    image.onload = () => {
+      if (!cancelled) setReady(true);
+    };
+    image.onerror = () => {
+      if (!cancelled) setReady(true);
+    };
+    image.src = currentSrc;
+    if (image.complete || imgRef.current?.complete) setReady(true);
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [currentSrc, highPriority, eager]);
 
   if (!currentSrc) {
     return placeholder ? <div className={className} style={{ ...style, background: "linear-gradient(135deg, rgba(226,242,255,0.42), rgba(255,255,255,0.22))" }} /> : null;
@@ -59,6 +77,7 @@ export default function LazyImage({
       ) : null}
       <img
         {...props}
+        ref={imgRef}
         className={className}
         src={currentSrc}
         alt={alt}
