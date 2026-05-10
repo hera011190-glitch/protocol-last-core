@@ -271,7 +271,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       const prevNode = investigation?.data?.nodes?.[prevNodeId] || null;
       const nextNode = data?.data?.nodes?.[nodeId] || null;
       const fallbackBattle = getBattleFromRoundSnapshot(data?.lastBattleRound || []);
-      const playbackBattle = prevNode?.battle || nextNode?.battle || fallbackBattle || null;
+      const playbackBattle = fallbackBattle || prevNode?.battle || nextNode?.battle || null;
       const playbackSource = {
         participantStates: JSON.parse(JSON.stringify(investigation?.participantStates || data?.participantStates || {})),
         battle: playbackBattle ? JSON.parse(JSON.stringify(playbackBattle)) : null,
@@ -1013,6 +1013,17 @@ useEffect(() => {
     : playbackState;
   const activePlaybackState = tweenedPlaybackState || playbackState;
   const displayParticipantStates = activePlaybackState?.participantStates || participantStates;
+  const hydratedParticipants = useMemo(() => (Array.isArray(participants) ? participants : []).map((participant) => {
+    const state = displayParticipantStates?.[participant?.name] || {};
+    return {
+      ...state,
+      ...participant,
+      spriteImage: participant?.spriteImage || participant?.sdImage || state?.spriteImage || state?.sdImage || state?.investigationImage || state?.image || "",
+      sdImage: participant?.sdImage || participant?.spriteImage || state?.sdImage || state?.spriteImage || state?.investigationImage || state?.image || "",
+      investigationImage: participant?.investigationImage || state?.investigationImage || state?.image || participant?.image || "",
+      image: participant?.image || state?.image || state?.investigationImage || participant?.investigationImage || "",
+    };
+  }), [participants, displayParticipantStates]);
   const displayCurrentNode = activePlaybackState?.battle
     ? { ...currentNode, battle: { ...(currentNode?.battle || {}), ...activePlaybackState.battle } }
     : currentNode;
@@ -1818,7 +1829,7 @@ useEffect(() => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "18px", alignItems: "start", minHeight: "100%" }}>
             <div style={{ display: "grid", gap: "18px", minHeight: "100%" }}>
               <div style={{ ...mainPanelStyle, position: "absolute", inset: 0, overflow: "hidden", paddingTop: 0, paddingLeft: isDaily ? 14 : CHAT_PANEL_WIDTH + 12, paddingRight: RIGHT_PANEL_WIDTH + 14, paddingBottom: battleActive ? 224 : 172 }}>
-                <SceneVisualPanel currentNode={currentNode} battleActive={battleActive} leaders={leaders} participants={participants} currentCharacter={character} activeNpcScene={activeNpcScene} pendingReward={pendingReward} investigationBackgroundImage={investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || ""} nowTick={nowTick} isDaily={investigation?.type === "daily"} />
+                <SceneVisualPanel currentNode={displayCurrentNode} battleActive={battleActive} leaders={leaders} participants={hydratedParticipants} currentCharacter={character} activeNpcScene={activeNpcScene} pendingReward={pendingReward} investigationBackgroundImage={investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || ""} nowTick={nowTick} isDaily={investigation?.type === "daily"} />
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "start", marginTop: "16px" }}>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", position: "absolute", left: "50%", top: 16, transform: "translateX(-50%)", justifyContent: "center", maxWidth: isDaily ? "calc(100% - 260px)" : `calc(100% - ${CENTER_TOP_CHIP_RESERVED_WIDTH})`, zIndex: 1050 }}>
                     <div style={{ ...topChipStyle, padding: "6px 12px", fontSize: 12 }}>리더: {leaders.length > 0 ? leaders.join(", ") : (isLeader ? character?.name || "없음" : "없음")}</div>
@@ -1880,10 +1891,10 @@ useEffect(() => {
                   <>
                     <div style={{ position: "absolute", left: "50%", bottom: 154, transform: "translateX(-50%)", width: isDaily ? "min(940px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "0 18px", borderRadius: 0, background: "transparent", border: "none", boxShadow: "none", backdropFilter: "none", zIndex: 1045 }}>
                       <div style={{ position: "relative", paddingTop: currentBattleMotionEntry ? 34 : 0 }}>
-                        <BattleMotionOverlay entry={currentBattleMotionEntry} participants={participants} enemies={battleOverlayEnemies} nowTick={nowTick} />
+                        <BattleMotionOverlay entry={currentBattleMotionEntry} participants={hydratedParticipants} enemies={battleOverlayEnemies} nowTick={nowTick} />
                         <BattleHero node={displayCurrentNode} investigation={investigation} rounds={animatedBattleRounds} compact nowTick={nowTick} battlePlaybackLocked={battlePlaybackLocked} />
                         <div style={{ marginTop: 12 }}>
-                          <BattlePartyStrip participants={participants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={animatedBattleRounds} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
+                          <BattlePartyStrip participants={hydratedParticipants} participantStates={displayParticipantStates} pendingActions={pendingActions} rounds={animatedBattleRounds} nowTick={nowTick} compact battlePlaybackLocked={battlePlaybackLocked} />
                         </div>
                       </div>
                     </div>
@@ -2284,6 +2295,8 @@ function getInvestigationSpriteSource(source = {}) {
     source?.charInvestigationImage,
     source?.assets?.investigationImage,
     source?.assets?.spriteImage,
+    source?.image,
+    source?.profileImage,
   ].map((value) => String(value || "").trim()).find(isUsableInvestigationImageSource) || "";
 }
 

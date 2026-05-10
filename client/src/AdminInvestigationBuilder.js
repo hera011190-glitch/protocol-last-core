@@ -170,7 +170,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   const selectedNode = useMemo(() => builder.nodes.find((node) => node.id === selectedNodeId) || builder.nodes[0], [builder, selectedNodeId]);
 
   const loadSaved = async () => {
-    const res = await apiFetch("/admin/customInvestigations");
+    const res = await apiFetch(`/admin/customInvestigations?t=${Date.now()}`);
     setSavedList(await res.json());
   };
 
@@ -224,7 +224,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   const serialize = () => {
     const safeId = String(builder.id || `custom-${Date.now()}`).trim();
     const safeTitle = String(builder.title || "새 조사").trim() || "새 조사";
-    const safeStart = String(builder.start || builder.nodes?.[0]?.id || "start").trim() || "start";
+    const nodeIds = (Array.isArray(builder.nodes) ? builder.nodes : []).map((node) => String(node?.id || "").trim()).filter(Boolean);
+    const rawStart = String(builder.start || builder.nodes?.[0]?.id || "start").trim() || "start";
+    const safeStart = nodeIds.includes(rawStart) ? rawStart : (nodeIds[0] || "start");
     return {
       id: safeId,
       title: safeTitle,
@@ -323,9 +325,17 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   };
 
   const publishTemplate = async () => {
-    const res = await apiFetch("/admin/publishInvestigation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serialize()) });
-    const data = await res.json();
+    const payload = serialize();
+    const res = await apiFetch("/admin/publishInvestigation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = { success: false, message: "조사 저장 응답을 읽지 못했습니다." };
+    }
     if (!data.success) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
+    setBuilder((prev) => ({ ...prev, start: payload.data?.start || prev.start, imageUpdatedAt: payload.imageUpdatedAt || prev.imageUpdatedAt }));
+    setSelectedNodeId(payload.data?.start || selectedNodeId);
     setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영됐습니다.");
     loadSaved();
   };

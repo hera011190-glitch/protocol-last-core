@@ -1533,6 +1533,8 @@ function baseParticipantState(character) {
   const safeStats = normalizeCharacterStats(character?.stats || {});
   const maxHp = getCharacterMaxHp(safeStats.hp);
   const hp = getCharacterCurrentHp({ ...character, stats: safeStats });
+  const spriteImage = character?.spriteImage || character?.sdImage || character?.sdImageUrl || character?.sd || character?.investigationImage || character?.image || "";
+  const investigationImage = character?.investigationImage || spriteImage || character?.image || "";
   return {
     name: character?.name || "알 수 없음",
     maxHp,
@@ -1541,7 +1543,10 @@ function baseParticipantState(character) {
     atk: getCombatStatTotal(safeStats.atk),
     def: getCombatStatTotal(safeStats.def),
     agi: getCombatStatTotal(safeStats.agi),
-    image: character?.investigationImage || character?.image || "",
+    image: investigationImage || character?.image || "",
+    investigationImage,
+    spriteImage,
+    sdImage: spriteImage,
     defending: false,
     buffs: [],
     skillCooldowns: {},
@@ -1725,8 +1730,10 @@ function buildInvestigation(def) {
   const normalizedNodes = Object.fromEntries(
     Object.entries(def.data.nodes).map(([key, node]) => [key, normalizeNode(key, node)])
   );
-  const startNodeId = def.data.start;
-  const startNode = normalizedNodes[startNodeId];
+  const nodeIds = Object.keys(normalizedNodes);
+  const requestedStartNodeId = String(def.data.start || "").trim();
+  const startNodeId = normalizedNodes[requestedStartNodeId] ? requestedStartNodeId : (nodeIds[0] || "start");
+  const startNode = normalizedNodes[startNodeId] || { name: startNodeId || "시작 지점", log: "" };
 
   return {
     id: def.id,
@@ -2212,13 +2219,18 @@ function ensureParticipantState(item, character) {
     item.participantStates[character.name] = baseParticipantState(character);
     return;
   }
+  const spriteImage = character?.spriteImage || character?.sdImage || character?.sdImageUrl || character?.sd || character?.investigationImage || current.spriteImage || current.sdImage || current.investigationImage || current.image || character?.image || "";
+  const investigationImage = character?.investigationImage || current.investigationImage || spriteImage || character?.image || current.image || "";
   item.participantStates[character.name] = {
     ...current,
     maxHp: getCharacterMaxHp(character?.stats?.hp ?? current.maxHp ?? 100),
     atk: character?.stats ? getCombatStatTotal(character.stats.atk) : Number(current.atk || STAT_RULES.baseCombat),
     def: character?.stats ? getCombatStatTotal(character.stats.def) : Number(current.def || STAT_RULES.baseCombat),
     agi: character?.stats ? getCombatStatTotal(character.stats.agi) : Number(current.agi || STAT_RULES.baseCombat),
-    image: character?.investigationImage || character?.image || current.image || "",
+    image: investigationImage || character?.image || current.image || "",
+    investigationImage,
+    spriteImage,
+    sdImage: spriteImage,
     buffs: Array.isArray(current.buffs) ? current.buffs : [],
     skillCooldowns: current.skillCooldowns && typeof current.skillCooldowns === "object" ? current.skillCooldowns : {},
   };
@@ -3631,7 +3643,11 @@ app.post("/startDailyInvestigation", (req, res) => {
         return res.json({ success: true, started: true, resumed: true, investigationId: item.id, character: sourceCharacter });
       }
       if (item.dailyOwnerKey && item.dailyOwnerKey !== ownerKey) {
-        return res.json({ success: false, message: "다른 캐릭터가 진행 중인 일일조사입니다." });
+        const hasLiveDailyUser = Object.values(socketUsers || {}).some((user) => {
+          if (!user || user.isAdmin || String(user.id || "") === "admin" || String(user.ownerId || "") === "admin") return false;
+          return String(user.roomId || "") === String(item.id || "");
+        });
+        if (hasLiveDailyUser) return res.json({ success: false, message: "다른 캐릭터가 진행 중인 일일조사입니다." });
       }
       resetInvestigationProgress(item);
       syncInvestigationRoster(item);
@@ -4331,11 +4347,13 @@ app.delete("/admin/customInvestigations/:id", (req, res) => {
 
 app.post("/admin/publishInvestigation", (req, res) => {
   const def = req.body || {};
-  if (!def.id || !def.title || !def.data?.start || !def.data?.nodes) {
+  if (!def.id || !def.title || !def.data?.nodes || Object.keys(def.data.nodes || {}).length === 0) {
     return res.json({ success: false, message: "조사 JSON 형식이 올바르지 않습니다." });
   }
 
   try {
+    const nodeIds = Object.keys(def.data.nodes || {});
+    if (!def.data.start || !def.data.nodes[def.data.start]) def.data.start = nodeIds[0];
     upsertPublishedInvestigation(def);
 
     const template = normalizeCustomTemplate({

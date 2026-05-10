@@ -118,6 +118,31 @@ function hasLocalDailyResume(investigationId, character) {
   }
 }
 
+function getDailyOwnerKeysForCharacter(character) {
+  if (!character) return [];
+  const keys = [
+    character.id,
+    `${character.ownerId || "owner"}:${character.name || ""}`,
+    character.name,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(keys));
+}
+
+function isDailyStartableForCharacter(item, character) {
+  if (!item || item.type !== "daily") return false;
+  if (item.hidden || item.opened === false || item.statusLabel === "비활성화" || !(item.effectiveOpened ?? item.opened)) return false;
+  if (!item.started || item.ended) return true;
+  const ownerKeys = getDailyOwnerKeysForCharacter(character);
+  const dailyOwnerKey = String(item.dailyOwnerKey || "").trim();
+  const dailyResumeOwnerKey = String(item.dailyResumeOwnerKey || "").trim();
+  if (dailyOwnerKey && ownerKeys.includes(dailyOwnerKey)) return true;
+  if (dailyResumeOwnerKey && ownerKeys.includes(dailyResumeOwnerKey)) return true;
+  if (hasLocalDailyResume(item.id, character)) return true;
+  return Number(item.participantsCount || 0) === 0 && !dailyOwnerKey && !dailyResumeOwnerKey;
+}
+
 function card(theme, disabled = false, clickable = false) {
   return {
     padding: 20,
@@ -260,14 +285,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
     () => investigations.filter((item) => item.type === "daily" && !item.hidden && item.opened !== false && item.statusLabel !== "비활성화" && !!(item.effectiveOpened ?? item.opened)),
     [investigations]
   );
-  const dailyOwnerKeys = useMemo(() => {
-    if (!activeCharacter) return [];
-    const keys = [
-      String(activeCharacter.id || ""),
-      String(`${activeCharacter.ownerId || "owner"}:${activeCharacter.name || ""}`),
-    ].filter(Boolean);
-    return Array.from(new Set(keys));
-  }, [activeCharacter?.id, activeCharacter?.ownerId, activeCharacter?.name]);
+  const startableDailyPool = useMemo(
+    () => dailyPool.filter((item) => isDailyStartableForCharacter(item, activeCharacter)),
+    [dailyPool, activeCharacter]
+  );
+  const dailyOwnerKeys = useMemo(() => getDailyOwnerKeysForCharacter(activeCharacter), [activeCharacter?.id, activeCharacter?.ownerId, activeCharacter?.name]);
   const dailyOwnerKey = dailyOwnerKeys[0] || "";
   const resumableDaily = useMemo(
     () => investigations.find((item) => item.type === "daily" && item.started && !item.ended && (dailyOwnerKeys.includes(String(item.dailyResumeOwnerKey || "")) || (dailyOwnerKeys.includes(String(item.dailyOwnerKey || "")) && Number(item.participantsCount || 0) === 0) || hasLocalDailyResume(item.id, activeCharacter))),
@@ -295,7 +317,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const dailyEntryImage = resumableDaily?.entryImage || resumableDaily?.listImage || getRepresentativeImage(dailyPool, "entry");
   const groupEntryImage = getRepresentativeImage(groups, "entry") || getRepresentativeImage(completedGroups, "entry");
   const investContent = design?.siteContent?.investigations || {};
-  const editableDaily = resumableDaily || dailyPool[0] || null;
+  const editableDaily = resumableDaily || startableDailyPool[0] || dailyPool[0] || null;
   const editableGroup = groups[0] || completedGroups[0] || null;
 
   const openCompletedDetail = async (item) => {
@@ -313,7 +335,9 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const startDaily = () => {
     if (dailyPool.length === 0) return alert("활성화된 일일조사가 없습니다.");
     if (dailyLeft <= 0) return alert("남은 일일조사 횟수가 없습니다.");
-    const picked = dailyPool[Math.floor(Math.random() * dailyPool.length)];
+    const candidates = startableDailyPool.length > 0 ? startableDailyPool : dailyPool.filter((item) => !item.started || item.ended);
+    if (!candidates.length) return alert("현재 시작할 수 있는 일일조사가 없습니다. 진행 중인 일일조사가 있다면 먼저 조사로 돌아가거나 잠시 후 다시 시도해주세요.");
+    const picked = candidates[Math.floor(Math.random() * candidates.length)];
     onEnter(picked, { mode: "daily" });
   };
 
