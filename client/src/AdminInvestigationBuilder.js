@@ -188,6 +188,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   const [catalog, setCatalog] = useState([]);
   const [message, setMessage] = useState("");
   const isEditingInvestigation = !!String(initialInvestigationId || "").trim();
+  const initialLoadKeyRef = useRef("");
 
   const selectedNode = useMemo(() => builder.nodes.find((node) => node.id === selectedNodeId) || builder.nodes[0], [builder, selectedNodeId]);
 
@@ -206,24 +207,36 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   }, []);
 
   useEffect(() => {
+    initialLoadKeyRef.current = "";
     if (!initialInvestigationId) {
       const fresh = emptyBuilder();
       setBuilder(fresh);
       setSelectedNodeId(fresh.start);
       setMessage("");
-      return;
     }
-    const found = savedList.find((item) => String(item.id) === String(initialInvestigationId));
+  }, [initialInvestigationId]);
+
+  useEffect(() => {
+    const targetId = String(initialInvestigationId || "").trim();
+    if (!targetId || initialLoadKeyRef.current === targetId) return undefined;
+    const found = savedList.find((item) => String(item.id) === targetId);
     if (found) {
+      initialLoadKeyRef.current = targetId;
       loadTemplate(found);
-      return;
+      return undefined;
     }
-    apiFetch(`/investigations/${initialInvestigationId}`)
+    let cancelled = false;
+    apiFetch(`/investigations/${targetId}`)
       .then((res) => res.json())
       .then((data) => {
-        if (data?.id) loadTemplate(data);
+        if (cancelled || initialLoadKeyRef.current === targetId) return;
+        if (data?.id) {
+          initialLoadKeyRef.current = targetId;
+          loadTemplate(data);
+        }
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [initialInvestigationId, savedList]);
 
   const updateNode = (nodeId, updater) => {
@@ -352,7 +365,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const data = await readJsonResponseSafely(res, "조사 저장 응답을 읽지 못했습니다.");
     if (!data.success || !res.ok) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
     setBuilder((prev) => ({ ...prev, start: payload.data?.start || prev.start, imageUpdatedAt: payload.imageUpdatedAt || prev.imageUpdatedAt }));
-    setSelectedNodeId(payload.data?.start || selectedNodeId);
+    setSelectedNodeId((prevSelectedNodeId) => builder.nodes.some((node) => node.id === prevSelectedNodeId) ? prevSelectedNodeId : (payload.data?.start || prevSelectedNodeId));
     setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영됐습니다.");
     loadSaved();
   };

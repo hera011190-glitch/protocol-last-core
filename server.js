@@ -2473,7 +2473,10 @@ function finishInvestigation(item, reason, summary) {
   item.resultSummary = summary;
   item.sharedLog = summary;
   item.pendingBattleActions = {};
+  item.pendingReward = null;
+  item.pendingRewardQueue = [];
   item.sharedLogs.push(createLogEntry(summary));
+  applyFaintedEndRecovery(item);
   applyInvestigationEndCorrosion(item);
 }
 
@@ -2576,6 +2579,7 @@ function applyNodeEntryEffects(item, node) {
       const state = states[participant.name];
       if (!state || Number(state.hp || 0) <= 0) return;
       state.hp = Math.max(0, Number(state.hp || 0) - Number(node.onEnterDamage || 0));
+      normalizeFaintedParticipantState(state);
     });
     addSharedLog(item, `[진입 효과] ${node.name}에서 피해 ${Number(node.onEnterDamage || 0)}를 받았습니다.`);
   }
@@ -2645,6 +2649,7 @@ function applyActionRewards(item, result, locationName) {
       const state = item.participantStates?.[participant.name];
       if (!state || Number(state.hp || 0) <= 0) return;
       state.hp = Math.max(0, Number(state.hp || 0) - Number(result.damage));
+      normalizeFaintedParticipantState(state);
     });
     textParts.push(`피해 ${result.damage}`);
     changed = true;
@@ -2682,9 +2687,65 @@ function applyActionRewards(item, result, locationName) {
   return { changed, text: textParts.join(" / ") };
 }
 
+function isInvestigationPlayableParticipant(participant) {
+  return !!participant
+    && !participant.isAdmin
+    && String(participant.id || "") !== "admin"
+    && String(participant.ownerId || "") !== "admin"
+    && participant.name !== "운영자";
+}
+
+function normalizeFaintedParticipantState(state) {
+  if (!state) return;
+  if (Number(state.hp || 0) <= 0) {
+    state.hp = 0;
+    state.status = "기절 상태";
+    state.defending = false;
+  }
+}
+
+function normalizeFaintedParticipantStates(item) {
+  Object.values(item?.participantStates || {}).forEach(normalizeFaintedParticipantState);
+}
+
+function getActiveInvestigationParticipantStates(item) {
+  const participants = Array.isArray(item?.participants) ? item.participants : [];
+  const states = item?.participantStates || {};
+  const participantNames = Array.from(new Set(participants
+    .filter(isInvestigationPlayableParticipant)
+    .map((participant) => String(participant?.name || "").trim())
+    .filter(Boolean)));
+  if (participantNames.length > 0) {
+    return participantNames.map((name) => states[name]).filter(Boolean);
+  }
+  return Object.values(states).filter((state) => state && String(state.name || "") !== "운영자");
+}
+
 function allParticipantsDown(item) {
-  const states = Object.values(item.participantStates || {});
-  return states.length > 0 && states.every((state) => state.hp <= 0);
+  normalizeFaintedParticipantStates(item);
+  const states = getActiveInvestigationParticipantStates(item);
+  return states.length > 0 && states.every((state) => Number(state.hp || 0) <= 0);
+}
+
+function applyFaintedEndRecovery(item) {
+  normalizeFaintedParticipantStates(item);
+  const participants = Array.isArray(item?.participants) ? item.participants : [];
+  let changed = false;
+  participants.filter(isInvestigationPlayableParticipant).forEach((participant) => {
+    const state = item?.participantStates?.[participant.name];
+    if (!state || Number(state.hp || 0) > 0) return;
+    const char = charactersDB.find((character) => String(character?.id || "") === String(participant?.id || ""))
+      || charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+    if (!char) return;
+    const maxHp = getCharacterMaxHp(char?.stats?.hp);
+    const recoveryHp = maxHp > 0 ? Math.max(1, Math.ceil(maxHp * 0.05)) : 0;
+    char.currentHp = Math.max(0, Math.min(maxHp, recoveryHp));
+    changed = true;
+  });
+  if (changed) {
+    markCharactersDirty();
+    writeRuntimeArray("characters.json", charactersDB);
+  }
 }
 function canMoveBetweenNodes(item, fromNodeId, toNodeId) {
   const nodes = item?.data?.nodes || {};
@@ -2759,7 +2820,20 @@ function findTargetAllyState(item, targetKey, fallbackName = "") { const states 
 function getEffectiveAttack(state) { const base = Number(state?.atk || 0); const flat = getBuffValue(state, "atkUp"); const rate = getBuffValue(state, "atkRateUp"); return Math.max(1, Math.round((base + flat) * (1 + rate))); }
 function applyEnemyDamage(enemy, rawDamage) { const multiplier = 1 + Math.max(0, getBuffValue(enemy, "damageTakenRateUp")); const damage = Math.max(1, Math.round(Number(rawDamage || 0) * multiplier)); enemy.hp = Math.max(0, Number(enemy.hp || 0) - damage); return damage; }
 function getProtectionRedirect(item, targetState) { const targetName = String(targetState?.name || ""); if (!targetName) return null; return Object.values(item.participantStates || {}).find((state) => state && Number(state.hp || 0) > 0 && String(state.name || "") !== targetName && Array.isArray(state.buffs) && state.buffs.some((buff) => buff?.type === "protect" && buff.duration > 0 && String(buff.target || "") === targetName)) || null; }
-function getIncomingDamageForTarget(item, targetState, rawDamage) { const protector = getProtectionRedirect(item, targetState); if (protector) { const protectedDamage = getIncomingDamageAfterDefense(rawDamage, { ...protector, defending: true }); protector.hp = Math.max(0, Number(protector.hp || 0) - protectedDamage); protector.status = protector.hp <= 0 ? "행동불능" : "희생 보호"; return { actualTarget: protector, damage: protectedDamage, protectedName: targetState.name }; } const damage = getIncomingDamageAfterDefense(rawDamage, targetState); targetState.hp = Math.max(0, Number(targetState.hp || 0) - damage); return { actualTarget: targetState, damage, protectedName: "" }; }
+function getIncomingDamageForTarget(item, targetState, rawDamage) {
+  const protector = getProtectionRedirect(item, targetState);
+  if (protector) {
+    const protectedDamage = getIncomingDamageAfterDefense(rawDamage, { ...protector, defending: true });
+    protector.hp = Math.max(0, Number(protector.hp || 0) - protectedDamage);
+    protector.status = protector.hp <= 0 ? "기절 상태" : "희생 보호";
+    normalizeFaintedParticipantState(protector);
+    return { actualTarget: protector, damage: protectedDamage, protectedName: targetState.name };
+  }
+  const damage = getIncomingDamageAfterDefense(rawDamage, targetState);
+  targetState.hp = Math.max(0, Number(targetState.hp || 0) - damage);
+  normalizeFaintedParticipantState(targetState);
+  return { actualTarget: targetState, damage, protectedName: "" };
+}
 
 function rollEvasion(attackerAgi, defenderAgi) {
   const chance = Math.max(0.03, Math.min(0.32, 0.06 + (Number(defenderAgi || 0) - Number(attackerAgi || 0)) * 0.015));
@@ -2818,7 +2892,7 @@ function resolveFlee(item) {
   states.forEach((state) => {
     const damage = Math.max(1, Number(battle?.atk || 0) - Math.floor(Number(state.def || 0) / 2));
     state.hp = Math.max(0, state.hp - damage);
-    state.status = state.hp <= 0 ? "행동불능" : "후퇴 실패";
+    state.status = state.hp <= 0 ? "기절 상태" : "후퇴 실패";
   });
   setEventBanner(item, "도주 실패", "danger", 2200);
   item.sharedLog = `[${node.name}] 도주에 실패했습니다. 적의 추격으로 피해를 입었습니다.`;
@@ -3047,7 +3121,7 @@ function applyBattleTurn(item, actions) {
         }
         const damage = getIncomingDamageAfterDefense(Number(enemy.atk || 0) + enemyAtkPenalty + 6, state);
         state.hp = Math.max(0, Number(state.hp || 0) - damage);
-        state.status = state.hp <= 0 ? "행동불능" : "필살기 피격";
+        state.status = state.hp <= 0 ? "기절 상태" : "필살기 피격";
         roundLogs.push(createBattleLogEntry(`${enemy.name}의 필살기! ${state.name} 피해 ${damage}`, "enemy", { actor: enemy.name, target: state.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) }));
         state.defending = false;
       });
@@ -3060,7 +3134,7 @@ function applyBattleTurn(item, actions) {
         }
         const damage = getIncomingDamageAfterDefense(Number(enemy.atk || 0) + enemyAtkPenalty + 1, state);
         state.hp = Math.max(0, Number(state.hp || 0) - damage);
-        state.status = state.hp <= 0 ? "행동불능" : "피격";
+        state.status = state.hp <= 0 ? "기절 상태" : "피격";
         roundLogs.push(createBattleLogEntry(`${enemy.name}의 전체 공격! ${state.name} 피해 ${damage}`, "enemy", { actor: enemy.name, target: state.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) }));
         state.defending = false;
       });
@@ -3072,7 +3146,7 @@ function applyBattleTurn(item, actions) {
         const bonus = finisher ? 8 : 2;
         const damage = getIncomingDamageAfterDefense(Number(enemy.atk || 0) + enemyAtkPenalty + bonus, target);
         target.hp = Math.max(0, Number(target.hp || 0) - damage);
-        target.status = target.hp <= 0 ? "행동불능" : (finisher ? "필살기 피격" : "집중 공격");
+        target.status = target.hp <= 0 ? "기절 상태" : (finisher ? "필살기 피격" : "집중 공격");
         roundLogs.push(createBattleLogEntry(`${enemy.name}${finisher ? "의 필살기" : "의 단일 공격"}! ${target.name} 피해 ${damage}`, "enemy", { actor: enemy.name, target: target.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) }));
       }
       target.defending = false;
@@ -3840,6 +3914,12 @@ app.post("/moveInvestigation", (req, res) => {
   addSharedLog(item, `[이동] ${nextNode.name} - ${nextNode.log || ""}`);
   item.routeHistory.push({ nodeId: targetNodeId, name: nextNode.name, time: new Date().toISOString() });
   applyNodeEntryEffects(item, nextNode);
+  if (allParticipantsDown(item)) {
+    finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
+    emitParticipantsUpdated();
+    emitInvestigationState(investigationId);
+    return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, ended: true });
+  }
   if (nextNode?.battle) {
     addSharedLog(item, `[E-Beast 조우] ${(Array.isArray(nextNode.battle?.enemies) && nextNode.battle.enemies.length > 1) ? nextNode.battle.enemies.map((enemy) => enemy.name || "E-Beast").join(", ") : (nextNode.battle.name || "E-Beast")}와 맞닥뜨렸습니다! 전원 전투 태세!`);
     setEventBanner(item, "전투 시작!", "danger", 2600);
@@ -3885,6 +3965,12 @@ app.post("/investigationAction", (req, res) => {
   }
 
   item.sharedLogs.push(createLogEntry(item.sharedLog));
+  if (allParticipantsDown(item)) {
+    finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
+    emitParticipantsUpdated();
+    emitInvestigationState(investigationId);
+    return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, ended: true });
+  }
   refreshInvestigationCompletionState(item);
   emitInvestigationState(investigationId);
   res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog });
@@ -4089,7 +4175,7 @@ app.post("/confirmInvestigationExit", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (!item.ended) return res.json({ success: false, message: "아직 종료된 조사가 아닙니다." });
-  if (!characterName) return res.json({ success: false, message: "캐릭터 이름이 필요해." });
+  if (!characterName) return res.json({ success: false, message: "캐릭터 이름이 필요합니다." });
 
   if (!Array.isArray(item.endConfirmations)) item.endConfirmations = [];
   if (!item.endConfirmations.includes(characterName)) {
@@ -5526,6 +5612,7 @@ app.post("/endInvestigationOnly", (req, res) => {
   item.resultSummary = safeEndedBy === "운영자" ? "운영자가 조사를 종료했습니다." : `${safeEndedBy}이(가) 조사를 종료했습니다.`;
   item.sharedLog = item.resultSummary;
   item.sharedLogs.push(createLogEntry(item.resultSummary));
+  applyFaintedEndRecovery(item);
   applyInvestigationEndCorrosion(item);
   emitParticipantsUpdated();
   emitInvestigationState(id);

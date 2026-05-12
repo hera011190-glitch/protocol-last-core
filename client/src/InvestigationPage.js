@@ -919,7 +919,7 @@ useEffect(() => {
     }
     skipAutoActionSyncRef.current = false;
     setMyBattleAction("");
-    setActionPicker("");
+    setActionPicker((current) => (["skill", "item", "target"].includes(current) ? current : ""));
   }, [investigation?.battleTurn, investigation?.pendingBattleActions, character?.name]);
   useEffect(() => {
     if (!investigation || !character?.name) return;
@@ -1052,8 +1052,8 @@ useEffect(() => {
       : null;
   const showBanner = !!activeEventBanner;
   const pendingActions = { ...(pendingActionsEarly || {}), ...(localPendingActions || {}) };
-  const aliveParticipants = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) > 0);
-  const spectators = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp || 0) <= 0);
+  const aliveParticipants = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp ?? p?.stats?.hp ?? 0) > 0);
+  const spectators = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp ?? p?.stats?.hp ?? 0) <= 0);
   const leaderDown = leaders.some((name) => Number(participantStates[name]?.hp || 0) <= 0);
   const aliveNames = aliveParticipants.map((p) => p.name);
   const battleItemOptions = foundItems.filter((item) => item === "응급 붕대" || item === "소독약");
@@ -1097,7 +1097,7 @@ useEffect(() => {
     const pending = investigation?.pendingBattleActions?.[character.name];
     if (!pending) {
       setMyBattleAction("");
-      setActionPicker("");
+      setActionPicker((current) => (["skill", "item", "target"].includes(current) ? current : ""));
       setEditingSavedAction(true);
     }
   }, [battleActive, investigation?.pendingBattleActions, investigation?.battleTurn, character?.name]);
@@ -1550,14 +1550,13 @@ useEffect(() => {
           <OverlayPanel title="조사 인원" onClose={() => setShowInfo(false)}>
             {participants.length > 0 ? (
               <div style={{ display: "grid", gap: "10px" }}>
-                {participants.map((participant) => {
+                {aliveParticipants.length > 0 ? aliveParticipants.map((participant) => {
                   const state = participantStates[participant.name] || {};
-                  const maxHp = Number(state.maxHp || participant.stats?.hp || 0);
-                  const hp = Number(state.hp || participant.stats?.hp || 0);
+                  const maxHp = Number(state.maxHp ?? participant.stats?.hp ?? 0);
+                  const hp = Number(state.hp ?? participant.stats?.hp ?? 0);
                   const hpPercent = maxHp > 0 ? Math.max(0, Math.min(100, (hp / maxHp) * 100)) : 0;
-                  const dead = maxHp > 0 && hp <= 0;
                   return (
-                    <div key={participant.name} style={{ ...participantStateRowStyle, background: dead ? "rgba(127,29,29,0.18)" : participantStateRowStyle.background, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                    <div key={participant.name} style={{ ...participantStateRowStyle, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                         <div style={smallPortraitStyle}>
                           {participant.image ? <img src={participant.image} alt={participant.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
@@ -1567,7 +1566,6 @@ useEffect(() => {
                             <div style={{ fontWeight: 800 }}>{participant.name}</div>
                             {leaders.includes(participant.name) && <div style={leaderBadgeStyle}>리더</div>}
                             {isParticipantOnline(participant) ? <div style={onlineBadgeStyle}>온라인</div> : <div style={{ ...onlineBadgeStyle, background: "rgba(148,163,184,0.18)", color: "#94a3b8" }}>오프라인</div>}
-                            {dead && <div style={dangerBadgeStyle}>관전</div>}
 
                           </div>
                           <div style={{ marginTop: "6px", color: "#9fb0c7", fontSize: "13px" }}>
@@ -1584,24 +1582,33 @@ useEffect(() => {
                       ) : null}
                     </div>
                   );
-                })}
+                }) : <div style={overlayEmptyStyle}>현재 행동 가능한 참여 인원이 없습니다.</div>}
                 <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
-                  <div style={overlaySectionTitleStyle}>관전중</div>
+                  <div style={overlaySectionTitleStyle}>관전 중</div>
                   {spectators.length > 0 ? (
                     <div style={{ display: "grid", gap: "8px" }}>
-                      {spectators.map((spectator) => (
-                        <div key={spectator.name} style={{ ...participantStateRowStyle, background: "rgba(127,29,29,0.14)" }}>
-                          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                            <div style={smallPortraitStyle}>
-                              {spectator.image ? <img src={spectator.image} alt={spectator.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
-                            </div>
-                            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                              <div style={{ fontWeight: 800 }}>{spectator.name}</div>
-                              {isParticipantOnline(spectator) ? <div style={onlineBadgeStyle}>온라인</div> : <div style={{ ...onlineBadgeStyle, background: "rgba(148,163,184,0.18)", color: "#94a3b8" }}>오프라인</div>}
+                      {spectators.map((spectator) => {
+                        const state = participantStates[spectator.name] || {};
+                        const maxHp = Number(state.maxHp ?? spectator.stats?.hp ?? 0);
+                        const hp = Number(state.hp ?? 0);
+                        return (
+                          <div key={spectator.name} style={{ ...participantStateRowStyle, background: "rgba(127,29,29,0.14)" }}>
+                            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                              <div style={smallPortraitStyle}>
+                                {spectator.image ? <img src={spectator.image} alt={spectator.name} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)", opacity: 0.72 }} /> : null}
+                              </div>
+                              <div>
+                                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                  <div style={{ fontWeight: 800 }}>{spectator.name}</div>
+                                  {isParticipantOnline(spectator) ? <div style={onlineBadgeStyle}>온라인</div> : <div style={{ ...onlineBadgeStyle, background: "rgba(148,163,184,0.18)", color: "#94a3b8" }}>오프라인</div>}
+                                  <div style={dangerBadgeStyle}>기절 상태</div>
+                                </div>
+                                <div style={{ marginTop: 6, fontSize: 12, color: "#fecaca" }}>HP {hp}/{maxHp} · 관전 중</div>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : <div style={overlayEmptyStyle}>현재 관전 중인 캐릭터가 없습니다.</div>}
                 </div>
@@ -1723,11 +1730,11 @@ useEffect(() => {
           <div style={{ position: "fixed", inset: 0, zIndex: 1180, display: "grid", placeItems: "center", pointerEvents: "none" }}>
             <div style={{ width: "min(920px, calc(100vw - 48px))", borderRadius: 28, background: "rgba(8,15,30,0.9)", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 24px 56px rgba(0,0,0,0.34)", padding: 24, pointerEvents: "auto" }}>
               <div className="section-eyebrow">REWARD ASSIGN</div>
-              <h3 style={{ marginTop: 10, marginBottom: 8 }}>누구에게 줄까?</h3>
+              <h3 style={{ marginTop: 10, marginBottom: 8 }}>누구에게 지급하시겠습니까?</h3>
               <div style={{ color: "#fde68a", fontWeight: 800 }}>{formatPendingRewardLabel(pendingReward)} 획득 대기</div>
               <div style={{ marginTop: 8, color: "#9fb0c7", lineHeight: 1.7 }}>
-                조사 참여 캐릭터 중 한 명을 골라 보상을 배분하세요. 배분이 끝나야 다음 진행으로 넘어갈 수 있습니다.
-                {!isDaily && !isAdmin && !isLeader ? " 현재는 리더만 배분할 수 있어." : ""}
+                조사 참여 캐릭터 중 한 명을 선택해 보상을 배분해 주세요. 배분이 끝나야 다음 진행으로 넘어갈 수 있습니다.
+                {!isDaily && !isAdmin && !isLeader ? " 현재는 리더만 배분할 수 있습니다." : ""}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, marginTop: 18 }}>
                 {participants.map((participant) => {
@@ -1759,7 +1766,7 @@ useEffect(() => {
                           ) : null}
                         </div>
                         <div style={{ marginTop: 10, fontWeight: 900, color: "#e2e8f0" }}>{participant.name}</div>
-                        <div style={{ marginTop: 6, fontSize: 12, color: dead ? "#fecaca" : "#9fb0c7" }}>{dead ? "HP 0 / 관전 중" : "배분 가능"}</div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: dead ? "#fecaca" : "#9fb0c7" }}>{dead ? "HP 0 / 관전 중" : "배분 가능합니다"}</div>
                       </div>
                     </button>
                   );
@@ -1789,7 +1796,7 @@ useEffect(() => {
               <div style={{ marginTop: "12px", color: "#9fb0c7", lineHeight: 1.7 }}>
                 완료 기준: 모든 구역 방문 및 조사<br />
                 확인한 인원: {endConfirmations.join(", ") || "없음"}<br />
-                전투 중 HP 0이었던 인원은 종료 시 HP 10으로 복구됩니다. 확인 버튼을 누르면 조사에서 나갑니다.
+                전투 중 HP 0이었던 인원은 종료 시 최대 HP의 5%만 남도록 적용됩니다. 확인 버튼을 누르면 조사에서 나갑니다.
               </div>
             </div>
             {(foundItems.length > 0 || clues.length > 0 || rewards.length > 0) ? (
@@ -1916,7 +1923,7 @@ useEffect(() => {
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("공격") ? "is-tab-active" : ""}`} onClick={() => { if (aliveEnemyOptions.length > 1) openBattleTargetPicker("공격::attack", "enemy", "공격 대상 선택"); else chooseBattleAction(aliveEnemyOptions[0]?.id ? `공격::attack::${aliveEnemyOptions[0].id}` : "공격"); }} disabled={battleInputLocked}>공격</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("방어") ? "is-tab-active" : ""}`} onClick={() => chooseBattleAction("방어")} disabled={battleInputLocked}>방어</button>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("아이템") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; setActionPicker("item"); }} disabled={battleInputLocked} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
-                          <button type="button" className={`ghost-button ${myBattleAction.startsWith("스킬") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; if (!battleSkillOptions.length) { alert("보유한 스킬이 없어."); return; } setActionPicker("skill"); }} disabled={battleInputLocked || battleSkillOptions.length === 0}>스킬</button>
+                          <button type="button" className={`ghost-button ${myBattleAction.startsWith("스킬") ? "is-tab-active" : ""}`} onClick={() => { if (battleInputLocked) return; if (!battleSkillOptions.length) { alert("보유한 스킬이 없습니다."); return; } setActionPicker("skill"); }} disabled={battleInputLocked || battleSkillOptions.length === 0}>스킬</button>
                           {canControl ? <button type="button" onClick={fleeFromBattle} style={runButtonStyle} disabled={battleInputLocked}>파티 도주</button> : null}
                         </div>
                       ) : (
@@ -2280,7 +2287,7 @@ function getBattlePhaseText({ battleActive, pendingReward, readyCount, aliveCoun
 
 function getBattleRoundTone(text) {
   const value = String(text || "");
-  if (/피해|패배|필살기|전멸|행동불능/.test(value)) return "danger";
+  if (/피해|패배|필살기|전멸|기절 상태/.test(value)) return "danger";
   if (/회복|치명타|승리|제압|획득/.test(value)) return "success";
   if (/방어|회피|도주|집중/.test(value)) return "info";
   return "normal";
@@ -3307,8 +3314,8 @@ function BattlePartyStrip({ participants, participantStates, pendingActions, rou
     <div style={{ marginTop: "14px", display: "flex", gap: compact ? "18px" : "24px", overflowX: "auto", paddingBottom: 6, justifyContent: "center" }}>
       {participants.map((participant) => {
         const state = participantStates?.[participant.name] || {};
-        const maxHp = Number(state.maxHp || participant.stats?.hp || 0);
-        const hp = Number(state.hp || participant.stats?.hp || 0);
+        const maxHp = Number(state.maxHp ?? participant.stats?.hp ?? 0);
+        const hp = Number(state.hp ?? participant.stats?.hp ?? 0);
         const hpPercent = maxHp > 0 ? Math.max(0, Math.min(100, (hp / maxHp) * 100)) : 0;
         const dead = maxHp > 0 && hp <= 0;
         const effect = getRecentBattleEffect(participant.name, rounds, state, nowTick);
@@ -3326,7 +3333,7 @@ function BattlePartyStrip({ participants, participantStates, pendingActions, rou
             <div style={{ fontWeight: 900, fontSize: compact ? "13px" : "14px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{participant.name}</div>
             <div style={{ marginTop: "6px", height: "8px", borderRadius: "999px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}><div style={{ width: `${hpPercent}%`, height: "100%", background: "linear-gradient(90deg, #93c5fd, #38bdf8)" }} /></div>
             <div style={{ marginTop: "6px", fontSize: "11px", color: "#e2e8f0" }}>HP {hp}/{maxHp}</div>
-            {dead ? <div style={{ marginTop: "6px", fontSize: "11px", color: "#fecaca", fontWeight: 800 }}>관전</div> : null}
+            {dead ? <div style={{ marginTop: "6px", fontSize: "11px", color: "#fecaca", fontWeight: 800 }}>기절 상태 · 관전 중</div> : null}
             {!dead ? <div style={{ marginTop: 4, fontSize: 11, color: pendingActions?.[participant.name] ? "#bae6fd" : battlePlaybackLocked ? "#fef08a" : "#cbd5e1", fontWeight: 900 }}>{battlePlaybackLocked ? "행동 연출 중" : pendingActions?.[participant.name] ? "선택 완료" : "대기 중"}</div> : null}
             {effect ? <div style={{ marginTop: 4, fontSize: 11, color: visual.badgeColor, fontWeight: 900, textShadow: "0 0 10px rgba(255,255,255,0.16)" }}>{visual.badge}</div> : null}
             {activeEffectBadges.length > 0 ? (
