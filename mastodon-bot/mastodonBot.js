@@ -1,0 +1,361 @@
+/*
+  Mastodon Dice / Daily Fortune / Magic Radio Bot for Node.js
+
+  홈페이지 Node.js 서버(server.js) 안에서 같이 실행하기 위한 버전입니다.
+  외부 npm 패키지 없이 Node 18+ 기본 fetch/fs만 사용합니다.
+*/
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT_DIR = __dirname;
+const DATA_DIR = path.join(ROOT_DIR, 'data');
+const STATE_PATH = path.join(DATA_DIR, 'state.json');
+const FORTUNES_PATH = path.join(DATA_DIR, 'fortunes.json');
+const FORTUNE_USAGE_PATH = path.join(DATA_DIR, 'fortune_usage.json');
+const ENV_PATH = path.join(ROOT_DIR, '.env');
+
+let runningBot = null;
+
+function loadLocalEnv() {
+  if (!fs.existsSync(ENV_PATH)) return;
+  const lines = fs.readFileSync(ENV_PATH, 'utf8').split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || !line.includes('=')) continue;
+    const eqIndex = line.indexOf('=');
+    const key = line.slice(0, eqIndex).trim();
+    let value = line.slice(eqIndex + 1).trim();
+    value = value.replace(/^['"]|['"]$/g, '');
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+function ensureDataDir() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function readJson(filePath, fallback) {
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    const backupPath = `${filePath}.broken-${Date.now()}`;
+    try { fs.renameSync(filePath, backupPath); } catch (_) {}
+    console.error(`[마스토돈 봇 경고] JSON 파일을 읽지 못해 백업했습니다: ${backupPath}`);
+    return fallback;
+  }
+}
+
+function writeJson(filePath, data) {
+  ensureDataDir();
+  const tempPath = `${filePath}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tempPath, filePath);
+}
+
+function stripHtml(html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p>|<\/div>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toBool(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  return String(value).toLowerCase() === 'true';
+}
+
+function getConfig() {
+  loadLocalEnv();
+
+  const baseUrl = String(process.env.MASTODON_BASE_URL || '').trim().replace(/\/$/, '');
+  const accessToken = String(process.env.MASTODON_ACCESS_TOKEN || '').trim();
+  const visibility = String(process.env.BOT_VISIBILITY || 'unlisted').trim();
+  const pollIntervalSeconds = Number(process.env.POLL_INTERVAL_SECONDS || 1);
+  const timezone = String(process.env.TIMEZONE || 'Asia/Seoul').trim() || 'Asia/Seoul';
+  const replyOnUnknown = toBool(process.env.REPLY_ON_UNKNOWN, false);
+  const startupCatchesOldMentions = toBool(process.env.STARTUP_CATCHES_OLD_MENTIONS, false);
+
+  if (!baseUrl || !accessToken) {
+    throw new Error('MASTODON_BASE_URL과 MASTODON_ACCESS_TOKEN 환경변수를 먼저 설정해 주세요.');
+  }
+
+  if (!['public', 'unlisted', 'private', 'direct'].includes(visibility)) {
+    throw new Error('BOT_VISIBILITY는 public / unlisted / private / direct 중 하나여야 합니다.');
+  }
+
+  return {
+    baseUrl,
+    accessToken,
+    visibility,
+    pollIntervalSeconds: Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0 ? pollIntervalSeconds : 1,
+    timezone,
+    replyOnUnknown,
+    startupCatchesOldMentions,
+  };
+}
+
+function todayKey(timezone) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(new Date());
+  } catch (_) {
+    const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+function loadFortunes() {
+  const data = readJson(FORTUNES_PATH, { fortunes: [] });
+  const rawFortunes = Array.isArray(data.fortunes) ? data.fortunes : [];
+  const fortunes = rawFortunes
+    .map((item) => {
+      if (typeof item === 'string') return { title: '오늘의 운세', text: item };
+      if (item && typeof item === 'object' && String(item.text || '').trim()) return item;
+      return null;
+    })
+    .filter(Boolean);
+
+  if (fortunes.length === 0) {
+    throw new Error('mastodon-bot/data/fortunes.json에 운세 문구를 1개 이상 넣어 주세요.');
+  }
+
+  return fortunes;
+}
+
+function detectCommand(text) {
+  const normalized = String(text || '').toLowerCase();
+  if (/(오늘\s*의\s*운세|오늘운세|운세)/.test(normalized)) return 'fortune';
+  if (/(마법\s*의\s*라디오|마법라디오|y\s*\/\s*n|yes\s*or\s*no|예스\s*노)/.test(normalized)) return 'radio';
+  if (/(다이스|dice|주사위)/.test(normalized)) return 'dice';
+  return null;
+}
+
+function randomChoice(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+class MastodonBot {
+  constructor(config) {
+    this.config = config;
+    this.state = readJson(STATE_PATH, {});
+    this.fortuneUsage = readJson(FORTUNE_USAGE_PATH, {});
+    this.fortunes = loadFortunes();
+    this.timer = null;
+    this.isTicking = false;
+  }
+
+  async apiRequest(method, apiPath, { query, form } = {}) {
+    const url = new URL(`${this.config.baseUrl}${apiPath}`);
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        if (Array.isArray(value)) {
+          for (const item of value) url.searchParams.append(key, String(item));
+        } else if (value !== undefined && value !== null && value !== '') {
+          url.searchParams.set(key, String(value));
+        }
+      }
+    }
+
+    const headers = {
+      Authorization: `Bearer ${this.config.accessToken}`,
+      'User-Agent': 'dice-fortune-radio-bot-node/1.0',
+    };
+
+    let body;
+    if (form) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(form)) params.set(key, String(value));
+      body = params;
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    }
+
+    const response = await fetch(url, { method, headers, body });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`API 오류 ${response.status}: ${text}`);
+    }
+    if (!text) return null;
+    return JSON.parse(text);
+  }
+
+  async fetchMentions() {
+    const query = { limit: 40, 'types[]': ['mention'] };
+    if (this.state.last_notification_id) query.since_id = String(this.state.last_notification_id);
+    const mentions = await this.apiRequest('GET', '/api/v1/notifications', { query });
+    return Array.isArray(mentions) ? mentions : [];
+  }
+
+  async postReply(statusId, acct, message) {
+    await this.apiRequest('POST', '/api/v1/statuses', {
+      form: {
+        status: `@${acct} ${message}`.trim(),
+        in_reply_to_id: statusId,
+        visibility: this.config.visibility,
+        language: 'ko',
+      },
+    });
+  }
+
+  makeDiceReply() {
+    return `🎲 [${Math.floor(Math.random() * 99) + 1}] `;
+  }
+
+  makeRadioReply() {
+    return randomChoice(['📻 YES.', '📻 NO.']);
+  }
+
+  makeFortuneReply(accountId) {
+    const today = todayKey(this.config.timezone);
+    const record = this.fortuneUsage[accountId];
+    if (record && record.date === today) {
+      return '🔮 오늘의 운세는 이미 확인하셨습니다. 내일 다시 불러 주세요.';
+    }
+
+    const fortune = randomChoice(this.fortunes);
+    const parts = [
+      `🔮 ${String(fortune.title || '오늘의 운세').trim()}`,
+      String(fortune.text || '').trim(),
+    ];
+
+    if (fortune.lucky_item) parts.push(`행운의 물건: ${String(fortune.lucky_item).trim()}`);
+    if (fortune.lucky_color) parts.push(`행운의 색: ${String(fortune.lucky_color).trim()}`);
+    if (fortune.score) parts.push(`운세 점수: ${String(fortune.score).trim()}`);
+
+    this.fortuneUsage[accountId] = { date: today, fortune };
+    writeJson(FORTUNE_USAGE_PATH, this.fortuneUsage);
+    return parts.join('\n');
+  }
+
+  makeUnknownReply() {
+    return [
+      '사용 가능한 명령어는 다음과 같습니다.',
+      '🎲 다이스: 1~99 랜덤 숫자',
+      '🔮 오늘의운세: 계정당 하루 1회',
+      '📻 마법의라디오: YES / NO',
+    ].join('\n');
+  }
+
+  updateLastNotification(notificationId) {
+    const current = Number(this.state.last_notification_id || 0);
+    const next = Number(notificationId || 0);
+    if (Number.isFinite(next) && next > current) this.state.last_notification_id = String(notificationId);
+    writeJson(STATE_PATH, this.state);
+  }
+
+  async handleMention(notification) {
+    const notificationId = String(notification.id || '');
+    const status = notification.status || {};
+    const account = notification.account || {};
+    const statusId = String(status.id || '');
+    const accountId = String(account.id || '');
+    const acct = String(account.acct || '').trim();
+
+    if (!notificationId || !statusId || !accountId || !acct) return;
+
+    const processed = new Set((this.state.processed_notification_ids || []).map(String));
+    if (processed.has(notificationId)) return;
+
+    const text = stripHtml(status.content || '');
+    const command = detectCommand(text);
+    let reply = '';
+
+    if (command === 'dice') reply = this.makeDiceReply();
+    else if (command === 'fortune') reply = this.makeFortuneReply(accountId);
+    else if (command === 'radio') reply = this.makeRadioReply();
+    else if (this.config.replyOnUnknown) reply = this.makeUnknownReply();
+
+    if (reply) {
+      await this.postReply(statusId, acct, reply);
+      console.log(`[마스토돈 봇 응답 완료] @${acct} / ${command || 'unknown'}`);
+    }
+
+    processed.add(notificationId);
+    this.state.processed_notification_ids = Array.from(processed)
+      .sort((a, b) => Number(a) - Number(b))
+      .slice(-300);
+    this.updateLastNotification(notificationId);
+  }
+
+  async initializeLastNotificationId() {
+    if (this.config.startupCatchesOldMentions || this.state.last_notification_id) return;
+    const mentions = await this.fetchMentions();
+    if (!mentions.length) return;
+    const newestId = mentions
+      .map((item) => String(item.id || '0'))
+      .sort((a, b) => Number(b) - Number(a))[0];
+    this.state.last_notification_id = newestId;
+    this.state.processed_notification_ids = [];
+    writeJson(STATE_PATH, this.state);
+    console.log('[마스토돈 봇 초기화] 기존 멘션은 건너뛰고, 새 멘션부터 응답합니다.');
+  }
+
+  async tick() {
+    if (this.isTicking) return;
+    this.isTicking = true;
+    try {
+      const mentions = await this.fetchMentions();
+      mentions.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+      for (const notification of mentions) {
+        try {
+          await this.handleMention(notification);
+        } catch (error) {
+          console.error(`[마스토돈 봇 오류] 멘션 처리 실패: ${error.message}`);
+          if (notification && notification.id) this.updateLastNotification(String(notification.id));
+        }
+      }
+    } catch (error) {
+      console.error(`[마스토돈 봇 오류] ${error.message}`);
+    } finally {
+      this.isTicking = false;
+    }
+  }
+
+  async start() {
+    console.log('[마스토돈 봇 시작]');
+    console.log(`[마스토돈 봇 서버] ${this.config.baseUrl}`);
+    console.log(`[마스토돈 봇 확인 주기] ${this.config.pollIntervalSeconds}초`);
+
+    await this.initializeLastNotificationId();
+    await this.tick();
+    this.timer = setInterval(() => this.tick(), this.config.pollIntervalSeconds * 1000);
+    return this;
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+}
+
+async function startMastodonBot() {
+  if (runningBot) return runningBot;
+  const config = getConfig();
+  const bot = new MastodonBot(config);
+  runningBot = bot;
+  await bot.start();
+  return bot;
+}
+
+module.exports = { startMastodonBot };
+
+if (require.main === module) {
+  startMastodonBot().catch((error) => {
+    console.error(`[마스토돈 봇 실행 실패] ${error.message}`);
+    process.exit(1);
+  });
+}

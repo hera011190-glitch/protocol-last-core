@@ -12,6 +12,13 @@ function toDataUrl(file) {
   });
 }
 
+
+function normalizeOptionalNpcLineIndex(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const next = Number(value);
+  return Number.isFinite(next) && next >= 0 ? next : undefined;
+}
+
 function normalizeImageFrame(frame) {
   return {
     x: Math.max(0, Math.min(100, Number(frame?.x ?? 50))),
@@ -311,7 +318,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                 text: String(line.text || ""),
                 options: (line.options || []).map((option) => ({
                   text: String(option.text || ""),
-                  nextIndex: option.nextIndex === "" ? undefined : Number(option.nextIndex),
+                  nextIndex: normalizeOptionalNpcLineIndex(option.nextIndex),
                   rewardItem: String(option.rewardItem || ""),
                   rewardStatPoints: Number(option.rewardStatPoints || 0),
                   clue: option.clue || "",
@@ -351,7 +358,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   };
 
   const saveTemplate = async () => {
-    const payload = { id: serialize().id, title: serialize().title, type: builder.type, json: serialize() };
+    const serialized = serialize();
+    const payload = { id: serialized.id, title: serialized.title, type: builder.type, json: serialized };
     const res = await apiFetch("/admin/customInvestigations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await readJsonResponseSafely(res, "조사 템플릿 저장 응답을 읽지 못했습니다.");
     if (!data.success || !res.ok) return alert(data.message || "저장 실패");

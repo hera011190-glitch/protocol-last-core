@@ -38,6 +38,11 @@ if (!IS_ASSET_COMPACT_CHILD) {
   });
 }
 
+const { startMastodonBot } = require('./mastodon-bot/mastodonBot');
+startMastodonBot().catch((error) => {
+  console.error('[마스토돈 봇 실행 실패]', error);
+});
+
 function pickRuntimeDataDir() {
   const candidates = [
     process.env.DATA_DIR,
@@ -757,6 +762,35 @@ function extractRuntimeUserRowsFromLooseText(rawText, options = {}) {
 
 const MAX_USER_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAX_LOOSE_TEXT_SCAN_BYTES = 768 * 1024;
+const RUNTIME_USER_PATH_CACHE_TTL_MS = Number(process.env.RUNTIME_USER_PATH_CACHE_TTL_MS || 5000);
+const RUNTIME_USER_SCAN_CACHE_TTL_MS = Number(process.env.RUNTIME_USER_SCAN_CACHE_TTL_MS || 1500);
+const runtimeJsonPathCache = new Map();
+const runtimeUserRowsCache = new Map();
+
+function clearRuntimeUserCaches() {
+  runtimeJsonPathCache.clear();
+  runtimeUserRowsCache.clear();
+}
+
+function cloneRuntimeUserRows(rows) {
+  return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
+}
+
+function getRuntimePathsSignature(paths) {
+  return (Array.isArray(paths) ? paths : [])
+    .filter(Boolean)
+    .map((targetPath) => {
+      try {
+        const resolved = path.resolve(targetPath);
+        if (!fs.existsSync(resolved)) return `${resolved}:missing`;
+        const stat = fs.statSync(resolved);
+        return `${resolved}:${stat.size}:${Math.round(stat.mtimeMs)}`;
+      } catch {
+        return `${targetPath}:error`;
+      }
+    })
+    .join("|");
+}
 
 function isGenericRuntimeUserSource(filePath) {
   const name = path.basename(String(filePath || "")).toLowerCase();
@@ -889,6 +923,13 @@ function getRuntimeSearchRoots({ deep = false } = {}) {
 }
 
 function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
+  const cacheKey = `${filename || "json"}:${deep ? "deep" : "shallow"}`;
+  const cached = runtimeJsonPathCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.at < RUNTIME_USER_PATH_CACHE_TTL_MS) {
+    return cached.paths.slice();
+  }
+
   const roots = getRuntimeSearchRoots({ deep });
 
   const directUserFiles = [
@@ -946,7 +987,7 @@ function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
   }
 
   const seen = new Set();
-  return candidates
+  const result = candidates
     .filter(Boolean)
     .map((targetPath) => path.resolve(targetPath))
     .filter((targetPath) => {
@@ -954,6 +995,9 @@ function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
       seen.add(targetPath);
       return true;
     });
+
+  runtimeJsonPathCache.set(cacheKey, { at: now, paths: result });
+  return result.slice();
 }
 
 
@@ -1016,6 +1060,21 @@ function isDisplayableAdminAccount(user) {
   return false;
 }
 
+function normalizeRuntimeUserIndexRows(rows) {
+  return mergeRuntimeUsers(rows)
+    .map((user) => ({
+      id: normalizeUserIdText(getRuntimeAccountId(user) || getRuntimeUserId(user)),
+      type: user?.type || user?.role || "owner",
+      indexedByServer: user?.indexedByServer === true,
+    }))
+    .filter((user) => user.id && user.id !== "PLC")
+    .sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
+}
+
+function areRuntimeUserIndexRowsEquivalent(leftRows, rightRows) {
+  return JSON.stringify(normalizeRuntimeUserIndexRows(leftRows)) === JSON.stringify(normalizeRuntimeUserIndexRows(rightRows));
+}
+
 function writeRuntimeUserIndexes(userRows) {
   try {
     const safeRows = mergeRuntimeUsers(userRows)
@@ -1030,7 +1089,10 @@ function writeRuntimeUserIndexes(userRows) {
     ["registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json"].forEach((filename) => {
       const indexPath = resolveDataPath(filename);
       const existingRows = readRuntimeArrayFromExactPath(indexPath);
-      writeJsonAtomicSync(indexPath, mergeRuntimeUsers(existingRows, safeRows));
+      const mergedRows = mergeRuntimeUsers(existingRows, safeRows);
+      if (areRuntimeUserIndexRowsEquivalent(existingRows, mergedRows)) return;
+      writeJsonAtomicSync(indexPath, mergedRows);
+      clearRuntimeUserCaches();
     });
   } catch (error) {
     console.error("writeRuntimeUserIndexes failed", error);
@@ -1048,23 +1110,35 @@ function getAllKnownRuntimeUsersFromDisk({ deep = true } = {}) {
   }
 
   const paths = collectKnownRuntimeJsonPaths("users.json", { deep });
+  const directPaths = [
+    resolveDataPath("users.json"),
+    resolveBundledPath("users.json"),
+    path.join(process.cwd(), "users.json"),
+    resolveDataPath("registeredUsers.json"),
+    resolveDataPath("adminUserIndex.json"),
+    resolveDataPath("allUserIds.json"),
+    resolveDataPath("publicUserIndex.json"),
+  ];
+  const cacheable = !pendingPayload;
+  const cacheKey = `users:${deep ? "deep" : "shallow"}:${getRuntimePathsSignature([...directPaths, ...paths])}`;
+  if (cacheable) {
+    const cached = runtimeUserRowsCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < RUNTIME_USER_SCAN_CACHE_TTL_MS) {
+      return cloneRuntimeUserRows(cached.rows);
+    }
+  }
 
   const backupRows = deep ? getRuntimeUserBackupRows() : [];
 
   const rows = mergeRuntimeUsers(
-    readRuntimeArrayFromExactPath(resolveDataPath("users.json")),
-    readRuntimeArrayFromExactPath(resolveBundledPath("users.json")),
-    readRuntimeArrayFromExactPath(path.join(process.cwd(), "users.json")),
-    readRuntimeArrayFromExactPath(resolveDataPath("registeredUsers.json")),
-    readRuntimeArrayFromExactPath(resolveDataPath("adminUserIndex.json")),
-    readRuntimeArrayFromExactPath(resolveDataPath("allUserIds.json")),
-    readRuntimeArrayFromExactPath(resolveDataPath("publicUserIndex.json")),
+    ...directPaths.map(readRuntimeArrayFromExactPath),
     backupRows,
     ...paths.reverse().map(readRuntimeArrayFromExactPath),
     pendingRows
   );
 
   if (deep && rows.length > 0) writeRuntimeUserIndexes(rows);
+  if (cacheable) runtimeUserRowsCache.set(cacheKey, { at: Date.now(), rows: cloneRuntimeUserRows(rows) });
   return rows;
 }
 
@@ -1098,6 +1172,7 @@ function writeRuntimeArray(filename, value) {
       }
       // 캐릭터/계정 데이터는 홈페이지 수정 중 서버가 꺼져도 유실되지 않도록 즉시 원자 저장합니다.
       writeJsonAtomicSync(filePath, nextValue);
+      if (filename === "users.json") clearRuntimeUserCaches();
       if (filename === "characters.json") {
         charactersDiskSignature = getRuntimeFileSignature("characters.json");
         publicCharacterSummaryCache = null;
@@ -1798,7 +1873,11 @@ function buildInvestigation(def) {
       nodes: normalizedNodes,
       start: startNodeId,
     },
-    opened: true,
+    opened: def?.opened !== undefined ? !!def.opened : true,
+    hidden: def?.hidden !== undefined ? !!def.hidden : false,
+    scheduleEnabled: def?.scheduleEnabled !== undefined ? !!def.scheduleEnabled : false,
+    openAt: String(def?.openAt || ""),
+    closeAt: String(def?.closeAt || ""),
     started: false,
     ended: false,
     endedAt: "",
@@ -2902,6 +2981,21 @@ function getIncomingDamageForTarget(item, targetState, rawDamage) {
   return { actualTarget: targetState, damage, protectedName: "" };
 }
 
+
+function applyEnemyDamageToParticipant(item, targetState, rawDamage, hitStatus) {
+  const result = getIncomingDamageForTarget(item, targetState, rawDamage);
+  const actualTarget = result.actualTarget || targetState;
+  const isDown = Number(actualTarget?.hp || 0) <= 0;
+  actualTarget.status = isDown ? "기절 상태" : (result.protectedName ? "희생 보호" : hitStatus);
+  normalizeFaintedParticipantState(actualTarget);
+  return { ...result, actualTarget };
+}
+
+function getEnemyDamageLogTarget(result, fallbackState) {
+  const actualName = result?.actualTarget?.name || fallbackState?.name || "대상";
+  return result?.protectedName ? `${result.protectedName} 대신 ${actualName}` : actualName;
+}
+
 function rollEvasion(attackerAgi, defenderAgi) {
   const chance = Math.max(0.03, Math.min(0.32, 0.06 + (Number(defenderAgi || 0) - Number(attackerAgi || 0)) * 0.015));
   return Math.random() < chance;
@@ -3187,11 +3281,11 @@ function applyBattleTurn(item, actions) {
           state.defending = false;
           return;
         }
-        const damage = getIncomingDamageAfterDefense(Number(enemy.atk || 0) + enemyAtkPenalty + 6, state);
-        state.hp = Math.max(0, Number(state.hp || 0) - damage);
-        state.status = state.hp <= 0 ? "기절 상태" : "필살기 피격";
-        roundLogs.push(createBattleLogEntry(`${enemy.name}의 필살기! ${state.name} 피해 ${damage}`, "enemy", withBattleEnemyActor(battle, enemy, { target: state.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) })));
+        const result = applyEnemyDamageToParticipant(item, state, Number(enemy.atk || 0) + enemyAtkPenalty + 6, "필살기 피격");
+        const logTarget = getEnemyDamageLogTarget(result, state);
+        roundLogs.push(createBattleLogEntry(`${enemy.name}의 필살기! ${logTarget} 피해 ${result.damage}`, "enemy", withBattleEnemyActor(battle, enemy, { target: result.actualTarget?.name || state.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) })));
         state.defending = false;
+        if (result.actualTarget && result.actualTarget !== state) result.actualTarget.defending = false;
       });
     } else if (aoe) {
       aliveTargets.forEach((state) => {
@@ -3200,11 +3294,11 @@ function applyBattleTurn(item, actions) {
           state.defending = false;
           return;
         }
-        const damage = getIncomingDamageAfterDefense(Number(enemy.atk || 0) + enemyAtkPenalty + 1, state);
-        state.hp = Math.max(0, Number(state.hp || 0) - damage);
-        state.status = state.hp <= 0 ? "기절 상태" : "피격";
-        roundLogs.push(createBattleLogEntry(`${enemy.name}의 전체 공격! ${state.name} 피해 ${damage}`, "enemy", withBattleEnemyActor(battle, enemy, { target: state.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) })));
+        const result = applyEnemyDamageToParticipant(item, state, Number(enemy.atk || 0) + enemyAtkPenalty + 1, "피격");
+        const logTarget = getEnemyDamageLogTarget(result, state);
+        roundLogs.push(createBattleLogEntry(`${enemy.name}의 전체 공격! ${logTarget} 피해 ${result.damage}`, "enemy", withBattleEnemyActor(battle, enemy, { target: result.actualTarget?.name || state.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) })));
         state.defending = false;
+        if (result.actualTarget && result.actualTarget !== state) result.actualTarget.defending = false;
       });
     } else {
       const target = aliveTargets.sort((a, b) => Number(b.atk || 0) - Number(a.atk || 0))[0];
@@ -3212,10 +3306,9 @@ function applyBattleTurn(item, actions) {
         roundLogs.push(createBattleLogEntry(`${target.name}이(가) ${enemy.name}의 공격을 피했습니다!`, "enemy", withBattleEnemyActor(battle, enemy, { target: target.name, effect: "evade", snapshot: makeBattleSnapshot(item, battle) })));
       } else {
         const bonus = finisher ? 8 : 2;
-        const damage = getIncomingDamageAfterDefense(Number(enemy.atk || 0) + enemyAtkPenalty + bonus, target);
-        target.hp = Math.max(0, Number(target.hp || 0) - damage);
-        target.status = target.hp <= 0 ? "기절 상태" : (finisher ? "필살기 피격" : "집중 공격");
-        roundLogs.push(createBattleLogEntry(`${enemy.name}${finisher ? "의 필살기" : "의 단일 공격"}! ${target.name} 피해 ${damage}`, "enemy", withBattleEnemyActor(battle, enemy, { target: target.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) })));
+        const result = applyEnemyDamageToParticipant(item, target, Number(enemy.atk || 0) + enemyAtkPenalty + bonus, finisher ? "필살기 피격" : "집중 공격");
+        const logTarget = getEnemyDamageLogTarget(result, target);
+        roundLogs.push(createBattleLogEntry(`${enemy.name}${finisher ? "의 필살기" : "의 단일 공격"}! ${logTarget} 피해 ${result.damage}`, "enemy", withBattleEnemyActor(battle, enemy, { target: result.actualTarget?.name || target.name, effect: "damage", snapshot: makeBattleSnapshot(item, battle) })));
       }
       target.defending = false;
     }
@@ -3700,8 +3793,11 @@ app.post("/admin/investigationSchedule", (req, res) => {
   item.scheduleEnabled = !!scheduleEnabled;
   item.openAt = openAt || "";
   item.closeAt = closeAt || "";
+  writeRuntimeArray("investigations.json", investigationsDB);
+  emitParticipantsUpdated();
+  emitInvestigationState(item.id);
 
-  res.json({ success: true, started: true, investigationId: item.id });
+  res.json({ success: true, started: true, investigationId: item.id, item: getInvestigationSummary(item) });
 });
 
 app.get("/investigations", (req, res) => {
@@ -3762,6 +3858,9 @@ app.post("/toggleInvestigation", (req, res) => {
   if (!item) return res.json({ success: false });
   if (opened !== undefined) item.opened = !!opened;
   if (hidden !== undefined) item.hidden = !!hidden;
+  writeRuntimeArray("investigations.json", investigationsDB);
+  emitParticipantsUpdated();
+  emitInvestigationState(item.id);
   res.json({ success: true, item: getInvestigationSummary(item) });
 });
 
@@ -4428,6 +4527,11 @@ function serializeInvestigationForPersistence(item) {
     id: item?.id || templateSource.id,
     title: item?.title || templateSource.title || "새 조사",
     type: item?.type || templateSource.type || "group",
+    opened: item?.opened !== undefined ? !!item.opened : (templateSource?.opened !== undefined ? !!templateSource.opened : true),
+    hidden: item?.hidden !== undefined ? !!item.hidden : !!templateSource?.hidden,
+    scheduleEnabled: item?.scheduleEnabled !== undefined ? !!item.scheduleEnabled : !!templateSource?.scheduleEnabled,
+    openAt: String(item?.openAt || templateSource?.openAt || ""),
+    closeAt: String(item?.closeAt || templateSource?.closeAt || ""),
     listImage: String(item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
     entryImage: String(item?.entryImage || item?.data?.entryImage || templateSource?.entryImage || templateSource?.data?.entryImage || item?.listImage || item?.data?.listImage || templateSource?.listImage || templateSource?.data?.listImage || ""),
     listImageFrame: normalizeInvestigationImageFrame(item?.listImageFrame || item?.data?.listImageFrame || templateSource?.listImageFrame || templateSource?.data?.listImageFrame),
@@ -4490,11 +4594,18 @@ let customInvestigationsDB = readCustomInvestigationsFromFile();
 function upsertPublishedInvestigation(def) {
   const built = buildInvestigation(def);
   const existingIndex = investigationsDB.findIndex((item) => item.id === def.id);
-  if (existingIndex >= 0) {
+  const existing = existingIndex >= 0 ? investigationsDB[existingIndex] : null;
+  if (existing) {
+    built.opened = def?.opened !== undefined ? !!def.opened : !!existing.opened;
+    built.hidden = def?.hidden !== undefined ? !!def.hidden : !!existing.hidden;
+    built.scheduleEnabled = def?.scheduleEnabled !== undefined ? !!def.scheduleEnabled : !!existing.scheduleEnabled;
+    built.openAt = String(def?.openAt || existing.openAt || "");
+    built.closeAt = String(def?.closeAt || existing.closeAt || "");
     investigationsDB[existingIndex] = built;
   } else {
     investigationsDB.push(built);
   }
+  writeRuntimeArray("investigations.json", investigationsDB);
   emitParticipantsUpdated();
   emitInvestigationState(def.id);
 }
@@ -5724,3 +5835,4 @@ if (!IS_ASSET_COMPACT_CHILD) {
     setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);
   }
 }
+
