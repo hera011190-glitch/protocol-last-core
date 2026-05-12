@@ -549,9 +549,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   };
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
-  const tintStrength = tintReveal / 100;
-  const tintStart = Math.max(0, 100 - tintReveal - 18);
-  const tintMid = Math.max(0, 100 - tintReveal - 6);
+  const tintStart = Math.max(0, 100 - tintReveal);
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
@@ -576,27 +574,27 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
           <BrokenSdFallback name={character?.name} />
         )}
         {showSpriteImage && tintReveal > 0 ? (
-          <img
-            src={spriteImage}
-            alt=""
+          <div
             aria-hidden="true"
-            loading="eager"
-            decoding="async"
-            onError={handleSpriteError}
             style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
               position: "absolute",
               inset: 0,
               zIndex: 2,
               pointerEvents: "none",
-              opacity: Math.min(0.84, 0.18 + tintStrength * 0.72),
-              filter: `sepia(1) saturate(${(2.8 + tintStrength * 2.2).toFixed(2)}) hue-rotate(-34deg) brightness(0.92) contrast(1.08)`,
-              mixBlendMode: "multiply",
+              background: "#ff1f1f",
+              mixBlendMode: "color",
+              opacity: 0.92,
               transition: "opacity 0.28s ease",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.22) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.74) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.22) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.74) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${tintStart}%, rgba(0,0,0,1) ${Math.min(100, tintStart + 10)}%, rgba(0,0,0,1) 100%), url(${spriteImage})`,
+              WebkitMaskComposite: "source-in",
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${tintStart}%, rgba(0,0,0,1) ${Math.min(100, tintStart + 10)}%, rgba(0,0,0,1) 100%), url(${spriteImage})`,
+              maskComposite: "intersect",
+              WebkitMaskRepeat: "no-repeat, no-repeat",
+              maskRepeat: "no-repeat, no-repeat",
+              WebkitMaskSize: "100% 100%, contain",
+              maskSize: "100% 100%, contain",
+              WebkitMaskPosition: "center, center",
+              maskPosition: "center, center",
             }}
           />
         ) : null}

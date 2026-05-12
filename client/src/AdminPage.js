@@ -52,11 +52,11 @@ function isSelectableAdminUserRow(user) {
   const id = getAdminAccountId(user);
   if (!id) return false;
   const lower = id.toLowerCase();
-  if (["plc", "id", "name", "items", "item", "users", "accounts", "members", "data", "rows", "design", "theme", "node", "npc", "battle", "shop"].includes(lower)) return false;
+  if (["plc", "id", "name", "items", "item", "users", "accounts", "members", "data", "rows", "design", "theme", "node", "npc", "battle", "shop", "reward", "monster", "enemy"].includes(lower)) return false;
   if (/^item-\d{8,}$/.test(lower)) return false;
-  if (/^(custom|investigation|shop|item|node|map|design|theme|npc|battle|reward)[-_:.]/i.test(id)) return false;
-  if (/(custom|investigation|shop|item|node|design|theme|npc|battle)/i.test(id) && !/@/.test(id)) return false;
-  if (/(조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상)/.test(id)) return false;
+  if (/^(custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast)[-_:.]/i.test(id)) return false;
+  if (/(custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy)/i.test(id) && !/@/.test(id)) return false;
+  if (/(조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트)/.test(id)) return false;
   if (/^\d+$/.test(id) && id.length >= 10) return false;
   if (/^E-\d+$/i.test(id)) return false;
   if (/^https?:\/\//i.test(id) || id.includes("/static/") || id.includes("data:image/")) return false;

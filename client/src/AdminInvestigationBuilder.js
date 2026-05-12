@@ -506,22 +506,20 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     }));
   };
 
-  const addDirectionChoice = (directionLabel) => {
-    updateNode(selectedNode.id, (node) => ({
-      ...node,
-      choices: [...(node.choices || []), { text: directionLabel, target: "" }],
-    }));
-  };
+  const mapCanvasWidth = Math.max(860, ...builder.nodes.map((node) => Number(node.mapX || 430) + 160));
+  const mapCanvasHeight = Math.max(520, ...builder.nodes.map((node) => Number(node.mapY || 260) + 120));
 
   const applyMapPosition = (nodeId, x, y) => {
-    updateNode(nodeId, (node) => ({ ...node, mapX: Math.max(50, Math.min(810, Number(x))), mapY: Math.max(50, Math.min(470, Number(y))) }));
+    const maxX = Math.max(50, mapCanvasWidth - 50);
+    const maxY = Math.max(50, mapCanvasHeight - 50);
+    updateNode(nodeId, (node) => ({ ...node, mapX: Math.max(50, Math.min(maxX, Number(x))), mapY: Math.max(50, Math.min(maxY, Number(y))) }));
   };
 
   const applyPreviewPointerPosition = (event, nodeId, offset = dragOffsetRef.current) => {
     const rect = previewRef.current?.getBoundingClientRect?.();
     if (!rect) return;
-    const x = ((event.clientX - rect.left) / rect.width) * 860 - Number(offset?.x || 0);
-    const y = ((event.clientY - rect.top) / rect.height) * 520 - Number(offset?.y || 0);
+    const x = event.clientX - rect.left + Number(previewRef.current?.scrollLeft || 0) - Number(offset?.x || 0);
+    const y = event.clientY - rect.top + Number(previewRef.current?.scrollTop || 0) - Number(offset?.y || 0);
     applyMapPosition(nodeId, x, y);
   };
 
@@ -536,8 +534,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
     const rect = previewRef.current?.getBoundingClientRect?.();
     if (rect) {
-      const pointerX = ((event.clientX - rect.left) / rect.width) * 860;
-      const pointerY = ((event.clientY - rect.top) / rect.height) * 520;
+      const pointerX = event.clientX - rect.left + Number(previewRef.current?.scrollLeft || 0);
+      const pointerY = event.clientY - rect.top + Number(previewRef.current?.scrollTop || 0);
       dragOffsetRef.current = {
         x: pointerX - Number(node.mapX || 430),
         y: pointerY - Number(node.mapY || 260),
@@ -659,8 +657,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             </div>
             <button type="button" className="home-primary-button" onClick={addNode}>노드 추가</button>
           </div>
-          <div ref={previewRef} onMouseMove={onMapPreviewMouseMove} onMouseLeave={endNodeDrag} style={{ position: "relative", height: 580, borderRadius: 24, background: "linear-gradient(180deg, rgba(245,252,255,0.96), rgba(232,246,255,0.96))", border: "1px solid rgba(98,176,220,0.18)", overflow: "hidden" }}>
-            <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+          <div ref={previewRef} onMouseMove={onMapPreviewMouseMove} onMouseLeave={endNodeDrag} style={{ position: "relative", height: 580, borderRadius: 24, background: "linear-gradient(180deg, rgba(245,252,255,0.96), rgba(232,246,255,0.96))", border: "1px solid rgba(98,176,220,0.18)", overflow: "auto" }}>
+            <div style={{ position: "relative", width: mapCanvasWidth, height: mapCanvasHeight, minWidth: "100%", minHeight: "100%" }}>
+            <svg width={mapCanvasWidth} height={mapCanvasHeight} style={{ position: "absolute", left: 0, top: 0 }}>
               {builder.nodes.flatMap((node) => (node.choices || []).map((choice, idx) => {
                 const target = builder.nodes.find((v) => v.id === choice.target);
                 if (!target) return null;
@@ -684,6 +683,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                 {node.id === builder.start ? <div style={{ marginTop: 4, fontSize: 10, fontWeight: 800 }}>START</div> : null}
               </button>
             ))}
+            </div>
           </div>
         </section>
 
@@ -722,13 +722,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           </div>
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>이동 연결</div>
-          <div style={{ color: "#6a87a3", fontSize: 13 }}>버튼 텍스트는 플레이어가 누르는 이동 버튼 이름이고, 이동 대상은 그 버튼을 눌렀을 때 도착할 구역이야.</div>
+          <div style={{ color: "#6a87a3", fontSize: 13 }}>버튼 텍스트는 플레이어가 누르는 이동 버튼 이름이고, 이동 대상은 그 버튼을 눌렀을 때 도착할 구역입니다.</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="ghost-button" onClick={() => addDirectionChoice("상")}>상 추가</button>
-            <button type="button" className="ghost-button" onClick={() => addDirectionChoice("좌")}>좌 추가</button>
-            <button type="button" className="ghost-button" onClick={() => addDirectionChoice("우")}>우 추가</button>
-            <button type="button" className="ghost-button" onClick={() => addDirectionChoice("하")}>하 추가</button>
-            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, choices: [...(node.choices || []), { text: "이동", target: "" }] }))}>일반 연결 추가</button>
+            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, choices: [...(node.choices || []), { text: "이동", target: "" }] }))}>연결 추가</button>
           </div>
           {(selectedNode.choices || []).map((choice, idx) => <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginTop: 8, alignItems: "end" }}>
             <div style={{ display: "grid", gap: 6 }}>

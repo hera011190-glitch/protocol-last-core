@@ -38,11 +38,6 @@ if (!IS_ASSET_COMPACT_CHILD) {
   });
 }
 
-const { startMastodonBot } = require('./mastodon-bot/mastodonBot');
-startMastodonBot().catch((error) => {
-  console.error('[마스토돈 봇 실행 실패]', error);
-});
-
 function pickRuntimeDataDir() {
   const candidates = [
     process.env.DATA_DIR,
@@ -594,9 +589,9 @@ function isKnownNonUserRuntimeId(id) {
   const lower = nextId.toLowerCase();
   if (lower === "plc") return true;
   if (/^item-\d{8,}$/.test(lower)) return true;
-  if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward)[-_:.]/i.test(nextId)) return true;
-  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle)/i.test(nextId) && !/@/.test(nextId)) return true;
-  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상)/.test(nextId)) return true;
+  if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast)[-_:.]/i.test(nextId)) return true;
+  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy)/i.test(nextId) && !/@/.test(nextId)) return true;
+  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트)/.test(nextId)) return true;
   if (readKnownNonUserRuntimeTokens().has(lower)) return true;
   return false;
 }
@@ -2569,6 +2564,37 @@ function applyInvestigationEndCorrosion(item) {
   writeRuntimeArray("characters.json", charactersDB);
 }
 
+function saveInvestigationsRuntimeState() {
+  try {
+    writeRuntimeArray("investigations.json", investigationsDB);
+  } catch {}
+}
+
+function syncInvestigationParticipantHpToCharacters(item) {
+  if (!item || !item.participantStates) return false;
+  const participants = Array.isArray(item.participants) ? item.participants : [];
+  let changed = false;
+  participants.filter(isInvestigationPlayableParticipant).forEach((participant) => {
+    const state = item.participantStates?.[participant.name];
+    if (!state) return;
+    const char = charactersDB.find((character) => String(character?.id || "") === String(participant?.id || ""))
+      || charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+    if (!char) return;
+    const maxHp = getCharacterMaxHp(char?.stats?.hp);
+    if (Number(state.hp || 0) <= 0) return;
+    const nextHp = Math.max(0, Math.min(maxHp, Number(state.hp || 0)));
+    if (Number(char.currentHp ?? maxHp) !== nextHp) {
+      char.currentHp = nextHp;
+      changed = true;
+    }
+  });
+  if (changed) {
+    markCharactersDirty();
+    writeRuntimeArray("characters.json", charactersDB);
+  }
+  return changed;
+}
+
 function finishInvestigation(item, reason, summary) {
   item.ended = true;
   item.endedAt = new Date().toISOString();
@@ -2582,7 +2608,9 @@ function finishInvestigation(item, reason, summary) {
   item.sharedLogs.push(createLogEntry(summary));
   setEventBanner(item, reason === "전멸" ? "조사가 종료되었습니다" : "조사가 종료되었습니다", reason === "전멸" ? "danger" : "success", 3600);
   applyFaintedEndRecovery(item);
+  syncInvestigationParticipantHpToCharacters(item);
   applyInvestigationEndCorrosion(item);
+  saveInvestigationsRuntimeState();
 }
 
 function getNodeActionResult(item, actionName) {
@@ -2671,13 +2699,21 @@ function addSharedLog(item, text) {
 }
 
 function applyRewardToCharacter(char, reward) {
-  if (!char || !reward) return;
+  if (!char || !reward) return false;
+  let changed = false;
   if (reward.type === "item" && reward.value) {
     char.items = Array.isArray(char.items) ? [...char.items, reward.value] : [reward.value];
+    changed = true;
   }
   if ((reward.type === "statPoints" || reward.type === "stat" || reward.type === "stat_points") && reward.value !== undefined) {
     char.statPoints = Number(char.statPoints || 0) + Number(reward.value || 0);
+    changed = true;
   }
+  if (changed) {
+    char.updatedAt = Date.now();
+    char.assetVersion = char.updatedAt;
+  }
+  return changed;
 }
 
 function queueRewardAssignment(item, reward) {
@@ -2690,10 +2726,14 @@ function queueRewardAssignment(item, reward) {
     const receiver = (item.participants || [])[0];
     const char = receiver ? (charactersDB.find((c) => String(c.id) === String(receiver.id)) || charactersDB.find((c) => c.name === receiver.name)) : null;
     if (char) {
-      applyRewardToCharacter(char, reward);
+      if (applyRewardToCharacter(char, reward)) {
+        markCharactersDirty();
+        writeRuntimeArray("characters.json", charactersDB);
+      }
       addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았습니다.`);
       item.pendingReward = null;
       item.pendingRewardQueue = [];
+      saveInvestigationsRuntimeState();
       emitParticipantsUpdated();
       emitInvestigationState(item.id);
       return;
@@ -3047,6 +3087,7 @@ function resolveFlee(item) {
     item.routeHistory.push({ nodeId: backNodeId, name: backNode?.name || "이전 구역", time: new Date().toISOString() });
     item.pendingBattleActions = {};
     item.lastBattleRound = [{ text: "파티가 도주에 성공했습니다." }];
+    saveInvestigationsRuntimeState();
     emitInvestigationState(item.id);
     return { success: true };
   }
@@ -3061,6 +3102,8 @@ function resolveFlee(item) {
   item.lastBattleRound = [{ text: "도주에 실패했습니다. 적의 추격을 받았습니다." }];
   if (allParticipantsDown(item)) {
     finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
+  } else {
+    saveInvestigationsRuntimeState();
   }
   emitInvestigationState(item.id);
   return { success: true };
@@ -3342,6 +3385,7 @@ function applyBattleTurn(item, actions) {
   item.battleTurn += 1;
   if (allParticipantsDown(item)) finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
   refreshInvestigationCompletionState(item);
+  saveInvestigationsRuntimeState();
   emitInvestigationState(item.id);
   return { success: true };
 }
@@ -3828,7 +3872,12 @@ app.get("/investigationLobby/:id", (req, res) => {
   res.json(buildInvestigationLobbyState(item));
 });
 
-app.get("/investigationChats/:id", (req, res) => res.json(roomChats[req.params.id] || []));
+app.get("/investigationChats/:id", (req, res) => {
+  const id = req.params.id;
+  const item = investigationsDB.find((v) => String(v.id) === String(id));
+  if (!roomChats[id] && Array.isArray(item?.roomChats)) roomChats[id] = item.roomChats.slice(-160);
+  res.json(roomChats[id] || []);
+});
 app.post("/investigationChat", (req, res) => {
   const { investigationId, message } = req.body;
   if (!investigationId || !message) return res.json({ success: false, message: "채팅 정보가 부족합니다." });
@@ -3847,6 +3896,11 @@ app.post("/investigationChat", (req, res) => {
   roomChats[investigationId].push(safeMessage);
   if (roomChats[investigationId].length > 160) {
     roomChats[investigationId] = roomChats[investigationId].slice(-160);
+  }
+  const chatItem = investigationsDB.find((v) => String(v.id) === String(investigationId));
+  if (chatItem) {
+    chatItem.roomChats = roomChats[investigationId];
+    saveInvestigationsRuntimeState();
   }
   io.to(investigationId).emit("chat", safeMessage);
   res.json({ success: true });
@@ -4239,13 +4293,18 @@ app.post("/assignInvestigationReward", (req, res) => {
   if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
 
   const reward = item.pendingReward;
-  applyRewardToCharacter(char, reward)
+  if (applyRewardToCharacter(char, reward)) {
+    markCharactersDirty();
+    writeRuntimeArray("characters.json", charactersDB);
+  }
 
   addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았습니다.`);
-  item.pendingReward = null;
-  item.pendingRewardQueue = [];
+  const queue = Array.isArray(item.pendingRewardQueue) ? item.pendingRewardQueue : [];
+  item.pendingReward = queue.length > 0 ? queue.shift() : null;
+  item.pendingRewardQueue = queue;
+  saveInvestigationsRuntimeState();
   emitInvestigationState(investigationId);
-  res.json({ success: true, character: char });
+  res.json({ success: true, character: char, pendingReward: item.pendingReward });
 });
 
 function applyNpcOptionOutcome(item, option) {
@@ -4355,6 +4414,7 @@ app.post("/confirmInvestigationExit", (req, res) => {
     item.endConfirmations.push(characterName);
   }
 
+  saveInvestigationsRuntimeState();
   emitInvestigationState(investigationId);
   return res.json({ success: true, endConfirmations: item.endConfirmations });
 });
@@ -4385,6 +4445,8 @@ io.on("connection", (socket) => {
       socketUsers[socket.id].roomId = roomId;
       socketUsers[socket.id].role = "viewer";
     }
+    const chatItem = investigationsDB.find((v) => String(v.id) === String(roomId));
+    if (!roomChats[roomId] && Array.isArray(chatItem?.roomChats)) roomChats[roomId] = chatItem.roomChats.slice(-160);
     if (!roomChats[roomId]) roomChats[roomId] = [];
     socket.emit("init", roomChats[roomId]);
     emitInvestigationState(roomId);
@@ -4406,6 +4468,11 @@ io.on("connection", (socket) => {
     roomChats[roomId].push(message);
     if (roomChats[roomId].length > 160) {
       roomChats[roomId] = roomChats[roomId].slice(-160);
+    }
+    const chatItem = investigationsDB.find((v) => String(v.id) === String(roomId));
+    if (chatItem) {
+      chatItem.roomChats = roomChats[roomId];
+      saveInvestigationsRuntimeState();
     }
     io.to(roomId).emit("chat", message);
   });
@@ -5496,6 +5563,7 @@ function collectKnownSiteItemNames() {
 
 function syncShopItemsWithKnownItems() {
   const knownNames = collectKnownSiteItemNames();
+  let changed = false;
   knownNames.forEach((name) => {
     const exists = shopItemsDB.some((item) => String(item?.name || "") === name || String(item?.id || "") === name);
     if (!exists) {
@@ -5508,9 +5576,10 @@ function syncShopItemsWithKnownItems() {
         useType: "none",
         hidden: true,
       }));
+      changed = true;
     }
   });
-  writeJsonFileSafe(shopItemsPath, shopItemsDB.map(normalizeShopItem));
+  if (changed) writeJsonFileSafe(shopItemsPath, shopItemsDB.map(normalizeShopItem));
 }
 
 app.get("/shopItems", (req, res) => {
@@ -5667,12 +5736,16 @@ app.post("/shop/use", (req, res) => {
   if (index < 0) index = char.items.findIndex((value) => inventoryItemMatches(value, key));
   if (index < 0) return res.json({ success: false, message: "보유 아이템에 없습니다." });
 
-  const [removed] = char.items.splice(index, 1);
-  const removedKey = getInventoryItemKey(removed);
-  const item = findShopItemByLooseId(removedKey) || findShopItemByLooseId(key) || normalizeShopItem({ name: removedKey || key });
+  const ownedKey = getInventoryItemKey(char.items[index]);
+  const item = findShopItemByLooseId(ownedKey) || findShopItemByLooseId(key) || normalizeShopItem({ name: ownedKey || key });
   const normalized = normalizeShopItem(item);
   const useType = String(normalized.useType || "none").toLowerCase();
   const useValue = Number(normalized.useValue || 0);
+  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "coin", "coins", "stat", "statboost", "skill"]);
+  if (!usableTypes.has(useType)) {
+    return res.json({ success: false, message: "사용 효과가 설정되지 않은 아이템입니다." });
+  }
+  const [removed] = char.items.splice(index, 1);
 
   if (useType === "heal" || useType === "hp") {
     const maxHp = getCharacterMaxHp(char?.stats?.hp);
@@ -5688,8 +5761,8 @@ app.post("/shop/use", (req, res) => {
     char.coins = Math.max(0, Number(char.coins || 0) + useValue);
   }
 
-  if (useType === "stat") {
-    const statTarget = String(normalized.statTarget || "").trim();
+  if (useType === "stat" || useType === "statboost") {
+    const statTarget = String(normalized.statTarget || normalized.stat || normalized.target || "").trim();
     if (statTarget) {
       char.stats = normalizeCharacterStats(char.stats || {});
       char.stats[statTarget] = Number(char.stats?.[statTarget] || 0) + useValue;
@@ -5764,8 +5837,11 @@ app.post("/mails/:id/receive", (req, res) => {
   if (!char) return res.json({ success: false, message: "캐릭터를 찾지 못했습니다." });
   char.coins = Number(char.coins || 0) + Number(target.coins || 0);
   char.items = [...(Array.isArray(char.items) ? char.items : []), ...(Array.isArray(target.items) ? target.items : [])];
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
   target.received = true;
   target.read = true;
+  writeRuntimeArray("characters.json", charactersDB);
   writeJsonFileSafe(mailsPath, mailsDB);
   res.json({ success: true, character: char });
 });
@@ -5798,7 +5874,9 @@ app.post("/endInvestigationOnly", (req, res) => {
   item.sharedLog = item.resultSummary;
   item.sharedLogs.push(createLogEntry(item.resultSummary));
   applyFaintedEndRecovery(item);
+  syncInvestigationParticipantHpToCharacters(item);
   applyInvestigationEndCorrosion(item);
+  saveInvestigationsRuntimeState();
   emitParticipantsUpdated();
   emitInvestigationState(id);
   res.json({ success: true, item });
@@ -5835,4 +5913,3 @@ if (!IS_ASSET_COMPACT_CHILD) {
     setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);
   }
 }
-
