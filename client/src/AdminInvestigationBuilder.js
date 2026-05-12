@@ -659,7 +659,23 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                 return <line key={`${node.id}-${choice.target}-${idx}`} x1={Number(node.mapX || 430)} y1={Number(node.mapY || 260)} x2={Number(target.mapX || 430)} y2={Number(target.mapY || 260)} stroke="rgba(30,167,255,0.45)" strokeWidth="3" />;
               }))}
             </svg>
-            {builder.nodes.map((node) => <button key={node.id} type="button" onClick={() => setSelectedNodeId(node.id)} onMouseDown={(event) => onNodeMouseDown(event, node)} style={{ position: "absolute", left: Number(node.mapX || 430) - 55, top: Number(node.mapY || 260) - 28, width: 110, minHeight: 56, borderRadius: 18, border: node.id === selectedNodeId ? "2px solid #1ea7ff" : "1px solid rgba(98,176,220,0.18)", background: node.id === builder.start ? "linear-gradient(135deg,#7fdbff,#1ea7ff)" : "white", color: node.id === builder.start ? "white" : "#13324b", boxShadow: "0 10px 24px rgba(73,132,170,0.14)", cursor: draggingNodeId === node.id ? "grabbing" : "grab", userSelect: "none" }}><div style={{ fontWeight: 900 }}>{node.name || node.id}</div><div style={{ fontSize: 12 }}>{node.id}</div>{node.id === builder.start ? <div style={{ marginTop: 4, fontSize: 10, fontWeight: 800 }}>START</div> : null}</button>)}
+            {builder.nodes.map((node) => (
+              <button
+                key={node.id}
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSelectedNodeId(node.id);
+                }}
+                onMouseDown={(event) => onNodeMouseDown(event, node)}
+                style={{ position: "absolute", left: Number(node.mapX || 430) - 55, top: Number(node.mapY || 260) - 28, width: 110, minHeight: 56, borderRadius: 18, border: node.id === selectedNodeId ? "2px solid #1ea7ff" : "1px solid rgba(98,176,220,0.18)", background: node.id === builder.start ? "linear-gradient(135deg,#7fdbff,#1ea7ff)" : "white", color: node.id === builder.start ? "white" : "#13324b", boxShadow: "0 10px 24px rgba(73,132,170,0.14)", cursor: draggingNodeId === node.id ? "grabbing" : node.id === selectedNodeId ? "grab" : "pointer", userSelect: "none" }}
+              >
+                <div style={{ fontWeight: 900 }}>{node.name || node.id}</div>
+                <div style={{ fontSize: 12 }}>{node.id}</div>
+                {node.id === builder.start ? <div style={{ marginTop: 4, fontSize: 10, fontWeight: 800 }}>START</div> : null}
+              </button>
+            ))}
           </div>
         </section>
 

@@ -575,36 +575,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
         ) : (
           <BrokenSdFallback name={character?.name} />
         )}
-        {showSpriteImage ? (
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 2,
-            pointerEvents: "none",
-            opacity: tintReveal > 0 ? 1 : 0,
-            transition: "opacity 0.28s ease",
-          }}
-        >
-          <img
-            src={spriteImage}
-            alt=""
-            loading="eager"
-            decoding="async"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              position: "absolute",
-              inset: 0,
-              opacity: Math.min(0.95, 0.12 + tintStrength * 1.05),
-              filter: `sepia(1) saturate(${(2.2 + tintStrength * 3.2).toFixed(2)}) hue-rotate(-40deg) brightness(${(0.8 + tintStrength * 0.08).toFixed(2)}) contrast(1.1)`,
-              mixBlendMode: "multiply",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.24) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.72) ${Math.min(100, tintMid + 16)}%, rgba(0,0,0,1) 100%)`,
-            }}
-          />
+        {showSpriteImage && tintReveal > 0 ? (
           <img
             src={spriteImage}
             alt=""
@@ -618,14 +589,16 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
               objectFit: "contain",
               position: "absolute",
               inset: 0,
-              opacity: Math.min(0.92, 0.16 + tintStrength * 0.82),
-              filter: `sepia(1) saturate(${(2.35 + tintStrength * 2.8).toFixed(2)}) hue-rotate(-36deg) brightness(${(0.86 + tintStrength * 0.06).toFixed(2)}) contrast(1.08)`,
+              zIndex: 2,
+              pointerEvents: "none",
+              opacity: Math.min(0.72, 0.1 + tintStrength * 0.72),
+              filter: `sepia(1) saturate(${(2.0 + tintStrength * 2.4).toFixed(2)}) hue-rotate(-42deg) brightness(0.55) contrast(1.18)`,
               mixBlendMode: "multiply",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 10)}%, rgba(0,0,0,0.16) ${Math.max(0, tintMid - 4)}%, rgba(0,0,0,0.68) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              transition: "opacity 0.28s ease",
+              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.22) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.74) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
+              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${Math.max(0, tintStart - 8)}%, rgba(0,0,0,0.22) ${Math.max(0, tintMid - 2)}%, rgba(0,0,0,0.74) ${Math.min(100, tintMid + 14)}%, rgba(0,0,0,1) 100%)`,
             }}
           />
-        </div>
         ) : null}
       </div>
     </div>

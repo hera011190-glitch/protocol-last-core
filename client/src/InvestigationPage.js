@@ -101,7 +101,7 @@ const PRESET_BATTLE_SKILLS = {
   "격려": { key: "격려", name: "격려", target: "allyAll", desc: "아군 전체 회복" },
 };
 function normalizeBattleSkillOption(skill) { const raw = typeof skill === "string" ? { key: skill, name: skill } : (skill || {}); const key = String(raw.key || raw.skillKey || raw.name || "").trim(); const preset = PRESET_BATTLE_SKILLS[key] || PRESET_BATTLE_SKILLS[String(raw.name || "").trim()] || null; return preset ? { ...raw, ...preset, key: preset.key, name: preset.name } : { ...raw, key, name: raw.name || key, target: raw.target || "enemy", desc: raw.desc || "" }; }
-function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => ({ ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, index })).filter((enemy) => Number(enemy?.hp ?? enemy?.maxHp ?? 1) > 0); }
+function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => { const maxHp = Number(enemy?.maxHp ?? enemy?.hp ?? 1); const hp = Number(enemy?.hp ?? maxHp); return { ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, hp: hp > 0 ? hp : (!enemy?.__engaged ? maxHp : hp), maxHp, index }; }).filter((enemy) => Number(enemy?.__engaged ? enemy?.hp : enemy?.maxHp) > 0); }
 const BATTLE_TURN_LIMIT_MS = 5 * 60 * 1000;
 const CHAT_PANEL_WIDTH = 320;
 const RIGHT_PANEL_WIDTH = 278;
@@ -207,6 +207,12 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const queuedStateUpdateRef = useRef(null);
   const endedResultOpenedRef = useRef(false);
   const keepEndResultOpenRef = useRef(false);
+  const battlePlaybackLockedRef = useRef(false);
+  const currentNodeIdRef = useRef(currentNodeId);
+  const investigationRef = useRef(investigation);
+  battlePlaybackLockedRef.current = battlePlaybackLocked;
+  currentNodeIdRef.current = currentNodeId;
+  investigationRef.current = investigation;
   const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
   const playbackFallbackBattle = (battlePlaybackLocked || stagedBattleLogs.length > 0) && playbackSourceRef.current?.battle
     ? JSON.parse(JSON.stringify(playbackSourceRef.current.battle))
@@ -225,7 +231,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const getBattleRoundKey = (source) => {
     const rounds = Array.isArray(source?.lastBattleRound) ? source.lastBattleRound : [];
     if (!rounds.length) return "";
-    return `${Number(source?.battleTurn || 0)}:${rounds.map((entry) => `${entry?.phase || ""}:${entry?.actor || ""}:${entry?.target || ""}:${entry?.effect || ""}:${entry?.text || ""}`).join("|")}`;
+    return `${Number(source?.battleTurn || 0)}:${rounds.map((entry) => `${entry?.phase || ""}:${entry?.actorId || entry?.actor || ""}:${entry?.targetId || entry?.target || ""}:${Array.isArray(entry?.targetIds) ? entry.targetIds.join(",") : ""}:${entry?.effect || ""}:${entry?.text || ""}`).join("|")}`;
   };
 
   const getBattleFromRoundSnapshot = (rounds = []) => {
@@ -258,7 +264,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     if (data?.ended && hasRoundPlayback && !keepEndResultOpenRef.current) setShowResult(false);
     handledBattleRoundKeyRef.current = incomingRoundKey;
     const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
-    if (Number(data?.battleTurn || 0) <= 1 || !data?.currentNodeId || (data?.ended && !hasRoundPlayback)) {
+    if (!data?.currentNodeId || (data?.ended && !hasRoundPlayback) || (!data?.data?.nodes?.[nodeId]?.battle && !hasRoundPlayback)) {
       playbackSourceRef.current = null;
       setPlaybackState(null);
       battlePlaybackLockStartedRef.current = 0;
@@ -270,13 +276,14 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       setBattleActionSubmitting(false);
     }
     if (hasRoundPlayback && !skipRoundPlayback) {
-      const prevNodeId = investigation?.currentNodeId || currentNodeId || investigation?.data?.start || nodeId;
-      const prevNode = investigation?.data?.nodes?.[prevNodeId] || null;
+      const prevInvestigation = investigationRef.current || investigation || null;
+      const prevNodeId = prevInvestigation?.currentNodeId || currentNodeIdRef.current || prevInvestigation?.data?.start || nodeId;
+      const prevNode = prevInvestigation?.data?.nodes?.[prevNodeId] || null;
       const nextNode = data?.data?.nodes?.[nodeId] || null;
       const fallbackBattle = getBattleFromRoundSnapshot(data?.lastBattleRound || []);
       const playbackBattle = fallbackBattle || prevNode?.battle || nextNode?.battle || null;
       const playbackSource = {
-        participantStates: JSON.parse(JSON.stringify(investigation?.participantStates || data?.participantStates || {})),
+        participantStates: JSON.parse(JSON.stringify(prevInvestigation?.participantStates || data?.participantStates || {})),
         battle: playbackBattle ? JSON.parse(JSON.stringify(playbackBattle)) : null,
       };
       playbackSourceRef.current = playbackSource;
@@ -446,7 +453,7 @@ useEffect(() => {
     const incomingBattleRoundKey = hasRoundPlayback ? getBattleRoundKey(payload) : "";
     const alreadyHandledRound = !!incomingBattleRoundKey && incomingBattleRoundKey === handledBattleRoundKeyRef.current;
 
-    if (battlePlaybackLocked) {
+    if (battlePlaybackLockedRef.current) {
       queuedStateUpdateRef.current = payload;
       return;
     }
@@ -2350,8 +2357,21 @@ function getPersistentBattleEffectFromBuffs(state = {}) {
 
 const currentMonsterPlaceholder = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='360' height='360' viewBox='0 0 360 360'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='1'><stop stop-color='%23dbeafe'/><stop offset='1' stop-color='%2393c5fd'/></linearGradient></defs><rect rx='40' width='360' height='360' fill='url(%23g)'/><circle cx='180' cy='122' r='68' fill='%23eff6ff'/><path d='M92 258c18-56 54-84 88-84s70 28 88 84' fill='%23bfdbfe'/><circle cx='154' cy='118' r='10' fill='%231e3a8a'/><circle cx='206' cy='118' r='10' fill='%231e3a8a'/><path d='M145 154c21 18 49 18 70 0' stroke='%231e3a8a' stroke-width='10' fill='none' stroke-linecap='round'/><path d='M118 70l30 18M242 70l-30 18' stroke='%2360a5fa' stroke-width='14' stroke-linecap='round'/></svg>";
 
+function getBattleEntityKeys(name, state = {}) {
+  return Array.from(new Set([
+    name,
+    state?.id,
+    state?.name,
+    state?.enemyId,
+    state?.characterId,
+    state?.ownerId,
+    state?.index,
+  ].map((value) => String(value ?? "").trim()).filter(Boolean)));
+}
+
 function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
-  const safeName = String(name || "");
+  const entityKeys = getBattleEntityKeys(name, state);
+  if (!entityKeys.length) return { effect: "", entry: null, persistent: false };
   const recent = Array.isArray(rounds)
     ? rounds.filter((entry) => {
         const age = nowTick - Number(entry?.appearedAt || 0);
@@ -2359,12 +2379,16 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
       })
     : [];
 
+  const matchesActor = (entry) => {
+    const actorKeys = [entry?.actorId, entry?.actor, entry?.actorIndex].map((value) => String(value ?? "").trim()).filter(Boolean);
+    return actorKeys.some((key) => entityKeys.includes(key));
+  };
+
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
-    const actor = String(entry?.actor || "");
     const effect = String(entry?.effect || "");
     const text = String(entry?.text || "");
-    const isActor = actor === safeName;
+    const isActor = matchesActor(entry);
 
     if (!isActor) continue;
     if (effect === "damage") return { effect: "attack", entry };
@@ -2381,11 +2405,10 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
 
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const entry = recent[index];
-    const actor = String(entry?.actor || "");
     const effect = String(entry?.effect || "");
     const text = String(entry?.text || "");
-    const isActor = actor === safeName;
-    const isTarget = battleEntryMatchesTarget(entry, safeName);
+    const isActor = matchesActor(entry);
+    const isTarget = battleEntryMatchesAnyTarget(entry, entityKeys);
 
     if (effect === "buff" && (isActor || isTarget)) return { effect: "buff", entry };
     if (effect === "shield" && (isActor || isTarget)) return { effect: "shield", entry };
@@ -2439,21 +2462,30 @@ function getBattleEffectLabelColor(effect = "") {
 
 function getBattleEntryTargetNames(entry = {}) {
   const names = [];
-  if (Array.isArray(entry?.targets)) {
-    entry.targets.forEach((target) => {
+  [entry?.targets, entry?.targetIds].forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((target) => {
       const value = String(target || "").trim();
-      if (value) names.push(value);
+      if (value && value !== "전체") names.push(value);
     });
-  }
-  const target = String(entry?.target || "").trim();
-  if (target && target !== "전체") names.push(target);
+  });
+  [entry?.targetId, entry?.target, entry?.targetIndex].forEach((target) => {
+    const value = String(target || "").trim();
+    if (value && value !== "전체") names.push(value);
+  });
   return Array.from(new Set(names));
+}
+
+function battleEntryMatchesAnyTarget(entry = {}, keys = []) {
+  const safeKeys = new Set((Array.isArray(keys) ? keys : [keys]).map((value) => String(value || "").trim()).filter(Boolean));
+  if (!safeKeys.size) return false;
+  return getBattleEntryTargetNames(entry).some((target) => safeKeys.has(target));
 }
 
 function battleEntryMatchesTarget(entry = {}, name = "") {
   const safeName = String(name || "").trim();
   if (!safeName) return false;
-  return getBattleEntryTargetNames(entry).some((target) => target === safeName);
+  return battleEntryMatchesAnyTarget(entry, [safeName]);
 }
 
 function cloneBattlePlaybackValue(value) {
@@ -2665,7 +2697,7 @@ function getBattleFloatingNumbers(entry = {}) {
     if (!delta) return;
     results.push({
       side: "enemy",
-      name: enemy.name,
+      name: getEnemyIdentity(enemy, index),
       value: delta,
       label: delta > 0 ? `+${Math.abs(delta)}` : `-${Math.abs(delta)}`,
       tone: delta > 0 ? "heal" : "damage",
@@ -3047,8 +3079,8 @@ function BattleMotionOverlay({ entry, participants = [], enemies = [], nowTick =
   const enemyEntities = (enemies || []).map((enemy, index) => ({ entity: enemy, keys: makeEnemyKeys(enemy, index), label: String(enemy?.name || enemy?.id || index) }));
   const participantKeySet = new Set(participantEntities.flatMap((item) => item.keys));
   const enemyKeySet = new Set(enemyEntities.flatMap((item) => item.keys));
-  const actor = String(entry?.actor || "");
-  const target = String(entry?.target || "");
+  const actor = String(entry?.actorId || entry?.actor || "");
+  const target = String(entry?.targetId || entry?.target || "");
   const targets = getBattleEntryTargetNames(entry);
   const effect = String(entry?.effect || "");
   const concept = getBattleMotionConcept(entry, effect);
@@ -3200,7 +3232,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, cu
 
   return (
     <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
-      {sceneBackgroundImage ? <LazyImage src={sceneBackgroundImage} alt="조사 배경" eager fit="cover" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} /> : null}
+      {sceneBackgroundImage ? <LazyImage src={sceneBackgroundImage} alt="조사 배경" eager fit="cover" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : null}
       <div style={{ position: "absolute", inset: 0, background: battleActive ? "rgba(48,10,18,0.42)" : currentNode?.image ? "rgba(2,6,23,0.26)" : "linear-gradient(rgba(2,6,23,0.18), rgba(2,6,23,0.42))" }} />
       {!activeNpcScene && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
       {leader && !battleActive ? (
@@ -3222,8 +3254,8 @@ function getBattleEnemyList(battle) {
   return raw.map((enemy, index) => ({
     id: enemy?.id || `enemy-${index + 1}`,
     name: enemy?.name || (raw.length > 1 ? `E-Beast ${index + 1}` : battle.name || "E-Beast"),
-    hp: Number(enemy?.hp ?? 0),
-    maxHp: Number(enemy?.maxHp ?? enemy?.hp ?? 1),
+    hp: Number((enemy?.hp === undefined || enemy?.hp === null || (Number(enemy?.hp) <= 0 && !enemy?.__engaged)) ? (enemy?.maxHp ?? battle?.maxHp ?? battle?.hp ?? 0) : enemy?.hp),
+    maxHp: Number(enemy?.maxHp ?? battle?.maxHp ?? enemy?.hp ?? 1),
     atk: Number(enemy?.atk ?? battle.atk ?? 0),
     def: Number(enemy?.def ?? battle.def ?? 0),
     agi: Number(enemy?.agi ?? battle.agi ?? 0),
@@ -3232,6 +3264,7 @@ function getBattleEnemyList(battle) {
     image: enemy?.image || battle.image || "",
     buffs: Array.isArray(enemy?.buffs) ? enemy.buffs : [],
     status: enemy?.status || "",
+    index,
   }));
 }
 
@@ -3251,8 +3284,9 @@ function BattleHero({ node, investigation, rounds = [], compact = false, nowTick
           const hp = Number(enemy.hp || 0);
           const maxHp = Number(enemy.maxHp || enemy.hp || 1);
           const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
-          const effect = getRecentBattleEffect(enemy.name, rounds, enemy, nowTick);
-          const visual = getBattleVisualState({ name: enemy.name, rounds, state: enemy, nowTick, side: "enemy" });
+          const enemyIdentity = enemy.id || enemy.name;
+          const effect = getRecentBattleEffect(enemyIdentity, rounds, enemy, nowTick);
+          const visual = getBattleVisualState({ name: enemyIdentity, rounds, state: enemy, nowTick, side: "enemy" });
           const activeEffectBadges = getVisibleBattleEffectBadges(enemy);
           const imageSrc = enemy.image || investigation?.data?.backgroundImage || investigation?.mapBackgroundImage || currentMonsterPlaceholder;
           return (
