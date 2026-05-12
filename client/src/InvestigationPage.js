@@ -101,7 +101,7 @@ const PRESET_BATTLE_SKILLS = {
   "격려": { key: "격려", name: "격려", target: "allyAll", desc: "아군 전체 회복" },
 };
 function normalizeBattleSkillOption(skill) { const raw = typeof skill === "string" ? { key: skill, name: skill } : (skill || {}); const key = String(raw.key || raw.skillKey || raw.name || "").trim(); const preset = PRESET_BATTLE_SKILLS[key] || PRESET_BATTLE_SKILLS[String(raw.name || "").trim()] || null; return preset ? { ...raw, ...preset, key: preset.key, name: preset.name } : { ...raw, key, name: raw.name || key, target: raw.target || "enemy", desc: raw.desc || "" }; }
-function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => { const maxHp = Number(enemy?.maxHp ?? enemy?.hp ?? 1); const hp = Number(enemy?.hp ?? maxHp); return { ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, hp: hp > 0 ? hp : (!enemy?.__engaged ? maxHp : hp), maxHp, index }; }).filter((enemy) => Number(enemy?.__engaged ? enemy?.hp : enemy?.maxHp) > 0); }
+function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => { const maxHp = Number(enemy?.maxHp ?? enemy?.hp ?? 1); const hp = Number(enemy?.hp ?? maxHp); return { ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, hp, maxHp, index }; }).filter((enemy) => Number(enemy?.maxHp || enemy?.hp || 0) > 0); }
 const BATTLE_TURN_LIMIT_MS = 5 * 60 * 1000;
 const CHAT_PANEL_WIDTH = 320;
 const RIGHT_PANEL_WIDTH = 278;
@@ -219,7 +219,8 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     : null;
   const displayBattle = playbackState?.battle || playbackFallbackBattle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
   const playbackBattleActive = !!(playbackState?.battle || playbackFallbackBattle);
-  const battleActive = playbackBattleActive || (!investigation?.ended && !!currentNode?.battle);
+  const earlyActiveNpcScene = investigation?.activeNpcScene || null;
+  const battleActive = playbackBattleActive || (!investigation?.ended && !earlyActiveNpcScene && !!currentNode?.battle);
   const liveDisplayLogs = useMemo(() => {
     if (!(battlePlaybackLocked && stagedBattleLogs.length > 0)) return logs;
     const visibleStagedLogs = stagedBattleLogs
@@ -261,6 +262,10 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     const incomingRoundKey = hasRoundPlayback ? getBattleRoundKey(data) : "";
     const alreadyHandledSameRound = !!incomingRoundKey && incomingRoundKey === handledBattleRoundKeyRef.current;
     const skipRoundPlayback = !!options?.skipRoundPlayback || alreadyHandledSameRound;
+    if (data?.ended && data?.endedReason === "전멸") {
+      keepEndResultOpenRef.current = true;
+      endedResultOpenedRef.current = false;
+    }
     if (data?.ended && hasRoundPlayback && !keepEndResultOpenRef.current) setShowResult(false);
     handledBattleRoundKeyRef.current = incomingRoundKey;
     const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
@@ -459,6 +464,10 @@ useEffect(() => {
     }
 
     if (hasRoundPlayback && !alreadyHandledRound) {
+      if (payload?.ended && payload?.endedReason === "전멸") {
+        keepEndResultOpenRef.current = true;
+        endedResultOpenedRef.current = false;
+      }
       if (payload?.ended && !keepEndResultOpenRef.current) setShowResult(false);
       postPlaybackRefreshRef.current = true;
       applyInvestigation(payload);
@@ -2375,12 +2384,12 @@ function getRecentBattleEntry(name, rounds, state = {}, nowTick = Date.now()) {
   const recent = Array.isArray(rounds)
     ? rounds.filter((entry) => {
         const age = nowTick - Number(entry?.appearedAt || 0);
-        return age >= 0 && age < 1200;
+        return age >= 0 && age < 1650;
       })
     : [];
 
   const matchesActor = (entry) => {
-    const actorKeys = [entry?.actorId, entry?.actor, entry?.actorIndex].map((value) => String(value ?? "").trim()).filter(Boolean);
+    const actorKeys = getPreciseBattleEntryActorKeys(entry);
     return actorKeys.some((key) => entityKeys.includes(key));
   };
 
@@ -2476,9 +2485,28 @@ function getBattleEntryTargetNames(entry = {}) {
   return Array.from(new Set(names));
 }
 
+function getPreciseBattleEntryTargetKeys(entry = {}) {
+  const keys = [];
+  if (Array.isArray(entry?.targetIds)) entry.targetIds.forEach((value) => { const key = String(value || "").trim(); if (key) keys.push(key); });
+  [entry?.targetId, entry?.targetIndex].forEach((value) => { const key = String(value ?? "").trim(); if (key) keys.push(key); });
+  return Array.from(new Set(keys));
+}
+
+function getPreciseBattleEntryActorKeys(entry = {}) {
+  const keys = [];
+  [entry?.actorId, entry?.actorIndex].forEach((value) => { const key = String(value ?? "").trim(); if (key) keys.push(key); });
+  if (!keys.length) {
+    const actor = String(entry?.actor || "").trim();
+    if (actor) keys.push(actor);
+  }
+  return Array.from(new Set(keys));
+}
+
 function battleEntryMatchesAnyTarget(entry = {}, keys = []) {
-  const safeKeys = new Set((Array.isArray(keys) ? keys : [keys]).map((value) => String(value || "").trim()).filter(Boolean));
+  const safeKeys = new Set((Array.isArray(keys) ? keys : [keys]).map((value) => String(value ?? "").trim()).filter(Boolean));
   if (!safeKeys.size) return false;
+  const preciseKeys = getPreciseBattleEntryTargetKeys(entry);
+  if (preciseKeys.length > 0) return preciseKeys.some((target) => safeKeys.has(target));
   return getBattleEntryTargetNames(entry).some((target) => safeKeys.has(target));
 }
 
@@ -2739,36 +2767,36 @@ function getBattlePlaybackTimings(entry, index = 0) {
   if (isBattlePhaseHeader(entry)) {
     return {
       isPhaseHeader: true,
-      beforeLog: index === 0 ? 80 : 180,
+      beforeLog: index === 0 ? 110 : 260,
       beforeSnapshot: 0,
-      totalAfterLog: 280,
+      totalAfterLog: 420,
     };
   }
   if (effect === "damage") {
-    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 280, totalAfterLog: 560 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: 420, totalAfterLog: 860 };
   }
   if (effect === "attack") {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 240, totalAfterLog: 500 };
+    return { isPhaseHeader: false, beforeLog: 95, beforeSnapshot: 360, totalAfterLog: 760 };
   }
   if (["skill", "debuff", "drain"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 320, totalAfterLog: 640 };
+    return { isPhaseHeader: false, beforeLog: 120, beforeSnapshot: 480, totalAfterLog: 960 };
   }
   if (["guard", "shield", "buff"].includes(effect)) {
-    return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 220, totalAfterLog: 440 };
+    return { isPhaseHeader: false, beforeLog: 95, beforeSnapshot: 330, totalAfterLog: 690 };
   }
   if (effect === "heal") {
-    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: 260, totalAfterLog: 520 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: 390, totalAfterLog: 820 };
   }
   if (effect === "item") {
-    return { isPhaseHeader: false, beforeLog: 70, beforeSnapshot: /회복/.test(text) ? 260 : 280, totalAfterLog: /회복/.test(text) ? 520 : 560 };
+    return { isPhaseHeader: false, beforeLog: 110, beforeSnapshot: /회복/.test(text) ? 390 : 420, totalAfterLog: /회복/.test(text) ? 820 : 860 };
   }
   if (effect === "evade") {
-    return { isPhaseHeader: false, beforeLog: 55, beforeSnapshot: 180, totalAfterLog: 380 };
+    return { isPhaseHeader: false, beforeLog: 90, beforeSnapshot: 280, totalAfterLog: 610 };
   }
   if (effect === "defeat") {
-    return { isPhaseHeader: false, beforeLog: 80, beforeSnapshot: 320, totalAfterLog: 600 };
+    return { isPhaseHeader: false, beforeLog: 120, beforeSnapshot: 480, totalAfterLog: 980 };
   }
-  return { isPhaseHeader: false, beforeLog: 60, beforeSnapshot: 240, totalAfterLog: 500 };
+  return { isPhaseHeader: false, beforeLog: 95, beforeSnapshot: 360, totalAfterLog: 760 };
 }
 
 function getActiveBattleMotionEntry(rounds, nowTick = Date.now()) {
@@ -2777,7 +2805,7 @@ function getActiveBattleMotionEntry(rounds, nowTick = Date.now()) {
         if (!entry?.text || isBattlePhaseHeader(entry)) return false;
         const appearedAt = Number(entry?.appearedAt || 0);
         const age = nowTick - appearedAt;
-        return appearedAt > 0 && age >= 0 && age < 960;
+        return appearedAt > 0 && age >= 0 && age < 1420;
       })
     : [];
   return visible.length > 0 ? visible[visible.length - 1] : null;
@@ -2790,7 +2818,7 @@ function getBattleVisualState({ name, rounds, state = {}, nowTick = Date.now(), 
   const concept = getBattleMotionConcept(recent?.entry || { skillName: activeBadges[0]?.label || "" }, effect);
   const isPersistentEffect = !!effect && !recent?.entry;
   const age = recent?.entry ? Math.max(0, nowTick - Number(recent.entry?.appearedAt || nowTick)) : nowTick % 1200;
-  const duration = ({ damage: 760, attack: 620, skill: 900, buff: 860, debuff: 860, drain: 880, shield: 820, heal: 760, item: 720, guard: 560, evade: 520 })[effect] || 620;
+  const duration = ({ damage: 1120, attack: 920, skill: 1280, buff: 1080, debuff: 1080, drain: 1180, shield: 1020, heal: 980, item: 940, guard: 820, evade: 760 })[effect] || 920;
   const progress = recent?.entry ? Math.max(0, Math.min(1, age / duration)) : isPersistentEffect ? 0.48 + Math.sin(nowTick / 680) * 0.08 : 1;
   const pulse = recent?.entry ? Math.sin(progress * Math.PI) : isPersistentEffect ? 0.58 + (Math.sin(nowTick / 360) + 1) * 0.14 : 0;
   const persistentGuard = effect === "guard" && !recent?.entry;
@@ -3254,7 +3282,7 @@ function getBattleEnemyList(battle) {
   return raw.map((enemy, index) => ({
     id: enemy?.id || `enemy-${index + 1}`,
     name: enemy?.name || (raw.length > 1 ? `E-Beast ${index + 1}` : battle.name || "E-Beast"),
-    hp: Number((enemy?.hp === undefined || enemy?.hp === null || (Number(enemy?.hp) <= 0 && !enemy?.__engaged)) ? (enemy?.maxHp ?? battle?.maxHp ?? battle?.hp ?? 0) : enemy?.hp),
+    hp: Number((enemy?.hp === undefined || enemy?.hp === null) ? (enemy?.maxHp ?? battle?.maxHp ?? battle?.hp ?? 0) : enemy?.hp),
     maxHp: Number(enemy?.maxHp ?? battle?.maxHp ?? enemy?.hp ?? 1),
     atk: Number(enemy?.atk ?? battle.atk ?? 0),
     def: Number(enemy?.def ?? battle.def ?? 0),

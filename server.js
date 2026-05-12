@@ -531,32 +531,55 @@ function hasRuntimeUserIndexEvidence(user) {
   return user.indexedByServer === true || user.registeredByServer === true || user.createdByRegister === true;
 }
 
-let knownShopItemBlockTokensCache = { signature: "", tokens: new Set() };
+let knownNonUserRuntimeTokensCache = { signature: "", tokens: new Set() };
 
-function readKnownShopItemBlockTokens() {
+function getRuntimeResourceFileSignature(filename) {
   try {
-    const filePath = resolveDataPath("shopItems.json");
-    let signature = "missing";
-    try {
-      const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
-      signature = stat ? `${stat.size}:${Math.round(stat.mtimeMs)}` : "missing";
-    } catch {}
-    if (knownShopItemBlockTokensCache.signature === signature) return knownShopItemBlockTokensCache.tokens;
+    const filePath = resolveDataPath(filename);
+    const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+    return stat ? `${filename}:${stat.size}:${Math.round(stat.mtimeMs)}` : `${filename}:missing`;
+  } catch {
+    return `${filename}:missing`;
+  }
+}
 
-    const parsed = readJsonFromPath(filePath, []);
+function collectNonUserRuntimeTokensFromValue(value, tokens, depth = 0) {
+  if (depth > 5 || !value) return;
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectNonUserRuntimeTokensFromValue(entry, tokens, depth + 1));
+    return;
+  }
+  if (typeof value !== "object") return;
+  ["id", "name", "title", "key", "nodeId", "target", "slug"].forEach((field) => {
+    const token = normalizeUserIdText(value?.[field]);
+    if (token) tokens.add(token.toLowerCase());
+  });
+  Object.values(value).forEach((entry) => collectNonUserRuntimeTokensFromValue(entry, tokens, depth + 1));
+}
+
+function readKnownNonUserRuntimeTokens() {
+  try {
+    const filenames = [
+      "shopItems.json",
+      "investigations.json",
+      "customInvestigations.json",
+      "designConfig.json",
+      "designMaps.json",
+      "economy.json",
+    ];
+    const signature = filenames.map(getRuntimeResourceFileSignature).join("|");
+    if (knownNonUserRuntimeTokensCache.signature === signature) return knownNonUserRuntimeTokensCache.tokens;
+
     const tokens = new Set();
-    if (Array.isArray(parsed)) {
-      parsed.forEach((item) => {
-        const id = normalizeUserIdText(item?.id);
-        const name = normalizeUserIdText(item?.name);
-        if (id) tokens.add(id.toLowerCase());
-        if (name) tokens.add(name.toLowerCase());
-      });
-    }
-    knownShopItemBlockTokensCache = { signature, tokens };
+    filenames.forEach((filename) => {
+      try {
+        collectNonUserRuntimeTokensFromValue(readJsonFromPath(resolveDataPath(filename), []), tokens);
+      } catch {}
+    });
+    knownNonUserRuntimeTokensCache = { signature, tokens };
     return tokens;
   } catch {
-    return knownShopItemBlockTokensCache.tokens || new Set();
+    return knownNonUserRuntimeTokensCache.tokens || new Set();
   }
 }
 
@@ -566,7 +589,10 @@ function isKnownNonUserRuntimeId(id) {
   const lower = nextId.toLowerCase();
   if (lower === "plc") return true;
   if (/^item-\d{8,}$/.test(lower)) return true;
-  if (readKnownShopItemBlockTokens().has(lower)) return true;
+  if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward)[-_:.]/i.test(nextId)) return true;
+  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle)/i.test(nextId) && !/@/.test(nextId)) return true;
+  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상)/.test(nextId)) return true;
+  if (readKnownNonUserRuntimeTokens().has(lower)) return true;
   return false;
 }
 
@@ -880,7 +906,7 @@ function collectKnownRuntimeJsonPaths(filename, { deep = false } = {}) {
     "login.json",
   ];
   const relatedUserFiles = filename === "users.json"
-    ? (deep ? [...directUserFiles, "database.json", "db.json", "data.json"] : directUserFiles)
+    ? directUserFiles
     : [filename];
 
   const candidates = [];
@@ -2520,6 +2546,23 @@ function getNpcSceneKey(item, nodeId = item?.currentNodeId) {
   if (!node?.npcScene?.lines?.length) return "";
   return String(node.npcScene.name || nodeId || "npc-scene");
 }
+function getBattleEncounterName(battle) {
+  if (!battle) return "E-Beast";
+  const enemies = Array.isArray(battle?.enemies) ? battle.enemies : [];
+  if (enemies.length > 1) return enemies.map((enemy) => enemy?.name || "E-Beast").join(", ");
+  return battle.name || enemies[0]?.name || "E-Beast";
+}
+
+function announceNodeBattleStartIfReady(item, node = item?.data?.nodes?.[item?.currentNodeId]) {
+  if (!item || !node?.battle) return false;
+  if (item.activeNpcScene?.lines?.length) return false;
+  if (node.battle.__battleAnnounced) return false;
+  node.battle.__battleAnnounced = true;
+  addSharedLog(item, `[E-Beast 조우] ${getBattleEncounterName(node.battle)}와 맞닥뜨렸습니다! 전원 전투 태세!`);
+  setEventBanner(item, "전투 시작!", "danger", 2600);
+  return true;
+}
+
 
 function markNpcSceneCompleted(item, nodeId = item?.currentNodeId) {
   ensureRuntimeState(item);
@@ -2712,6 +2755,8 @@ function applyActionRewards(item, result, locationName) {
 function isInvestigationPlayableParticipant(participant) {
   return !!participant
     && !participant.isAdmin
+    && !participant.isSpectator
+    && String(participant.role || "") !== "spectator"
     && String(participant.id || "") !== "admin"
     && String(participant.ownerId || "") !== "admin"
     && participant.name !== "운영자";
@@ -3041,7 +3086,8 @@ function applyBattleTurn(item, actions) {
         if (hitResults.length > 0) {
           roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${hitResults.map((result) => `${result.name} ${result.damage}데미지`).join(", ")}${crit ? " / 치명타" : ""}`, "allies", { actor: actor.name, target: "전체", targets: hitResults.map((result) => result.name), targetIds: hitResults.map((result) => result.id).filter(Boolean), effect: "skill", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) }));
           hitResults.forEach((result) => {
-            const defeated = getBattleEnemies(battle).find((enemyTarget) => String(enemyTarget.name) === String(result.name));
+            const defeated = getBattleEnemies(battle).find((enemyTarget) => String(enemyTarget.id || "") === String(result.id || ""))
+              || getBattleEnemies(battle).find((enemyTarget) => String(enemyTarget.name) === String(result.name));
             if (defeated && Number(defeated.hp || 0) <= 0) {
               roundLogs.push(createBattleLogEntry(`${defeated.name}가 쓰러졌습니다.`, "allies", withBattleEnemyTarget(battle, defeated, { effect: "defeat", snapshot: makeBattleSnapshot(item, battle) })));
             }
@@ -3942,10 +3988,7 @@ app.post("/moveInvestigation", (req, res) => {
     emitInvestigationState(investigationId);
     return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, ended: true });
   }
-  if (nextNode?.battle) {
-    addSharedLog(item, `[E-Beast 조우] ${(Array.isArray(nextNode.battle?.enemies) && nextNode.battle.enemies.length > 1) ? nextNode.battle.enemies.map((enemy) => enemy.name || "E-Beast").join(", ") : (nextNode.battle.name || "E-Beast")}와 맞닥뜨렸습니다! 전원 전투 태세!`);
-    setEventBanner(item, "전투 시작!", "danger", 2600);
-  }
+  announceNodeBattleStartIfReady(item, nextNode);
 
   refreshInvestigationCompletionState(item);
 
@@ -4003,7 +4046,9 @@ app.post("/setBattleAction", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
+  if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
   const node = item.data?.nodes?.[item.currentNodeId];
+  announceNodeBattleStartIfReady(item, node);
   if (!node?.battle) return res.json({ success: false, message: "현재 전투 중이 아닙니다." });
   const state = item.participantStates?.[characterName];
   if (!state) return res.json({ success: false, message: "참가자 상태를 찾을 수 없습니다." });
@@ -4042,6 +4087,8 @@ app.post("/submitBattleTurn", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
+  if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  announceNodeBattleStartIfReady(item);
   const outcome = applyBattleTurn(item, item.pendingBattleActions || {});
   if (!outcome.success) return res.json(outcome);
   return res.json({
@@ -4060,6 +4107,8 @@ app.post("/battleAction", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
+  if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  announceNodeBattleStartIfReady(item);
   if (actionName === "도주" || actionName === "도주 선택" || actionName === "파티 도주") {
     const outcome = resolveFlee(item);
     if (!outcome.success) return res.json(outcome);
@@ -4131,6 +4180,7 @@ app.post("/advanceNpcScene", (req, res) => {
   if (rawOptions.length > 0) {
     if (current?.text) addSharedLog(item, `[NPC] ${npcName}: ${current.text}`);
     applyNpcOptionOutcome(item, rawOptions[0]);
+    announceNodeBattleStartIfReady(item);
     emitInvestigationState(investigationId);
     return res.json({ success: true });
   }
@@ -4142,6 +4192,7 @@ app.post("/advanceNpcScene", (req, res) => {
   } else {
     item.npcLineIndex += 1;
   }
+  announceNodeBattleStartIfReady(item);
   emitInvestigationState(investigationId);
   res.json({ success: true });
 });
@@ -4158,6 +4209,7 @@ app.post("/chooseNpcOption", (req, res) => {
   if (current?.text) addSharedLog(item, `[NPC] ${npcName}: ${current.text}`);
   if (option?.text) addSharedLog(item, `[선택] ${option.text}`);
   applyNpcOptionOutcome(item, option);
+  announceNodeBattleStartIfReady(item);
 
   emitInvestigationState(investigationId);
   res.json({ success: true });
