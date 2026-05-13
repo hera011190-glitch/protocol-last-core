@@ -550,9 +550,13 @@ function collectNonUserRuntimeTokensFromValue(value, tokens, depth = 0) {
     return;
   }
   if (typeof value !== "object") return;
-  ["id", "name", "title", "key", "nodeId", "target", "slug"].forEach((field) => {
+  Object.keys(value).forEach((key) => {
+    const token = normalizeUserIdText(key);
+    if (token && token.length <= 80) tokens.add(token.toLowerCase());
+  });
+  ["id", "name", "title", "key", "nodeId", "target", "slug", "type", "category", "background", "weight", "description", "effect", "image", "color", "price", "sellPrice"].forEach((field) => {
     const token = normalizeUserIdText(value?.[field]);
-    if (token) tokens.add(token.toLowerCase());
+    if (token && token.length <= 80) tokens.add(token.toLowerCase());
   });
   Object.values(value).forEach((entry) => collectNonUserRuntimeTokensFromValue(entry, tokens, depth + 1));
 }
@@ -594,6 +598,13 @@ function isKnownNonUserRuntimeId(id) {
   if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy|login|auth|registered|actionresults|clue|relreq|memo|adminmemo|json)/i.test(nextId) && !/@/.test(nextId)) return true;
   if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트|로그인|회원가입|숫자|공지|세계관|일정표|홈페이지|캐릭터|지도|맵|관리인|메모|단서)/.test(nextId)) return true;
   if (readKnownNonUserRuntimeTokens().has(lower)) return true;
+  const blockedLooseWords = new Set([
+    "background", "bg", "weight", "width", "height", "price", "sellprice", "description", "desc", "effect", "effects",
+    "image", "profileimage", "sdimage", "listimage", "entryimage", "frame", "scale", "color", "title", "text", "value",
+    "opened", "hidden", "scheduleenabled", "openat", "closeat", "createdat", "updatedat"
+  ]);
+  if (blockedLooseWords.has(lower)) return true;
+  if (/(?:background|weight|sellprice|description|profileimage|sdimage|listimage|entryimage|scheduleenabled|actionresults|relreq|adminmemo|npcprofile|corrosion|damage|reward|choice|option)/i.test(nextId) && !/@/.test(nextId)) return true;
   return false;
 }
 
@@ -1358,7 +1369,7 @@ function getSafeUsersForAdmin(searchText = "", options = {}) {
   refreshUsersFromKnownSources({ deep: false });
 
   const knownDiskRows = getAllKnownRuntimeUsersFromDisk({ deep });
-  const safeRows = mergeRuntimeUsers(knownDiskRows, usersDB, getOnlineRuntimeUserRows())
+  const safeRows = mergeRuntimeUsers(knownDiskRows, getOnlineRuntimeUserRows())
     .filter(isDisplayableAdminAccount)
     .map((user) => ({
       id: getRuntimeAccountId(user) || getRuntimeUserId(user),
@@ -1405,7 +1416,6 @@ function getDirectAdminAccountRows(searchText = "", options = {}) {
 
   const rows = mergeRuntimeUsers(
     ...directPaths.map(readRuntimeArrayFromExactPath),
-    usersDB,
     getOnlineRuntimeUserRows()
   )
     .filter(isDisplayableAdminAccount)
@@ -5914,12 +5924,20 @@ app.post("/mails/:id/receive", (req, res) => {
 
 app.post("/deleteInvestigation", (req, res) => {
   const { id } = req.body || {};
-  const index = investigationsDB.findIndex((v) => v.id === id);
-  if (index < 0) return res.json({ success: false, message: "조사를 찾지 못했습니다." });
-  investigationsDB.splice(index, 1);
-  delete roomChats[id];
+  const safeId = String(id || "").trim();
+  if (!safeId) return res.json({ success: false, message: "삭제할 조사를 찾지 못했습니다." });
+  const beforeRuntimeCount = investigationsDB.length;
+  investigationsDB = investigationsDB.filter((v) => String(v?.id || "") !== safeId);
+  const beforeTemplateCount = customInvestigationsDB.length;
+  customInvestigationsDB = customInvestigationsDB.filter((item) => String(item?.id || item?.json?.id || "") !== safeId);
+  if (investigationsDB.length === beforeRuntimeCount && customInvestigationsDB.length === beforeTemplateCount) {
+    return res.json({ success: false, message: "조사를 찾지 못했습니다." });
+  }
+  delete roomChats[safeId];
   saveInvestigationsRuntimeState();
+  writeCustomInvestigationsToFile(customInvestigationsDB);
   emitParticipantsUpdated();
+  emitInvestigationState(safeId);
   res.json({ success: true });
 });
 

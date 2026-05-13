@@ -533,9 +533,11 @@ const FALLBACK_MAPS = [
 const CharacterSprite = memo(function CharacterSprite({ character, quote, moving, onClick }) {
   const spriteCandidates = useMemo(() => getSpriteImageCandidates(character), [character]);
   const [candidateIndex, setCandidateIndex] = useState(0);
+  const [spriteNaturalSize, setSpriteNaturalSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     setCandidateIndex(0);
+    setSpriteNaturalSize({ width: 0, height: 0 });
   }, [spriteCandidates.join("|")]);
 
   const rawSpriteCandidate = candidateIndex < spriteCandidates.length ? spriteCandidates[candidateIndex] : "";
@@ -549,7 +551,12 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   };
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
   const tintReveal = Math.max(0, Math.min(100, corrosion));
-  const tintStart = Math.max(0, 100 - tintReveal);
+  const boxSize = 132;
+  const naturalWidth = Number(spriteNaturalSize.width || 0);
+  const naturalHeight = Number(spriteNaturalSize.height || 0);
+  const spriteScale = naturalWidth > 0 && naturalHeight > 0 ? Math.min(boxSize / naturalWidth, boxSize / naturalHeight, 1) : 1;
+  const renderedSpriteWidth = naturalWidth > 0 ? Math.max(1, Math.round(naturalWidth * spriteScale)) : boxSize;
+  const renderedSpriteHeight = naturalHeight > 0 ? Math.max(1, Math.round(naturalHeight * spriteScale)) : boxSize;
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
@@ -561,7 +568,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 138, fontSize: "16px", fontWeight: 900, color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
       <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translate3d(-50%, 0, 0) ${moving ? `rotate(${character.dx >= 0 ? 0.22 : -0.22}deg)` : "rotate(0deg)"}`, transition: "transform 0.14s linear", willChange: "transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {showSpriteImage ? (
-          <>
+          <div style={{ position: "absolute", left: "50%", top: "50%", width: renderedSpriteWidth, height: renderedSpriteHeight, transform: "translate(-50%, -50%)", overflow: "hidden" }}>
             <img
               src={spriteImage}
               alt=""
@@ -569,39 +576,50 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
               decoding="sync"
               fetchPriority="high"
               onError={handleSpriteError}
-              style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 1 }}
+              onLoad={(event) => {
+                const img = event.currentTarget;
+                setSpriteNaturalSize({ width: img.naturalWidth || boxSize, height: img.naturalHeight || boxSize });
+              }}
+              style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
             />
             {tintReveal > 0 ? (
-              <img
+              <div
                 aria-hidden="true"
-                src={spriteImage}
-                alt=""
-                draggable={false}
                 style={{
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  width: "auto",
-                  height: "auto",
-                  objectFit: "contain",
                   position: "absolute",
-                  left: "50%",
-                  top: "50%",
-                  transform: "translate(-50%, -50%)",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: `${Math.max(1, tintReveal)}%`,
                   zIndex: 2,
                   pointerEvents: "none",
-                  clipPath: `inset(0 0 0 0)`,
-                  WebkitMaskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,1) ${Math.max(2, tintReveal)}%, rgba(0,0,0,0.45) ${Math.min(100, tintReveal + 8)}%, rgba(0,0,0,0) ${Math.min(100, tintReveal + 18)}%)`,
-                  maskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,1) ${Math.max(2, tintReveal)}%, rgba(0,0,0,0.45) ${Math.min(100, tintReveal + 8)}%, rgba(0,0,0,0) ${Math.min(100, tintReveal + 18)}%)`,
+                  overflow: "hidden",
+                  WebkitMaskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.95) ${Math.max(1, Math.min(100, tintReveal - 8))}%, rgba(0,0,0,0.28) ${Math.max(1, Math.min(100, tintReveal))}%, rgba(0,0,0,0) 100%)`,
+                  maskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.95) ${Math.max(1, Math.min(100, tintReveal - 8))}%, rgba(0,0,0,0.28) ${Math.max(1, Math.min(100, tintReveal))}%, rgba(0,0,0,0) 100%)`,
                   WebkitMaskRepeat: "no-repeat",
                   maskRepeat: "no-repeat",
-                  filter: "brightness(0.9) saturate(180%) sepia(72%) hue-rotate(320deg) contrast(112%)",
                   mixBlendMode: "multiply",
-                  opacity: 0.78,
-                  transition: "mask-image 0.28s ease, -webkit-mask-image 0.28s ease, opacity 0.28s ease",
+                  opacity: 0.92,
+                  transition: "height 0.28s ease, mask-image 0.28s ease, -webkit-mask-image 0.28s ease",
                 }}
-              />
+              >
+                <img
+                  src={spriteImage}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    bottom: 0,
+                    width: renderedSpriteWidth,
+                    height: renderedSpriteHeight,
+                    objectFit: "contain",
+                    filter: "sepia(96%) saturate(260%) hue-rotate(316deg) brightness(0.82) contrast(128%)",
+                  }}
+                />
+              </div>
             ) : null}
-          </>
+          </div>
         ) : (
           <BrokenSdFallback name={character?.name} />
         )}

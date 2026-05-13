@@ -59,7 +59,7 @@ function CardImageLayer({ src = "", alt = "", grayscale = false, frame = null, v
     <LazyImage
       src={url}
       alt={alt}
-      eager={false}
+      eager
       fit="cover"
       draggable={false}
       style={getCoverImageStyle(frame || { x: 50, y: 50, scale: 1 }, grayscale)}
@@ -98,6 +98,22 @@ function writeCachedInvestigations(rows) {
   try {
     localStorage.setItem(INVESTIGATION_LIST_CACHE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []));
   } catch {}
+}
+
+function mergeInvestigationRowsWithCachedImages(rows, cachedRows) {
+  const cachedById = new Map((Array.isArray(cachedRows) ? cachedRows : []).map((item) => [String(item?.id || ""), item]));
+  return (Array.isArray(rows) ? rows : []).map((item) => {
+    const cached = cachedById.get(String(item?.id || ""));
+    if (!cached) return item;
+    return {
+      ...item,
+      listImage: item?.listImage || cached?.listImage || "",
+      entryImage: item?.entryImage || cached?.entryImage || item?.listImage || cached?.listImage || "",
+      listImageFrame: item?.listImageFrame || cached?.listImageFrame,
+      entryImageFrame: item?.entryImageFrame || cached?.entryImageFrame || item?.listImageFrame || cached?.listImageFrame,
+      imageUpdatedAt: Number(item?.imageUpdatedAt || cached?.imageUpdatedAt || 0),
+    };
+  });
 }
 
 function getDailyResumeStorageKeys(investigationId, character) {
@@ -260,7 +276,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
       apiJsonCached(`/investigations`, { ttlMs: 2500, storageKey: "plc-cache-investigations-json" })
         .then((data) => {
           if (cancelled) return;
-          const next = Array.isArray(data) ? data : [];
+          const next = mergeInvestigationRowsWithCachedImages(Array.isArray(data) ? data : [], readCachedInvestigations());
           setInvestigations(next);
           writeCachedInvestigations(next);
         })
