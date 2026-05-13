@@ -200,7 +200,7 @@ function InvestigationEntryPreviewCard({ item, type, theme, imageSrc, frame, ver
       </div>
       <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <span style={chip("rgba(255,255,255,0.86)", "#17324a")}>{isDaily ? `남은 ${Math.max(0, 3 - Number(item?.attempts || 0))}회` : `활성 ${Array.isArray(item?.participants) ? item.participants.length : 0}명`}</span>
-        <span style={chip("rgba(255,255,255,0.86)", "#17324a")}>{isDaily ? `침식 +${Number(item?.corrosionGain || 0)}` : timeText(item)}</span>
+        <span style={chip("rgba(255,255,255,0.86)", "#17324a")}>{isDaily ? `침식 진행도 +${Number(item?.corrosionGain || 0)}` : timeText(item)}</span>
       </div>
     </div>
   );
@@ -220,7 +220,7 @@ function InvestigationInnerPreviewCard({ item, theme, imageSrc, frame, version }
       </div>
       <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <span style={chip("rgba(255,255,255,0.82)", item?.effectiveOpened ? "#17324a" : "#475569")}>{item?.type === "daily" ? `남은 ${Math.max(0, 3 - Number(item?.attempts || 0))}회` : `${item?.effectiveOpened ? "활성" : "비활성"}`}</span>
-        <span style={chip("rgba(255,255,255,0.82)", item?.effectiveOpened ? "#17324a" : "#475569")}>{`침식 +${Number(item?.corrosionGain || 0)}`}</span>
+        <span style={chip("rgba(255,255,255,0.82)", item?.effectiveOpened ? "#17324a" : "#475569")}>{`침식 진행도 +${Number(item?.corrosionGain || 0)}`}</span>
       </div>
     </div>
   );
@@ -238,10 +238,10 @@ function formatCorrosionRange(items = []) {
   const values = (Array.isArray(items) ? items : [])
     .map((item) => Number(item?.endCorrosion || 0))
     .filter((value) => value > 0);
-  if (values.length === 0) return "종료 시 침식 +0";
+  if (values.length === 0) return "종료 시 침식 진행도 +0";
   const min = Math.min(...values);
   const max = Math.max(...values);
-  return min === max ? `종료 시 침식 +${min}` : `종료 시 침식 +${min}~+${max}`;
+  return min === max ? `종료 시 침식 진행도 +${min}` : `종료 시 침식 진행도 +${min}~+${max}`;
 }
 
 export default function InvestigationList({ onEnter, onSpectate, onEditInvestigation, activeCharacter, isAdmin = false, design, theme }) {
@@ -363,7 +363,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
       : [
           !!item.started && !item.ended ? "진행 중" : ((item.effectiveOpened ?? item.opened) ? "대기 중" : "비활성화"),
           type === "group" ? `참여 ${item.participantsCount || 0}명` : `남은 횟수 ${dailyLeft}`,
-          type === "group" ? `종료 시 침식 +${Number(item.endCorrosion || 0)}` : `침식 ${Number(item.endCorrosion || 0)}`,
+          type === "group" ? `종료 시 침식 진행도 +${Number(item.endCorrosion || 0)}` : `침식 진행도 ${Number(item.endCorrosion || 0)}`,
         ];
     setImageEditor({
       id: item.id,
@@ -566,7 +566,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                           <div style={chip(started ? "rgba(30,64,175,0.14)" : disabled ? "rgba(100,116,139,0.14)" : "rgba(20,83,45,0.12)", started ? "#1d4ed8" : disabled ? "#475569" : "#166534")}>{started ? "진행 중" : disabled ? "비활성화" : "대기 중"}</div>
                           <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>참여 {item.participantsCount || 0}명</div>
                           <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>{timeText(item)}</div>
-                          <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number(item.endCorrosion || 0)}</div>
+                          <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 진행도 +{Number(item.endCorrosion || 0)}</div>
                         </div>
                       </div>
                       <div style={{ display: "grid", gap: 8, alignContent: "start", justifyItems: "end" }}>
@@ -716,7 +716,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                               <div style={chip("rgba(20,83,45,0.12)", "#166534")}>{imageEditor.type === "group" ? "대기 중" : "즉시 시작"}</div>
                               <div style={chip("rgba(255,255,255,0.78)", theme?.textSoft || "#4f7390")}>{imageEditor.type === "group" ? "참여 0명" : "남은 횟수 1회"}</div>
-                              <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}</div>
+                              <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 진행도 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 진행도 +") || String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}</div>
                             </div>
                           </div>
                           <div style={{ display: "grid", gap: 8, alignContent: "start", justifyItems: "end" }}>
@@ -757,7 +757,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                               <>
                                 <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>남은 횟수 1회</div>
                                 <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>활성 1개</div>
-                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}</div>
+                                <div style={chip("rgba(255,255,255,0.86)", "#17324a")}>종료 시 침식 진행도 +{Number((Array.isArray(imageEditor.badges) ? imageEditor.badges.find((badge) => String(badge).includes("침식 진행도 +") || String(badge).includes("침식 +"))?.replace(/[^0-9.-]/g, "") : 0) || 0)}</div>
                               </>
                             )}
                           </div>

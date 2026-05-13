@@ -942,7 +942,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                   <div style={{ marginTop: "12px", fontSize: "22px", fontWeight: 900 }}>Lv. {currentUser.level || 1}</div>
                   <Meter label="HP" value={`${currentHp} / ${previewMaxHp}`} percent={(currentHp / Math.max(previewMaxHp, 1)) * 100} fill="linear-gradient(90deg, #4ade80, #16a34a)" track="rgba(220,252,231,0.92)" />
                   <Meter label="경험치" value={`${exp} / ${expLimit}`} percent={(exp / expLimit) * 100} fill="linear-gradient(90deg, #fbbf24, #f59e0b)" track="rgba(254,249,195,0.94)" />
-                  <Meter label="침식률" value={`${corrosion}%`} percent={corrosion} fill="linear-gradient(90deg, #fb7185, #e11d48)" track="rgba(255,228,230,0.94)" danger />
+                  <Meter label="침식 진행도" value={`${corrosion}%`} percent={corrosion} fill="linear-gradient(90deg, #fb7185, #e11d48)" track="rgba(255,228,230,0.94)" danger />
                 </div>
                 <div style={{ display: "grid", gap: "12px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>

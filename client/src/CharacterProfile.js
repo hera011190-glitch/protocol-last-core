@@ -271,7 +271,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
             <div style={{ width: "100%", maxWidth: 360, margin: "0 auto", display: "grid", gap: 10, alignContent: "start" }}>
               {meter("EXP", `${exp % expLimit} / ${expLimit}`, expPercent, "linear-gradient(90deg, #fcd34d, #f59e0b)")}
               {meter("HP", `${hp} / ${maxHp}`, hpPercent, "linear-gradient(90deg, #86efac, #22c55e)")}
-              {meter("침식도", `${corrosion}%`, corrosion, "linear-gradient(90deg, #fda4af, #ef4444)")}
+              {meter("침식 진행도", `${corrosion}%`, corrosion, "linear-gradient(90deg, #fda4af, #ef4444)")}
             </div>
           </div>
 

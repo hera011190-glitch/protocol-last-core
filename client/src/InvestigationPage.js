@@ -973,7 +973,8 @@ useEffect(() => {
     return direct;
   })();
   const directionalChoices = buildDirectionalChoices(effectiveChoices);
-  const endedReadonly = !!isSpectator && !!investigation?.ended;
+  const isSelfInvestigationParticipant = !!(character?.name && participants.some((participant) => String(participant?.name || "") === String(character.name)));
+  const endedReadonly = !!isSpectator && !!investigation?.ended && !isSelfInvestigationParticipant;
   const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
   const endConfirmations = Array.isArray(investigation?.endConfirmations) ? investigation.endConfirmations : [];
   const hasConfirmedExit = character?.name ? endConfirmations.includes(character.name) : false;
@@ -1323,7 +1324,7 @@ useEffect(() => {
       endedResultOpenedRef.current = true;
       setShowResult(true);
     }
-  }, [investigation?.ended, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length]);
+  }, [investigation?.ended, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant]);
 
   if (!investigation || !currentNodeId || !currentNode) {
     return (
@@ -1695,7 +1696,7 @@ useEffect(() => {
             >
               {(activeNpcScene.npcProfileImage || activeNpcScene.profileImage) ? (
                 <div style={{ borderRadius: 20, overflow: "hidden", background: "rgba(255,255,255,0.06)", height: 220, width: 180, minWidth: 180, maxWidth: 180, justifySelf: "start", alignSelf: "start", flexShrink: 0 }}>
-                  <img src={activeNpcScene.npcProfileImage || activeNpcScene.profileImage} alt={activeNpcScene.name || "NPC"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img src={activeNpcScene.npcProfileImage || activeNpcScene.profileImage} alt={activeNpcScene.name || "NPC"} style={{ width: "100%", height: "100%", objectFit: "contain", background: "rgba(0,0,0,0.16)" }} />
                 </div>
               ) : null}
 

@@ -57,7 +57,7 @@ function isSelectableAdminUserRow(user) {
   if (/^(custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast)[-_:.]/i.test(id)) return false;
   if (/(custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy)/i.test(id) && !/@/.test(id)) return false;
   if (/(조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트)/.test(id)) return false;
-  if (/^\d+$/.test(id) && id.length >= 10) return false;
+  if (/^\d+$/.test(id)) return false;
   if (/^E-\d+$/i.test(id)) return false;
   if (/^https?:\/\//i.test(id) || id.includes("/static/") || id.includes("data:image/")) return false;
   return true;
@@ -1117,7 +1117,7 @@ export default function AdminPage({
                 <label>레벨<input value={edit.level} onChange={(e) => setEdit({ ...edit, level: e.target.value })} style={inputStyle} /></label>
                 <label>코인<input value={edit.coins} onChange={(e) => setEdit({ ...edit, coins: e.target.value })} style={inputStyle} /></label>
                 <label>경험치<input value={edit.exp} onChange={(e) => setEdit({ ...edit, exp: e.target.value })} style={inputStyle} /></label>
-                <label>침식률<input value={edit.corrosion} onChange={(e) => setEdit({ ...edit, corrosion: e.target.value })} style={inputStyle} /></label>
+                <label>침식 진행도<input value={edit.corrosion} onChange={(e) => setEdit({ ...edit, corrosion: e.target.value })} style={inputStyle} /></label>
                 <label>스탯 포인트<input value={edit.statPoints} onChange={(e) => setEdit({ ...edit, statPoints: e.target.value })} style={inputStyle} /></label>
                 <label>일일조사 횟수<input value={edit.dailyAttemptsLeft} onChange={(e) => setEdit({ ...edit, dailyAttemptsLeft: e.target.value })} style={inputStyle} /></label>
                 <label>도박 횟수<input value={edit.gambleCountLeft} onChange={(e) => setEdit({ ...edit, gambleCountLeft: e.target.value })} style={inputStyle} /></label>

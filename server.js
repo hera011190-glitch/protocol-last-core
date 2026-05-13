@@ -588,6 +588,7 @@ function isKnownNonUserRuntimeId(id) {
   if (!nextId) return true;
   const lower = nextId.toLowerCase();
   if (lower === "plc") return true;
+  if (/^\d+$/.test(nextId)) return true;
   if (/^item-\d{8,}$/.test(lower)) return true;
   if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast)[-_:.]/i.test(nextId)) return true;
   if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy)/i.test(nextId) && !/@/.test(nextId)) return true;
@@ -1025,7 +1026,7 @@ function getRuntimeUserBackupRows() {
 function isDisplayableAdminAccount(user) {
   const id = getRuntimeAccountId(user) || getRuntimeUserId(user);
   if (!id || isBlockedRuntimeUserToken(id) || isKnownNonUserRuntimeId(id)) return false;
-  if (/^\d+$/.test(String(id)) && String(id).length >= 10) return false;
+  if (/^\d+$/.test(String(id))) return false;
   if (/^E-\d+$/i.test(String(id))) return false;
 
   // 운영 계정 선택은 실제 회원가입/로그인 계정 저장소와 서버가 만든 계정 색인만 표시합니다.
@@ -1384,10 +1385,8 @@ function getDirectAdminAccountRows(searchText = "", options = {}) {
     directPaths.push(path.join(process.cwd(), filename));
   });
 
-  const deep = options.deep === true;
   const rows = mergeRuntimeUsers(
     ...directPaths.map(readRuntimeArrayFromExactPath),
-    ...(deep ? [getAllKnownRuntimeUsersFromDisk({ deep: true })] : []),
     usersDB,
     getOnlineRuntimeUserRows()
   )
