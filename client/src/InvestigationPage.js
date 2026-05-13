@@ -101,7 +101,7 @@ const PRESET_BATTLE_SKILLS = {
   "격려": { key: "격려", name: "격려", target: "allyAll", desc: "아군 전체 회복" },
 };
 function normalizeBattleSkillOption(skill) { const raw = typeof skill === "string" ? { key: skill, name: skill } : (skill || {}); const key = String(raw.key || raw.skillKey || raw.name || "").trim(); const preset = PRESET_BATTLE_SKILLS[key] || PRESET_BATTLE_SKILLS[String(raw.name || "").trim()] || null; return preset ? { ...raw, ...preset, key: preset.key, name: preset.name } : { ...raw, key, name: raw.name || key, target: raw.target || "enemy", desc: raw.desc || "" }; }
-function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => { const maxHp = Number(enemy?.maxHp ?? enemy?.hp ?? 1); const hp = Number(enemy?.hp ?? maxHp); return { ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, hp, maxHp, index }; }).filter((enemy) => Number(enemy?.maxHp || enemy?.hp || 0) > 0); }
+function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => { const maxHp = Number(enemy?.maxHp ?? enemy?.hp ?? 1); const hp = Number(enemy?.hp ?? maxHp); return { ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, hp, maxHp, index }; }).filter((enemy) => Number(enemy?.hp || 0) > 0); }
 const BATTLE_TURN_LIMIT_MS = 5 * 60 * 1000;
 const CHAT_PANEL_WIDTH = 320;
 const RIGHT_PANEL_WIDTH = 278;
@@ -187,6 +187,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const [playbackState, setPlaybackState] = useState(null);
   const [editingSavedAction, setEditingSavedAction] = useState(true);
   const skipAutoActionSyncRef = useRef(false);
+  const defeatResultTimerRef = useRef(null);
   const [battleActionSubmitting, setBattleActionSubmitting] = useState(false);
   const [battleReadyUntil, setBattleReadyUntil] = useState(0);
   const [battleTurnStartedAt, setBattleTurnStartedAt] = useState(0);
@@ -253,6 +254,13 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const isHandledBattleRound = (source) => {
     const roundKey = getBattleRoundKey(source);
     return !!roundKey && roundKey === handledBattleRoundKeyRef.current;
+  };
+
+  const clearDefeatResultTimer = () => {
+    if (defeatResultTimerRef.current) {
+      clearTimeout(defeatResultTimerRef.current);
+      defeatResultTimerRef.current = null;
+    }
   };
 
   const applyInvestigation = (data, options = {}) => {
@@ -1307,6 +1315,7 @@ useEffect(() => {
       return;
     }
     if (!investigation?.ended) {
+      clearDefeatResultTimer();
       endedResultOpenedRef.current = false;
       keepEndResultOpenRef.current = false;
       return;
@@ -1322,9 +1331,18 @@ useEffect(() => {
     }
     if (!endedResultOpenedRef.current) {
       endedResultOpenedRef.current = true;
-      setShowResult(true);
+      if (investigation?.endedReason === "전멸") {
+        setDelayedBattleBanner({ text: "패배", type: "danger", until: Date.now() + 1500 });
+        clearDefeatResultTimer();
+        defeatResultTimerRef.current = setTimeout(() => {
+          defeatResultTimerRef.current = null;
+          setShowResult(true);
+        }, 1550);
+      } else {
+        setShowResult(true);
+      }
     }
-  }, [investigation?.ended, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant]);
+  }, [investigation?.ended, investigation?.endedReason, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant]);
 
   if (!investigation || !currentNodeId || !currentNode) {
     return (
@@ -1545,7 +1563,10 @@ useEffect(() => {
                       onClick={() => {
                         if (disabled) return;
                         const skillKey = skill.key || skill.name;
-                        if (skill.target === "enemy") return openBattleTargetPicker(`스킬::${skillKey}`, "enemy", `${skill.name || skillKey} 대상 선택`);
+                        if (skill.target === "enemy") {
+                          if (aliveEnemyOptions.length <= 1) return chooseBattleAction(aliveEnemyOptions[0]?.id ? `스킬::${skillKey}::${aliveEnemyOptions[0].id}` : `스킬::${skillKey}`);
+                          return openBattleTargetPicker(`스킬::${skillKey}`, "enemy", `${skill.name || skillKey} 대상 선택`);
+                        }
                         if (skill.target === "ally") return openBattleTargetPicker(`스킬::${skillKey}`, "ally", `${skill.name || skillKey} 대상 선택`);
                         chooseBattleAction(`스킬::${skillKey}`);
                       }}

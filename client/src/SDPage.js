@@ -561,43 +561,46 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 138, fontSize: "16px", fontWeight: 900, color: "#ffffff", textShadow: "0 2px 6px rgba(0,0,0,0.48)" }}>{character.name}</div>
       <div style={{ position: "absolute", left: "50%", bottom: 0, width: "132px", height: "132px", margin: "0 auto", transform: `translate3d(-50%, 0, 0) ${moving ? `rotate(${character.dx >= 0 ? 0.22 : -0.22}deg)` : "rotate(0deg)"}`, transition: "transform 0.14s linear", willChange: "transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.22))" }}>
         {showSpriteImage ? (
-          <img
-            src={spriteImage}
-            alt=""
-            loading="eager"
-            decoding="sync"
-            fetchPriority="high"
-            onError={handleSpriteError}
-            style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
-          />
+          <>
+            <img
+              src={spriteImage}
+              alt=""
+              loading="eager"
+              decoding="sync"
+              fetchPriority="high"
+              onError={handleSpriteError}
+              style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 1 }}
+            />
+            {tintReveal > 0 ? (
+              <img
+                aria-hidden="true"
+                src={spriteImage}
+                alt=""
+                draggable={false}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  width: "auto",
+                  height: "auto",
+                  objectFit: "contain",
+                  position: "absolute",
+                  left: "50%",
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 2,
+                  pointerEvents: "none",
+                  clipPath: `inset(${tintStart}% 0 0 0)`,
+                  filter: "brightness(0) saturate(100%) invert(24%) sepia(96%) saturate(3395%) hue-rotate(347deg) brightness(105%) contrast(96%)",
+                  mixBlendMode: "multiply",
+                  opacity: 0.86,
+                  transition: "clip-path 0.28s ease, opacity 0.28s ease",
+                }}
+              />
+            ) : null}
+          </>
         ) : (
           <BrokenSdFallback name={character?.name} />
         )}
-        {showSpriteImage && tintReveal > 0 ? (
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 2,
-              pointerEvents: "none",
-              background: "linear-gradient(180deg, rgba(255,72,72,0.92), rgba(168,18,18,0.78))",
-              mixBlendMode: "multiply",
-              opacity: 0.78,
-              transition: "opacity 0.28s ease",
-              WebkitMaskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${tintStart}%, rgba(0,0,0,1) ${Math.min(100, tintStart + 10)}%, rgba(0,0,0,1) 100%), url(${spriteImage})`,
-              WebkitMaskComposite: "source-in",
-              maskImage: `linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) ${tintStart}%, rgba(0,0,0,1) ${Math.min(100, tintStart + 10)}%, rgba(0,0,0,1) 100%), url(${spriteImage})`,
-              maskComposite: "intersect",
-              WebkitMaskRepeat: "no-repeat, no-repeat",
-              maskRepeat: "no-repeat, no-repeat",
-              WebkitMaskSize: "100% 100%, contain",
-              maskSize: "100% 100%, contain",
-              WebkitMaskPosition: "center, center",
-              maskPosition: "center, center",
-            }}
-          />
-        ) : null}
       </div>
     </div>
   );

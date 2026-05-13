@@ -591,10 +591,28 @@ function isKnownNonUserRuntimeId(id) {
   if (/^\d+$/.test(nextId)) return true;
   if (/^item-\d{8,}$/.test(lower)) return true;
   if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast)[-_:.]/i.test(nextId)) return true;
-  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy)/i.test(nextId) && !/@/.test(nextId)) return true;
-  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트)/.test(nextId)) return true;
+  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy|login|auth|registered)/i.test(nextId) && !/@/.test(nextId)) return true;
+  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트|로그인|회원가입|숫자|공지|세계관|일정표|홈페이지|캐릭터|지도|맵)/.test(nextId)) return true;
   if (readKnownNonUserRuntimeTokens().has(lower)) return true;
   return false;
+}
+
+function isPlausibleAdminAccountId(id) {
+  const nextId = normalizeUserIdText(id);
+  if (!nextId || nextId.length > 80) return false;
+  const lower = nextId.toLowerCase();
+  if (isBlockedRuntimeUserToken(nextId) || isKnownNonUserRuntimeId(nextId)) return false;
+  if (/^https?:\/\//i.test(nextId) || nextId.includes("/static/") || nextId.includes("data:image/")) return false;
+  if (/[{}\[\]"'<>]/.test(nextId)) return false;
+  if (/\.(?:json|png|jpe?g|gif|webp|svg|mp3|wav|css|js|html)$/i.test(nextId)) return false;
+  if (!/[A-Za-z가-힣@]/.test(nextId)) return false;
+  const blockedExact = new Set([
+    "login", "auth", "registered", "register", "account", "accounts", "user", "users", "member", "members",
+    "data", "rows", "items", "item", "shop", "investigation", "custom", "node", "npc", "battle", "reward",
+    "로그인", "회원가입", "계정", "계정선택", "숫자", "아이템", "조사", "커스텀", "상점", "노드", "전투", "보상", "디자인", "테마"
+  ]);
+  if (blockedExact.has(lower) || blockedExact.has(nextId)) return false;
+  return true;
 }
 
 function getRuntimeUserId(user) {
@@ -1025,8 +1043,7 @@ function getRuntimeUserBackupRows() {
 
 function isDisplayableAdminAccount(user) {
   const id = getRuntimeAccountId(user) || getRuntimeUserId(user);
-  if (!id || isBlockedRuntimeUserToken(id) || isKnownNonUserRuntimeId(id)) return false;
-  if (/^\d+$/.test(String(id))) return false;
+  if (!isPlausibleAdminAccountId(id)) return false;
   if (/^E-\d+$/i.test(String(id))) return false;
 
   // 운영 계정 선택은 실제 회원가입/로그인 계정 저장소와 서버가 만든 계정 색인만 표시합니다.
@@ -1395,7 +1412,7 @@ function getDirectAdminAccountRows(searchText = "", options = {}) {
       id: getRuntimeAccountId(user) || getRuntimeUserId(user),
       type: user.type || user.role || "owner",
     }))
-    .filter((user) => user.id && !isKnownNonUserRuntimeId(user.id));
+    .filter((user) => isPlausibleAdminAccountId(user.id));
 
   const keyword = normalizeUserIdText(searchText).toLowerCase();
   const filteredRows = keyword
@@ -2605,7 +2622,7 @@ function finishInvestigation(item, reason, summary) {
   item.pendingReward = null;
   item.pendingRewardQueue = [];
   item.sharedLogs.push(createLogEntry(summary));
-  setEventBanner(item, reason === "전멸" ? "조사가 종료되었습니다" : "조사가 종료되었습니다", reason === "전멸" ? "danger" : "success", 3600);
+  setEventBanner(item, reason === "전멸" ? "패배" : "조사가 종료되었습니다", reason === "전멸" ? "danger" : "success", 3600);
   applyFaintedEndRecovery(item);
   syncInvestigationParticipantHpToCharacters(item);
   applyInvestigationEndCorrosion(item);
@@ -4542,7 +4559,7 @@ app.get("/admin/users", (req, res) => {
       id: getRuntimeAccountId(user) || getRuntimeUserId(user),
       type: user.type || user.role || "owner",
     }))
-    .filter((user) => user.id && !isKnownNonUserRuntimeId(user.id))
+    .filter((user) => isPlausibleAdminAccountId(user.id))
     .sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
   if (users.length > 0) writeRuntimeUserIndexes(users);
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
