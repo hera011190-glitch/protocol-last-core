@@ -590,9 +590,9 @@ function isKnownNonUserRuntimeId(id) {
   if (lower === "plc") return true;
   if (/^\d+$/.test(nextId)) return true;
   if (/^item-\d{8,}$/.test(lower)) return true;
-  if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast)[-_:.]/i.test(nextId)) return true;
-  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy|login|auth|registered)/i.test(nextId) && !/@/.test(nextId)) return true;
-  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트|로그인|회원가입|숫자|공지|세계관|일정표|홈페이지|캐릭터|지도|맵)/.test(nextId)) return true;
+  if (/^(?:custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast|actionresults|clue|relreq|memo|note|adminmemo)[-_:.]/i.test(nextId)) return true;
+  if (/(?:custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy|login|auth|registered|actionresults|clue|relreq|memo|adminmemo|json)/i.test(nextId) && !/@/.test(nextId)) return true;
+  if (/(?:조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트|로그인|회원가입|숫자|공지|세계관|일정표|홈페이지|캐릭터|지도|맵|관리인|메모|단서)/.test(nextId)) return true;
   if (readKnownNonUserRuntimeTokens().has(lower)) return true;
   return false;
 }
@@ -609,7 +609,8 @@ function isPlausibleAdminAccountId(id) {
   const blockedExact = new Set([
     "login", "auth", "registered", "register", "account", "accounts", "user", "users", "member", "members",
     "data", "rows", "items", "item", "shop", "investigation", "custom", "node", "npc", "battle", "reward",
-    "로그인", "회원가입", "계정", "계정선택", "숫자", "아이템", "조사", "커스텀", "상점", "노드", "전투", "보상", "디자인", "테마"
+    "actionresults", "clue", "json", "relreq", "memo", "note", "adminmemo",
+    "로그인", "회원가입", "계정", "계정선택", "숫자", "아이템", "조사", "커스텀", "상점", "노드", "전투", "보상", "디자인", "테마", "관리인 메모", "관리인", "메모", "단서"
   ]);
   if (blockedExact.has(lower) || blockedExact.has(nextId)) return false;
   return true;
@@ -728,7 +729,7 @@ function isBlockedRuntimeUserToken(value) {
   return new Set([
     "id", "userid", "user_id", "accountid", "account_id", "loginid", "login_id", "username", "name", "ownerid", "owner_id",
     "displayname", "display_name", "nickname", "nick", "handle", "pw", "password", "pass", "passwd", "type", "role",
-    "users", "accounts", "members", "owners", "data", "rows", "items", "characters", "design", "theme", "admin", "plc"
+    "users", "accounts", "members", "owners", "data", "rows", "items", "characters", "design", "theme", "admin", "plc", "actionresults", "clue", "json", "relreq", "memo", "note", "adminmemo"
   ]).has(lower);
 }
 
@@ -1080,7 +1081,7 @@ function normalizeRuntimeUserIndexRows(rows) {
       type: user?.type || user?.role || "owner",
       indexedByServer: user?.indexedByServer === true,
     }))
-    .filter((user) => user.id && user.id !== "PLC")
+    .filter((user) => user.id && user.id !== "PLC" && isPlausibleAdminAccountId(user.id))
     .sort((a, b) => String(a.id || "").localeCompare(String(b.id || ""), "ko"));
 }
 
@@ -1097,7 +1098,7 @@ function writeRuntimeUserIndexes(userRows) {
         type: user.type || user.role || "owner",
         indexedByServer: true,
       }))
-      .filter((user) => user.id && user.id !== "PLC");
+      .filter((user) => user.id && user.id !== "PLC" && isPlausibleAdminAccountId(user.id));
     if (safeRows.length === 0) return;
     ["registeredUsers.json", "adminUserIndex.json", "allUserIds.json", "publicUserIndex.json"].forEach((filename) => {
       const indexPath = resolveDataPath(filename);
@@ -1597,9 +1598,19 @@ const STAT_RULES = {
   maxHp: 500,
   maxHpPoints: 40,
   baseCombat: 10,
-  combatPerPoint: 5,
-  maxCombatTotal: 100,
-  maxCombatPoints: 18,
+  combatPerPoint: 4,
+  maxCombatTotal: 110,
+  maxCombatPoints: 25,
+  defenseReductionPerPoint: 1.5,
+  maxDefenseReductionPercent: 60,
+  defendingDamageMultiplier: 0.65,
+  criticalChancePerPoint: 1.2,
+  maxCriticalChancePercent: 40,
+  evasionChancePerPointGap: 0.6,
+  baseEvasionChancePercent: 3,
+  minEvasionChancePercent: 2,
+  maxEvasionChancePercent: 20,
+  criticalDamageMultiplier: 1.5,
 };
 
 function clampNumber(value, min, max) {
@@ -1626,6 +1637,34 @@ function getCombatStatTotal(rawValue) {
   return Math.min(STAT_RULES.maxCombatTotal, STAT_RULES.baseCombat + getCombatStatPoint(rawValue) * STAT_RULES.combatPerPoint);
 }
 
+function getCombatPointFromTotal(rawValue) {
+  const value = Number(rawValue || 0);
+  if (!Number.isFinite(value)) return 0;
+  if (value > STAT_RULES.baseCombat) {
+    return clampNumber(Math.round((value - STAT_RULES.baseCombat) / STAT_RULES.combatPerPoint), 0, STAT_RULES.maxCombatPoints);
+  }
+  return clampNumber(value, 0, STAT_RULES.maxCombatPoints);
+}
+
+function getDefenseReductionPercent(rawDef, guardBonus = 0) {
+  const defPoint = getCombatPointFromTotal(rawDef);
+  const bonusPercent = Math.max(0, Number(guardBonus || 0));
+  return Math.min(STAT_RULES.maxDefenseReductionPercent, defPoint * STAT_RULES.defenseReductionPerPoint + bonusPercent);
+}
+
+function calculateDamageAfterDefense(rawDamage, rawDef, options = {}) {
+  const baseDamage = Math.max(1, Number(rawDamage || 0));
+  const reductionPercent = getDefenseReductionPercent(rawDef, options.guardBonus || 0);
+  let damage = baseDamage * (1 - reductionPercent / 100);
+  if (options.defending) damage *= STAT_RULES.defendingDamageMultiplier;
+  return Math.max(1, Math.ceil(damage));
+}
+
+function calculateOutgoingDamage(rawAttack, rawDefense, multiplier = 1, flatPower = 0) {
+  const attackPower = Math.max(1, Number(rawAttack || 0) * Number(multiplier || 1) + Number(flatPower || 0));
+  return calculateDamageAfterDefense(attackPower, rawDefense);
+}
+
 function normalizeCharacterStats(stats = {}) {
   return {
     hp: getCharacterHpStat(stats?.hp),
@@ -1643,11 +1682,11 @@ function getCharacterCurrentHp(character) {
 }
 
 function getIncomingDamageAfterDefense(rawDamage, defenderState) {
-  const baseDamage = Math.max(1, Number(rawDamage || 0));
-  const defTotal = clampNumber(defenderState?.def, 0, STAT_RULES.maxCombatTotal);
   const guardBonus = typeof getBuffValue === "function" ? getBuffValue(defenderState, "guardUp") : 0;
-  const reductionPercent = Math.min(80, (defenderState?.defending ? defTotal * 2 : defTotal) + Number(guardBonus || 0));
-  return Math.max(1, Math.ceil(baseDamage * (1 - reductionPercent / 100)));
+  return calculateDamageAfterDefense(rawDamage, defenderState?.def, {
+    guardBonus,
+    defending: Boolean(defenderState?.defending),
+  });
 }
 
 function baseParticipantState(character) {
@@ -3053,13 +3092,23 @@ function getEnemyDamageLogTarget(result, fallbackState) {
 }
 
 function rollEvasion(attackerAgi, defenderAgi) {
-  const chance = Math.max(0.03, Math.min(0.32, 0.06 + (Number(defenderAgi || 0) - Number(attackerAgi || 0)) * 0.015));
-  return Math.random() < chance;
+  const attackerPoint = getCombatPointFromTotal(attackerAgi);
+  const defenderPoint = getCombatPointFromTotal(defenderAgi);
+  const chancePercent = clampNumber(
+    STAT_RULES.baseEvasionChancePercent + (defenderPoint - attackerPoint) * STAT_RULES.evasionChancePerPointGap,
+    STAT_RULES.minEvasionChancePercent,
+    STAT_RULES.maxEvasionChancePercent
+  );
+  return Math.random() < chancePercent / 100;
 }
 
 function rollCritical(agi) {
-  const chance = clampNumber(agi, 0, STAT_RULES.maxCombatTotal) / 100;
-  return Math.random() < chance;
+  const chancePercent = Math.min(STAT_RULES.maxCriticalChancePercent, getCombatPointFromTotal(agi) * STAT_RULES.criticalChancePerPoint);
+  return Math.random() < chancePercent / 100;
+}
+
+function applyCriticalDamage(rawDamage) {
+  return Math.max(1, Math.round(Number(rawDamage || 0) * STAT_RULES.criticalDamageMultiplier));
 }
 
 function tickBuffs(state) {
@@ -3230,8 +3279,8 @@ function applyBattleTurn(item, actions) {
         const crit = rollCritical(state.agi);
         const hitResults = [];
         getAliveBattleEnemies(battle).forEach((enemyTarget) => {
-          let raw = Math.max(1, Math.round(actorAtk * Number(spec.multiplier || 0.75) - Math.floor(Number(enemyTarget.def || 0) / 2)));
-          if (crit) raw *= 2;
+          let raw = calculateOutgoingDamage(actorAtk, enemyTarget.def, Number(spec.multiplier || 0.75));
+          if (crit) raw = applyCriticalDamage(raw);
           const damage = applyEnemyDamage(enemyTarget, raw);
           hitResults.push({ name: enemyTarget.name, id: enemyTarget.id, damage });
         });
@@ -3255,8 +3304,8 @@ function applyBattleTurn(item, actions) {
         return;
       }
       const crit = rollCritical(state.agi);
-      let rawDamage = Math.max(1, Math.round(getEffectiveAttack(state) * Number(spec.multiplier || 1) + Number(spec.power || 0) - Math.floor(Number(targetEnemy.def || 0) / 2)));
-      if (crit) rawDamage *= 2;
+      let rawDamage = calculateOutgoingDamage(getEffectiveAttack(state), targetEnemy.def, Number(spec.multiplier || 1), Number(spec.power || 0));
+      if (crit) rawDamage = applyCriticalDamage(rawDamage);
       const damage = applyEnemyDamage(targetEnemy, rawDamage);
       syncBattleEnemyTotals(battle);
       state.status = crit ? "치명타" : "스킬";
@@ -3271,8 +3320,8 @@ function applyBattleTurn(item, actions) {
       return;
     }
     const crit = rollCritical(state.agi);
-    let rawDamage = Math.max(1, getEffectiveAttack(state) - Math.floor(Number(targetEnemy.def || 0) / 2));
-    if (crit) rawDamage *= 2;
+    let rawDamage = calculateOutgoingDamage(getEffectiveAttack(state), targetEnemy.def);
+    if (crit) rawDamage = applyCriticalDamage(rawDamage);
     const damage = applyEnemyDamage(targetEnemy, rawDamage);
     syncBattleEnemyTotals(battle);
     state.status = crit ? "치명타" : "공격";
@@ -5869,6 +5918,7 @@ app.post("/deleteInvestigation", (req, res) => {
   if (index < 0) return res.json({ success: false, message: "조사를 찾지 못했습니다." });
   investigationsDB.splice(index, 1);
   delete roomChats[id];
+  saveInvestigationsRuntimeState();
   emitParticipantsUpdated();
   res.json({ success: true });
 });

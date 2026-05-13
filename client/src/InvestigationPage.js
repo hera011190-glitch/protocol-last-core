@@ -214,7 +214,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   battlePlaybackLockedRef.current = battlePlaybackLocked;
   currentNodeIdRef.current = currentNodeId;
   investigationRef.current = investigation;
-  const currentNode = investigation?.data?.nodes?.[currentNodeId] || null;
+  const currentNode = investigation?.data?.nodes?.[currentNodeId] || (investigation?.ended ? investigation?.data?.nodes?.[investigation?.data?.start] : null) || (investigation?.ended ? { id: "ended", name: "종료된 조사", connections: [] } : null);
   const playbackFallbackBattle = (battlePlaybackLocked || stagedBattleLogs.length > 0) && playbackSourceRef.current?.battle
     ? JSON.parse(JSON.stringify(playbackSourceRef.current.battle))
     : null;
@@ -270,11 +270,10 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     const incomingRoundKey = hasRoundPlayback ? getBattleRoundKey(data) : "";
     const alreadyHandledSameRound = !!incomingRoundKey && incomingRoundKey === handledBattleRoundKeyRef.current;
     const skipRoundPlayback = !!options?.skipRoundPlayback || alreadyHandledSameRound;
-    if (data?.ended && data?.endedReason === "전멸") {
+    if (data?.ended && data?.endedReason === "전멸" && !endedResultOpenedRef.current && !defeatResultTimerRef.current) {
       keepEndResultOpenRef.current = false;
-      endedResultOpenedRef.current = false;
     }
-    if (data?.ended && hasRoundPlayback && !keepEndResultOpenRef.current) setShowResult(false);
+    if (data?.ended && hasRoundPlayback && !keepEndResultOpenRef.current && !endedResultOpenedRef.current && !defeatResultTimerRef.current) setShowResult(false);
     handledBattleRoundKeyRef.current = incomingRoundKey;
     const nodeId = data.currentNodeId || data.data?.start || Object.keys(data?.data?.nodes || {})[0] || null;
     if (!data?.currentNodeId || (data?.ended && !hasRoundPlayback) || (!data?.data?.nodes?.[nodeId]?.battle && !hasRoundPlayback)) {
@@ -472,11 +471,10 @@ useEffect(() => {
     }
 
     if (hasRoundPlayback && !alreadyHandledRound) {
-      if (payload?.ended && payload?.endedReason === "전멸") {
+      if (payload?.ended && payload?.endedReason === "전멸" && !endedResultOpenedRef.current && !defeatResultTimerRef.current) {
         keepEndResultOpenRef.current = false;
-        endedResultOpenedRef.current = false;
       }
-      if (payload?.ended && !keepEndResultOpenRef.current) setShowResult(false);
+      if (payload?.ended && !keepEndResultOpenRef.current && !endedResultOpenedRef.current && !defeatResultTimerRef.current) setShowResult(false);
       postPlaybackRefreshRef.current = true;
       applyInvestigation(payload);
       return;
@@ -1344,7 +1342,7 @@ useEffect(() => {
     }
   }, [investigation?.ended, investigation?.endedReason, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant]);
 
-  if (!investigation || !currentNodeId || !currentNode) {
+  if (!investigation || !currentNodeId || (!currentNode && !investigation?.ended)) {
     return (
       <DesignPageFrame design={design} pageKey={pageKey} handlers={{}} theme={theme} minHeight="100vh" contentStyle={{ padding: 0 }}>
         <div style={{ minHeight: "100vh", color: "white", padding: "20px" }}>불러오는 중...</div>
@@ -1717,7 +1715,7 @@ useEffect(() => {
             >
               {(activeNpcScene.npcProfileImage || activeNpcScene.profileImage) ? (
                 <div style={{ borderRadius: 20, overflow: "hidden", background: "rgba(255,255,255,0.06)", height: 220, width: 180, minWidth: 180, maxWidth: 180, justifySelf: "start", alignSelf: "start", flexShrink: 0 }}>
-                  <img src={activeNpcScene.npcProfileImage || activeNpcScene.profileImage} alt={activeNpcScene.name || "NPC"} style={{ width: "100%", height: "100%", objectFit: "contain", background: "rgba(0,0,0,0.16)" }} />
+                  <img src={activeNpcScene.npcProfileImage || activeNpcScene.profileImage} alt={activeNpcScene.name || "NPC"} style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "center center", background: "rgba(0,0,0,0.16)", display: "block" }} />
                 </div>
               ) : null}
 
@@ -3284,7 +3282,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, cu
     <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
       {sceneBackgroundImage ? <LazyImage src={sceneBackgroundImage} alt="조사 배경" eager fit="cover" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : null}
       <div style={{ position: "absolute", inset: 0, background: battleActive ? "rgba(48,10,18,0.42)" : currentNode?.image ? "rgba(2,6,23,0.26)" : "linear-gradient(rgba(2,6,23,0.18), rgba(2,6,23,0.42))" }} />
-      {npcVisual && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
+      {npcVisual && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, maxWidth: 144, maxHeight: 178, objectFit: "contain", objectPosition: "center bottom", pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /> : null}
       {leader && !battleActive ? (
         <div style={{ position: "absolute", left: "50%", bottom: 188, transform: `translateX(-50%) translateY(${wobble}px)`, transition: "transform 0.18s ease", textAlign: "center" }}>
           {bubble ? <div style={{ position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)", minWidth: 36, height: 36, padding: "0 12px", borderRadius: 999, background: battleActive ? "rgba(127,29,29,0.88)" : pendingReward ? "rgba(120,53,15,0.88)" : "rgba(30,64,175,0.88)", color: "white", display: "grid", placeItems: "center", fontWeight: 900, boxShadow: "0 10px 22px rgba(0,0,0,0.28)" }}>{bubble}</div> : null}

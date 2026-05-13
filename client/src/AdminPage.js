@@ -52,11 +52,11 @@ function isSelectableAdminUserRow(user) {
   const id = getAdminAccountId(user);
   if (!id) return false;
   const lower = id.toLowerCase();
-  if (["plc", "id", "name", "items", "item", "users", "accounts", "members", "data", "rows", "design", "theme", "node", "npc", "battle", "shop", "reward", "monster", "enemy", "login", "auth", "registered", "register"].includes(lower)) return false;
+  if (["plc", "id", "name", "items", "item", "users", "accounts", "members", "data", "rows", "design", "theme", "node", "npc", "battle", "shop", "reward", "monster", "enemy", "login", "auth", "registered", "register", "actionresults", "clue", "json", "relreq", "memo", "note", "adminmemo"].includes(lower)) return false;
   if (/^item-\d{8,}$/.test(lower)) return false;
-  if (/^(custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast|login|auth|registered)[-_:.]/i.test(id)) return false;
-  if (/(custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy|login|auth|registered)/i.test(id) && !/@/.test(id)) return false;
-  if (/(조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트|로그인|회원가입|숫자|공지|세계관|일정표|홈페이지|캐릭터|지도|맵)/.test(id)) return false;
+  if (/^(custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast|login|auth|registered|actionresults|clue|relreq|memo|adminmemo)[-_:.]/i.test(id)) return false;
+  if (/(custom|investigation|shop|item|node|design|theme|npc|battle|reward|monster|enemy|login|auth|registered|actionresults|clue|relreq|memo|adminmemo|json)/i.test(id) && !/@/.test(id)) return false;
+  if (/(조사|커스텀|상점|아이템|노드|디자인|테마|전투|보상|몬스터|이비스트|로그인|회원가입|숫자|공지|세계관|일정표|홈페이지|캐릭터|지도|맵|관리인|메모|단서)/.test(id)) return false;
   if (/^\d+$/.test(id)) return false;
   if (/^E-\d+$/i.test(id)) return false;
   if (!/[A-Za-z가-힣@]/.test(id)) return false;

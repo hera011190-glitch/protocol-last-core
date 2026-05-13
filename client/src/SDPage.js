@@ -589,11 +589,15 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                   transform: "translate(-50%, -50%)",
                   zIndex: 2,
                   pointerEvents: "none",
-                  clipPath: `inset(${tintStart}% 0 0 0)`,
-                  filter: "brightness(0) saturate(100%) invert(24%) sepia(96%) saturate(3395%) hue-rotate(347deg) brightness(105%) contrast(96%)",
+                  clipPath: `inset(0 0 0 0)`,
+                  WebkitMaskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,1) ${Math.max(2, tintReveal)}%, rgba(0,0,0,0.45) ${Math.min(100, tintReveal + 8)}%, rgba(0,0,0,0) ${Math.min(100, tintReveal + 18)}%)`,
+                  maskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,1) ${Math.max(2, tintReveal)}%, rgba(0,0,0,0.45) ${Math.min(100, tintReveal + 8)}%, rgba(0,0,0,0) ${Math.min(100, tintReveal + 18)}%)`,
+                  WebkitMaskRepeat: "no-repeat",
+                  maskRepeat: "no-repeat",
+                  filter: "brightness(0.9) saturate(180%) sepia(72%) hue-rotate(320deg) contrast(112%)",
                   mixBlendMode: "multiply",
-                  opacity: 0.86,
-                  transition: "clip-path 0.28s ease, opacity 0.28s ease",
+                  opacity: 0.78,
+                  transition: "mask-image 0.28s ease, -webkit-mask-image 0.28s ease, opacity 0.28s ease",
                 }}
               />
             ) : null}

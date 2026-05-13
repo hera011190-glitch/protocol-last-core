@@ -67,6 +67,23 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
     load();
   };
 
+  const deleteInvestigation = async (item) => {
+    if (!item?.id) return;
+    const ok = window.confirm(`${item.title || item.id} 조사를 삭제하시겠습니까? 삭제 후에는 조사 목록에서 사라집니다.`);
+    if (!ok) return;
+    const res = await apiFetch("/deleteInvestigation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!data.success) {
+      alert(data.message || "조사 삭제에 실패했습니다.");
+      return;
+    }
+    load();
+  };
+
   return (
     <div style={{ padding: 26, color: "#13324b", display: "grid", gap: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -108,6 +125,7 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
                 {item.type === "group" ? (
                   <button type="button" className="ghost-button" onClick={() => patchToggle(item, { hidden: !item.hidden })}>{item.hidden ? "숨김 해제" : "숨김"}</button>
                 ) : null}
+                <button type="button" className="ghost-button" onClick={() => deleteInvestigation(item)} style={{ color: "#fecaca", background: "rgba(127,29,29,0.72)", border: "1px solid rgba(254,202,202,0.22)" }}>조사 삭제</button>
               </div>
             </div>
           </div>

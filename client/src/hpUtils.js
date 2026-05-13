@@ -1,11 +1,11 @@
 export const HP_STAT_MAX = 40;
-export const COMBAT_STAT_MAX = 18;
+export const COMBAT_STAT_MAX = 25;
 export const BASE_HP = 100;
 export const HP_PER_STAT = 10;
 export const HP_MAX = 500;
 export const BASE_COMBAT_STAT = 10;
-export const COMBAT_STAT_PER_POINT = 5;
-export const COMBAT_TOTAL_MAX = 100;
+export const COMBAT_STAT_PER_POINT = 4;
+export const COMBAT_TOTAL_MAX = 110;
 
 export function clampNumber(value, min, max) {
   const next = Number(value || 0);
