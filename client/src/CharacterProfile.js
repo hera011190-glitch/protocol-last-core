@@ -6,6 +6,27 @@ import { getCurrentHpDisplay, getHpStatValue, getMaxHpFromStat } from "./hpUtils
 import { renderProfileRichContent } from "./profileRichText";
 import { buildApiUrl } from "./api";
 
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function mergeCharacterWithoutBlankingImages(base, hydrated) {
+  if (!hydrated || String(hydrated?.id) !== String(base?.id)) return base;
+  const merged = { ...base, ...hydrated };
+  const imageKeys = ["image", "mainImage", "fullBodyImage", "fullImage", "profileImage", "cardImage", "sdImage"];
+  imageKeys.forEach((key) => {
+    const hydratedValue = String(hydrated?.[key] || "").trim();
+    const baseValue = String(base?.[key] || "").trim();
+    if (!hydratedValue && baseValue) merged[key] = baseValue;
+  });
+  return merged;
+}
+
 function meter(label, value, percent, gradient) {
   return (
     <div>
@@ -65,9 +86,15 @@ function ScrollPanel({ title, children, minHeight = 280 }) {
 
 export default function CharacterProfile({ character, goBack, theme, design, pageKey = "profileCharacter" }) {
   const [hydratedCharacter, setHydratedCharacter] = useState(null);
-  const viewCharacter = hydratedCharacter && String(hydratedCharacter.id) === String(character?.id)
-    ? { ...character, ...hydratedCharacter }
-    : character;
+  const viewCharacter = mergeCharacterWithoutBlankingImages(character, hydratedCharacter);
+  const fullBodyImageSrc = firstNonEmpty(
+    viewCharacter?.mainImage,
+    viewCharacter?.fullBodyImage,
+    viewCharacter?.fullImage,
+    viewCharacter?.profileImage,
+    viewCharacter?.image,
+    viewCharacter?.cardImage
+  );
 
   const hpStat = getHpStatValue(viewCharacter?.stats?.hp);
   const maxHp = getMaxHpFromStat(hpStat);
@@ -310,10 +337,10 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
         </div>
 
         <div style={{ display: "grid", placeItems: "center", minHeight: 540, overflow: "visible", padding: "18px 0 8px" }}>
-          {viewCharacter?.mainImage ? (
+          {fullBodyImageSrc ? (
             <LazyImage
-              src={viewCharacter.mainImage}
-              fallbackSrcs={[viewCharacter?.profileImage, viewCharacter?.image, viewCharacter?.cardImage].filter(Boolean)}
+              src={fullBodyImageSrc}
+              fallbackSrcs={[viewCharacter?.mainImage, viewCharacter?.fullBodyImage, viewCharacter?.fullImage, viewCharacter?.profileImage, viewCharacter?.image, viewCharacter?.cardImage].filter(Boolean)}
               alt={`${viewCharacter.name}-full`}
               eager
               highPriority

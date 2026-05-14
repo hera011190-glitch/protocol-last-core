@@ -670,8 +670,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                     WebkitMaskRepeat: "no-repeat",
                     maskRepeat: "no-repeat",
                     mixBlendMode: "multiply",
-                    opacity: 1,
-                    transition: "height 0.28s ease, background 0.28s ease, mask-position 0.28s ease, -webkit-mask-position 0.28s ease",
+                    opacity: 0.78,
+                    transition: "height 0.28s ease, background 0.28s ease, opacity 0.28s ease, mask-position 0.28s ease, -webkit-mask-position 0.28s ease",
                   }}
                 />
               </div>
