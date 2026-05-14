@@ -3769,7 +3769,13 @@ app.get("/investigations", (req, res) => {
   const rows = investigationsDB
     .filter((item) => includeHidden || !item.hidden)
     .map(getInvestigationSummary);
+  rememberAllInvestigationCardVisuals(rows);
   res.json(rows);
+});
+
+app.get("/investigationCardVisuals", (req, res) => {
+  rememberAllInvestigationCardVisuals(investigationsDB);
+  res.json(readInvestigationCardVisuals());
 });
 app.get("/investigations/:id", (req, res) => {
   const item = investigationsDB.find((v) => v.id === req.params.id);
@@ -4573,6 +4579,69 @@ function normalizeCustomTemplate(template) {
   };
 }
 
+const INVESTIGATION_CARD_VISUALS_FILE = "investigationCardVisuals.json";
+
+function normalizeInvestigationCardVisualPayload(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    listImage: String(source.listImage || source.data?.listImage || ""),
+    entryImage: String(source.entryImage || source.data?.entryImage || source.listImage || source.data?.listImage || ""),
+    listImageFrame: normalizeInvestigationImageFrame(source.listImageFrame || source.data?.listImageFrame),
+    entryImageFrame: normalizeInvestigationImageFrame(source.entryImageFrame || source.data?.entryImageFrame || source.listImageFrame || source.data?.listImageFrame),
+    imageUpdatedAt: Number(source.imageUpdatedAt || source.data?.imageUpdatedAt || 0),
+  };
+}
+
+function readInvestigationCardVisuals() {
+  const fallback = { daily: {}, group: {} };
+  try {
+    const parsed = safeReadJsonFileStrict(resolveDataPath(INVESTIGATION_CARD_VISUALS_FILE), fallback, INVESTIGATION_CARD_VISUALS_FILE);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+    return {
+      daily: normalizeInvestigationCardVisualPayload(parsed.daily || {}),
+      group: normalizeInvestigationCardVisualPayload(parsed.group || {}),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeInvestigationCardVisuals(value) {
+  try {
+    const next = {
+      daily: normalizeInvestigationCardVisualPayload(value?.daily || {}),
+      group: normalizeInvestigationCardVisualPayload(value?.group || {}),
+    };
+    writeJsonAtomicSync(resolveDataPath(INVESTIGATION_CARD_VISUALS_FILE), next);
+    return next;
+  } catch (error) {
+    console.error("writeInvestigationCardVisuals error", error.message);
+    return value;
+  }
+}
+
+function rememberInvestigationCardVisual(item) {
+  if (!item || typeof item !== "object") return;
+  const type = item.type === "daily" ? "daily" : item.type === "group" ? "group" : "";
+  if (!type) return;
+  const visual = normalizeInvestigationCardVisualPayload(item);
+  if (!visual.listImage && !visual.entryImage) return;
+  const current = readInvestigationCardVisuals();
+  const previous = current[type] || {};
+  current[type] = {
+    listImage: visual.listImage || previous.listImage || "",
+    entryImage: visual.entryImage || previous.entryImage || visual.listImage || previous.listImage || "",
+    listImageFrame: visual.listImageFrame || previous.listImageFrame,
+    entryImageFrame: visual.entryImageFrame || previous.entryImageFrame || visual.listImageFrame || previous.listImageFrame,
+    imageUpdatedAt: Number(visual.imageUpdatedAt || previous.imageUpdatedAt || Date.now()),
+  };
+  writeInvestigationCardVisuals(current);
+}
+
+function rememberAllInvestigationCardVisuals(rows = []) {
+  (Array.isArray(rows) ? rows : []).forEach((item) => rememberInvestigationCardVisual(item));
+}
+
 const DEFAULT_INVESTIGATION_IDS_TO_PRUNE = new Set([
   "investigation-1",
   "investigation-2",
@@ -4581,13 +4650,26 @@ const DEFAULT_INVESTIGATION_IDS_TO_PRUNE = new Set([
   "custom-daily-test-01",
 ]);
 
+const DEFAULT_INVESTIGATION_TITLES_TO_PRUNE = new Set([
+  "[테스트] 격리동 합동조사",
+  "[테스트] 야간 진료실 일일조사",
+]);
+
 function getInvestigationTemplateId(template) {
   return String(template?.id || template?.json?.id || "").trim();
 }
 
+function getInvestigationTemplateTitle(template) {
+  return String(template?.title || template?.json?.title || "").trim();
+}
+
 function pruneDefaultInvestigationTemplates(list) {
   const rows = Array.isArray(list) ? list : [];
-  return rows.filter((template) => !DEFAULT_INVESTIGATION_IDS_TO_PRUNE.has(getInvestigationTemplateId(template)));
+  return rows.filter((template) => {
+    const id = getInvestigationTemplateId(template);
+    const title = getInvestigationTemplateTitle(template);
+    return !DEFAULT_INVESTIGATION_IDS_TO_PRUNE.has(id) && !DEFAULT_INVESTIGATION_TITLES_TO_PRUNE.has(title);
+  });
 }
 
 const loadedCustomInvestigations = readCustomInvestigationsFromFile();
@@ -4660,8 +4742,10 @@ customInvestigationsDB.forEach((template) => {
     }
   }
 });
+rememberAllInvestigationCardVisuals(investigationsDB);
 
 rehydrateInvestigationsFromRuntime();
+rememberAllInvestigationCardVisuals(investigationsDB);
 
 app.get("/admin/customInvestigations", (req, res) => {
   res.json(customInvestigationsDB);
@@ -4719,6 +4803,35 @@ app.post("/admin/publishInvestigation", (req, res) => {
 app.post("/admin/investigationCardImage", (req, res) => {
   try {
     const { investigationId, listImage, entryImage, listImageFrame, entryImageFrame } = req.body || {};
+    const entryVisualType = investigationId === "__entry-daily" ? "daily" : investigationId === "__entry-group" ? "group" : "";
+    if (entryVisualType) {
+      const currentVisuals = readInvestigationCardVisuals();
+      const current = normalizeInvestigationCardVisualPayload(currentVisuals[entryVisualType] || {});
+      const nextListImage = listImage !== undefined ? String(listImage || "") : String(current.listImage || "");
+      const nextEntryImage = entryImage !== undefined ? String(entryImage || "") : String(current.entryImage || current.listImage || nextListImage || "");
+      const nextListImageFrame = listImageFrame !== undefined ? normalizeInvestigationImageFrame(listImageFrame) : normalizeInvestigationImageFrame(current.listImageFrame);
+      const nextEntryImageFrame = entryImageFrame !== undefined ? normalizeInvestigationImageFrame(entryImageFrame) : normalizeInvestigationImageFrame(current.entryImageFrame || current.listImageFrame);
+      const imageUpdatedAt = Date.now();
+      const savedVisual = {
+        listImage: nextListImage || nextEntryImage || "",
+        entryImage: nextEntryImage || nextListImage || "",
+        listImageFrame: nextListImageFrame,
+        entryImageFrame: nextEntryImageFrame,
+        imageUpdatedAt,
+      };
+      currentVisuals[entryVisualType] = savedVisual;
+      writeInvestigationCardVisuals(currentVisuals);
+      return res.json({
+        success: true,
+        item: {
+          id: investigationId,
+          title: entryVisualType === "group" ? "단체조사" : "일일조사",
+          type: entryVisualType,
+          ...savedVisual,
+        },
+      });
+    }
+
     const item = investigationsDB.find((v) => v.id === investigationId);
     if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
 
@@ -4744,6 +4857,7 @@ app.post("/admin/investigationCardImage", (req, res) => {
       entryImageFrame: finalEntryImageFrame,
       imageUpdatedAt,
     };
+    rememberInvestigationCardVisual(item);
     if (item.originalTemplate) {
       item.originalTemplate = serializeInvestigationForPersistence(item);
     }
@@ -4982,8 +5096,41 @@ function buildPublicDesignShellConfig(config) {
   }, (pathKey) => toDesignAssetUrl(pathKey));
 }
 
+function normalizePublicMapCollections(collections = [], fallbackPresets = []) {
+  const source = Array.isArray(collections) && collections.length > 0
+    ? collections
+    : [{ id: "default", title: "기본 맵", presets: Array.isArray(fallbackPresets) ? fallbackPresets : [] }];
+  const seen = new Set();
+  return source.filter((collection, index) => {
+    const id = String(collection?.id || `collection-${index}`);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).map((collection, index) => ({
+    id: collection?.id || `collection-${index}`,
+    title: collection?.title || `맵 탭 ${index + 1}`,
+    presets: Array.isArray(collection?.presets) ? collection.presets : [],
+  }));
+}
+
+function getAppliedDesignMapsRoot(config) {
+  const mapRoot = (config && config.siteContent && config.siteContent.maps) ? config.siteContent.maps : {};
+  const appliedCollections = normalizePublicMapCollections(
+    Array.isArray(mapRoot.appliedCollections) ? mapRoot.appliedCollections : mapRoot.collections,
+    Array.isArray(mapRoot.appliedPresets) ? mapRoot.appliedPresets : mapRoot.presets
+  );
+  const activeCollectionId = mapRoot.appliedCollectionId || mapRoot.activeCollectionId || appliedCollections[0]?.id || "";
+  const activeCollection = appliedCollections.find((collection) => String(collection.id) === String(activeCollectionId)) || appliedCollections[0] || null;
+  const presets = Array.isArray(activeCollection?.presets) ? activeCollection.presets : [];
+  return {
+    collections: appliedCollections,
+    activeCollectionId: activeCollection?.id || activeCollectionId,
+    presets,
+  };
+}
+
 function buildPublicDesignMapsConfig(config) {
-  return mapDataImages((config && config.siteContent && config.siteContent.maps) ? config.siteContent.maps : {}, (pathKey) => toDesignAssetUrl(`siteContent.maps.${pathKey}`));
+  return mapDataImages(getAppliedDesignMapsRoot(config), (pathKey) => toDesignAssetUrl(`siteContent.maps.${pathKey}`));
 }
 
 function getPublicDesignShellConfig() {
@@ -5010,7 +5157,7 @@ function sdRand(min, max) {
 }
 
 function getSdServerMaps() {
-  const mapRoot = (designConfig && designConfig.siteContent && designConfig.siteContent.maps) ? designConfig.siteContent.maps : {};
+  const mapRoot = getAppliedDesignMapsRoot(designConfig);
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
   const activeCollectionId = mapRoot.activeCollectionId || collections[0]?.id || "";
   if (collections.length > 0) {
@@ -5904,11 +6051,48 @@ if (!IS_ASSET_COMPACT_CHILD) {
   }
 }
 
+function loadMastodonEnvIfPresent() {
+  const envPaths = [
+    path.join(__dirname, ".env"),
+    path.join(__dirname, "mastodon-bot", ".env"),
+  ];
+  envPaths.forEach((envPath) => {
+    try {
+      if (!fs.existsSync(envPath)) return;
+      const lines = fs.readFileSync(envPath, "utf-8").split(/\r?\n/);
+      lines.forEach((raw) => {
+        const line = String(raw || "").trim();
+        if (!line || line.startsWith("#") || !line.includes("=")) return;
+        const eqIndex = line.indexOf("=");
+        const key = line.slice(0, eqIndex).trim();
+        const value = line.slice(eqIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+        if (key && process.env[key] === undefined) process.env[key] = value;
+      });
+    } catch (error) {
+      console.error("[mastodon-bot] .env 읽기 실패:", error.message);
+    }
+  });
+}
+
 try {
-  const { startMastodonBot } = require("./mastodon-bot");
+  loadMastodonEnvIfPresent();
+  let mastodonModule = null;
+  let mastodonLoadError = null;
+  for (const modulePath of ["./mastodon-bot", "./mastodon-bot/mastodonBot"]) {
+    try {
+      mastodonModule = require(modulePath);
+      break;
+    } catch (error) {
+      mastodonLoadError = error;
+    }
+  }
+
+  if (!mastodonModule?.startMastodonBot) {
+    throw mastodonLoadError || new Error("startMastodonBot 함수를 찾을 수 없습니다.");
+  }
 
   if (process.env.MASTODON_ACCESS_TOKEN && process.env.MASTODON_BASE_URL) {
-    startMastodonBot();
+    mastodonModule.startMastodonBot();
     console.log("[mastodon-bot] 봇 실행을 시작했습니다.");
   } else {
     console.log("[mastodon-bot] 환경변수가 없어 봇을 실행하지 않았습니다.");

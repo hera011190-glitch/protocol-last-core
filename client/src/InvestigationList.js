@@ -155,6 +155,25 @@ function rememberEntryVisualFromRows(rows, current) {
   });
 }
 
+function buildEntryVisualPlaceholder(type, visual = {}) {
+  const safeType = type === "group" ? "group" : "daily";
+  const normalized = normalizeEntryVisual(visual || {});
+  return {
+    id: `__entry-${safeType}`,
+    type: safeType,
+    title: safeType === "group" ? "단체조사" : "일일조사",
+    listImage: normalized.listImage || normalized.entryImage || "",
+    entryImage: normalized.entryImage || normalized.listImage || "",
+    listImageFrame: normalized.listImageFrame || normalized.entryImageFrame || { x: 50, y: 50, scale: 1 },
+    entryImageFrame: normalized.entryImageFrame || normalized.listImageFrame || { x: 50, y: 50, scale: 1 },
+    imageUpdatedAt: Number(normalized.imageUpdatedAt || Date.now()),
+    opened: false,
+    effectiveOpened: false,
+    hidden: false,
+    participantsCount: 0,
+  };
+}
+
 
 function readCachedInvestigations() {
   try {
@@ -448,8 +467,8 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const dailyEntryImage = resumableDaily?.entryImage || resumableDaily?.listImage || getRepresentativeImage(dailyPool, "entry") || getRepresentativeImage(cachedDailyVisualRows, "entry") || entryVisuals.daily?.entryImage || entryVisuals.daily?.listImage || "";
   const groupEntryImage = getRepresentativeImage(groups, "entry") || getRepresentativeImage(completedGroups, "entry") || getRepresentativeImage(cachedGroupVisualRows, "entry") || entryVisuals.group?.entryImage || entryVisuals.group?.listImage || "";
   const investContent = design?.siteContent?.investigations || {};
-  const editableDaily = resumableDaily || startableDailyPool[0] || dailyPool[0] || null;
-  const editableGroup = groups[0] || completedGroups[0] || null;
+  const editableDaily = resumableDaily || startableDailyPool[0] || dailyPool[0] || buildEntryVisualPlaceholder("daily", entryVisuals.daily);
+  const editableGroup = groups[0] || completedGroups[0] || buildEntryVisualPlaceholder("group", entryVisuals.group);
   const dailyEntryFrame = editableDaily?.entryImageFrame || editableDaily?.listImageFrame || entryVisuals.daily?.entryImageFrame || entryVisuals.daily?.listImageFrame;
   const groupEntryFrame = editableGroup?.entryImageFrame || editableGroup?.listImageFrame || entryVisuals.group?.entryImageFrame || entryVisuals.group?.listImageFrame;
   const dailyEntryVersion = editableDaily?.imageUpdatedAt || entryVisuals.daily?.imageUpdatedAt || 0;
@@ -579,10 +598,12 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
       }
       const updated = data.item || {};
       setInvestigations((prev) => {
-        const nextRows = Array.isArray(prev) ? prev.map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item) : prev;
+        const rows = Array.isArray(prev) ? prev : [];
+        const hasExistingRow = rows.some((item) => item?.id === imageEditor.id);
+        const nextRows = hasExistingRow ? rows.map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item) : rows;
         writeCachedInvestigations(nextRows);
         writeCachedInvestigationVisuals(nextRows);
-        setEntryVisuals((prev) => rememberEntryVisualFromRows(nextRows, prev));
+        setEntryVisuals((prevVisuals) => mergeEntryVisuals(rememberEntryVisualFromRows(nextRows, prevVisuals), { [imageEditor.type === "group" ? "group" : "daily"]: updated }));
         return nextRows;
       });
       setImageEditor(null);

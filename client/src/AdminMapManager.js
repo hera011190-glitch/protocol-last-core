@@ -6,32 +6,12 @@ import { buildApiUrl } from "./api";
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
-function ensureDesign(input) {
-  const base = clone(defaultDesign || {});
-  const data = input || {};
-  if (!base.siteContent) base.siteContent = {};
-  if (!base.siteContent.maps) base.siteContent.maps = {};
-  if (!Array.isArray(base.siteContent.maps.presets)) base.siteContent.maps.presets = [];
-  if (!Array.isArray(base.siteContent.maps.collections)) {
-    base.siteContent.maps.collections = [{ id: "default", title: "기본 맵", presets: base.siteContent.maps.presets }];
-  }
-  const merged = {
-    ...base,
-    ...data,
-    siteContent: {
-      ...(base.siteContent || {}),
-      ...(data.siteContent || {}),
-      maps: {
-        ...(base.siteContent?.maps || {}),
-        ...(data.siteContent?.maps || {}),
-      },
-    },
-  };
-  if (!Array.isArray(merged.siteContent.maps.collections) || merged.siteContent.maps.collections.length === 0) {
-    merged.siteContent.maps.collections = [{ id: "default", title: "기본 맵", presets: Array.isArray(merged.siteContent.maps.presets) ? merged.siteContent.maps.presets : [] }];
-  }
+function normalizeMapCollections(collections, fallbackPresets = []) {
+  const source = Array.isArray(collections) && collections.length > 0
+    ? collections
+    : [{ id: "default", title: "기본 맵", presets: Array.isArray(fallbackPresets) ? fallbackPresets : [] }];
   const seenCollectionIds = new Set();
-  merged.siteContent.maps.collections = merged.siteContent.maps.collections.filter((collection, index) => {
+  return source.filter((collection, index) => {
     const key = String(collection?.id || `collection-${index}`);
     if (seenCollectionIds.has(key)) return false;
     seenCollectionIds.add(key);
@@ -41,7 +21,58 @@ function ensureDesign(input) {
     title: collection?.title || `맵 탭 ${index + 1}`,
     presets: Array.isArray(collection?.presets) ? collection.presets : [],
   }));
-  if (!merged.siteContent.maps.activeCollectionId) merged.siteContent.maps.activeCollectionId = merged.siteContent.maps.collections[0].id;
+}
+
+function getAppliedCollectionPresets(mapRoot = {}) {
+  const appliedCollections = normalizeMapCollections(
+    Array.isArray(mapRoot.appliedCollections) ? mapRoot.appliedCollections : mapRoot.collections,
+    Array.isArray(mapRoot.presets) ? mapRoot.presets : []
+  );
+  const appliedCollectionId = mapRoot.appliedCollectionId || mapRoot.activeCollectionId || appliedCollections[0]?.id || "";
+  const found = appliedCollections.find((collection) => String(collection.id) === String(appliedCollectionId)) || appliedCollections[0] || null;
+  return {
+    appliedCollections,
+    appliedCollectionId: found?.id || appliedCollectionId,
+    appliedPresets: Array.isArray(found?.presets) ? found.presets : [],
+  };
+}
+
+function ensureDesign(input) {
+  const base = clone(defaultDesign || {});
+  const data = input || {};
+  if (!base.siteContent) base.siteContent = {};
+  if (!base.siteContent.maps) base.siteContent.maps = {};
+  if (!Array.isArray(base.siteContent.maps.presets)) base.siteContent.maps.presets = [];
+
+  const baseMaps = base.siteContent.maps || {};
+  const inputMaps = data.siteContent?.maps || {};
+  const appliedInfo = getAppliedCollectionPresets({ ...baseMaps, ...inputMaps });
+  const editorCollections = normalizeMapCollections(
+    Array.isArray(inputMaps.editorCollections) ? inputMaps.editorCollections : inputMaps.collections,
+    Array.isArray(inputMaps.presets) ? inputMaps.presets : appliedInfo.appliedPresets
+  );
+  const editorActiveCollectionId = inputMaps.editorActiveCollectionId || inputMaps.activeCollectionId || editorCollections[0]?.id || "";
+
+  const merged = {
+    ...base,
+    ...data,
+    siteContent: {
+      ...(base.siteContent || {}),
+      ...(data.siteContent || {}),
+      maps: {
+        ...baseMaps,
+        ...inputMaps,
+        collections: editorCollections,
+        activeCollectionId: editorActiveCollectionId,
+        presets: (editorCollections.find((collection) => String(collection.id) === String(editorActiveCollectionId)) || editorCollections[0] || {})?.presets || [],
+        editorCollections,
+        editorActiveCollectionId,
+        appliedCollections: appliedInfo.appliedCollections,
+        appliedCollectionId: appliedInfo.appliedCollectionId,
+        appliedPresets: appliedInfo.appliedPresets,
+      },
+    },
+  };
   return merged;
 }
 const inputStyle = {
@@ -121,13 +152,24 @@ export default function AdminMapManager({ goBack }) {
     if (!selectedId && maps[0]?.id) setSelectedId(maps[0].id);
   }, [maps, selectedId]);
 
+  const syncEditorDraftMaps = (next, activeId = selectedCollectionId) => {
+    if (!next?.siteContent?.maps) return next;
+    const draftCollections = normalizeMapCollections(next.siteContent.maps.collections || [], next.siteContent.maps.presets || []);
+    next.siteContent.maps.collections = draftCollections;
+    next.siteContent.maps.editorCollections = draftCollections;
+    next.siteContent.maps.editorActiveCollectionId = activeId || draftCollections[0]?.id || "";
+    const foundDraft = draftCollections.find((collection) => String(collection.id) === String(next.siteContent.maps.editorActiveCollectionId)) || draftCollections[0] || null;
+    next.siteContent.maps.presets = Array.isArray(foundDraft?.presets) ? foundDraft.presets : [];
+    return next;
+  };
+
   const patchCollection = (collectionId, updater) => {
     setDesign((prev) => {
       const next = ensureDesign(prev);
       next.siteContent.maps.collections = next.siteContent.maps.collections.map((collection) =>
         String(collection.id) === String(collectionId) ? updater(collection) : collection
       );
-      return next;
+      return syncEditorDraftMaps(next);
     });
   };
 
@@ -145,7 +187,7 @@ export default function AdminMapManager({ goBack }) {
       next.siteContent.maps.collections = next.siteContent.maps.collections.map((collection) =>
         String(collection.id) === String(collectionId) ? { ...collection, ...patch } : collection
       );
-      return next;
+      return syncEditorDraftMaps(next);
     });
 
   const addCollection = () => {
@@ -153,7 +195,7 @@ export default function AdminMapManager({ goBack }) {
     setDesign((prev) => {
       const next = ensureDesign(prev);
       next.siteContent.maps.collections = [...(next.siteContent.maps.collections || []), { id, title: `새 맵 탭 ${next.siteContent.maps.collections.length + 1}`, presets: [] }];
-      return next;
+      return syncEditorDraftMaps(next, id);
     });
     setSelectedCollectionId(id);
     setSelectedId("");
@@ -200,11 +242,40 @@ export default function AdminMapManager({ goBack }) {
     setSelectedId("");
   };
 
+  const buildMapDesignPayload = ({ apply = false } = {}) => {
+    const nextDesign = syncEditorDraftMaps(ensureDesign(design), selectedCollectionId);
+    const mapRoot = nextDesign.siteContent.maps;
+    const draftCollections = normalizeMapCollections(mapRoot.collections || [], mapRoot.presets || []);
+    const draftActiveId = selectedCollectionId || draftCollections[0]?.id || "";
+    const draftSelected = draftCollections.find((collection) => String(collection.id) === String(draftActiveId)) || draftCollections[0] || null;
+
+    mapRoot.editorCollections = draftCollections;
+    mapRoot.editorActiveCollectionId = draftActiveId;
+
+    if (apply) {
+      mapRoot.collections = draftCollections;
+      mapRoot.activeCollectionId = draftActiveId;
+      mapRoot.presets = Array.isArray(draftSelected?.presets) ? draftSelected.presets : [];
+      mapRoot.appliedCollections = draftCollections;
+      mapRoot.appliedCollectionId = draftActiveId;
+      mapRoot.appliedPresets = mapRoot.presets;
+    } else {
+      const appliedCollections = normalizeMapCollections(mapRoot.appliedCollections || mapRoot.collections || [], mapRoot.appliedPresets || mapRoot.presets || []);
+      const appliedCollectionId = mapRoot.appliedCollectionId || mapRoot.activeCollectionId || appliedCollections[0]?.id || "";
+      const appliedSelected = appliedCollections.find((collection) => String(collection.id) === String(appliedCollectionId)) || appliedCollections[0] || null;
+      mapRoot.collections = appliedCollections;
+      mapRoot.activeCollectionId = appliedCollectionId;
+      mapRoot.presets = Array.isArray(appliedSelected?.presets) ? appliedSelected.presets : [];
+      mapRoot.appliedCollections = appliedCollections;
+      mapRoot.appliedCollectionId = appliedCollectionId;
+      mapRoot.appliedPresets = mapRoot.presets;
+    }
+    return nextDesign;
+  };
+
   const save = async () => {
     try {
-      const nextDesign = ensureDesign(design);
-      nextDesign.siteContent.maps.activeCollectionId = selectedCollectionId;
-      nextDesign.siteContent.maps.presets = selectedCollection?.presets || [];
+      const nextDesign = buildMapDesignPayload({ apply: false });
       const res = await fetch(buildApiUrl("/designConfig"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -212,8 +283,8 @@ export default function AdminMapManager({ goBack }) {
       });
       const data = await res.json();
       if (data?.success) {
-        setMessage("저장되었습니다.");
-        window.dispatchEvent(new CustomEvent("plc-design-updated"));
+        setDesign(ensureDesign(data.designConfig || nextDesign));
+        setMessage("맵 편집값이 저장되었습니다. 실제 맵에는 적용되지 않았습니다.");
       } else {
         setMessage("맵 저장 실패");
       }
@@ -224,17 +295,21 @@ export default function AdminMapManager({ goBack }) {
 
   const applyCollection = async () => {
     try {
-      const nextDesign = ensureDesign(design);
-      nextDesign.siteContent.maps.activeCollectionId = selectedCollectionId;
-      nextDesign.siteContent.maps.presets = selectedCollection?.presets || [];
-      setDesign(nextDesign);
-      await fetch(buildApiUrl("/designConfig"), {
+      const nextDesign = buildMapDesignPayload({ apply: true });
+      setDesign(ensureDesign(nextDesign));
+      const res = await fetch(buildApiUrl("/designConfig"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextDesign),
       });
+      const data = await res.json();
+      if (!data?.success) {
+        setMessage("적용 실패");
+        return;
+      }
+      setDesign(ensureDesign(data.designConfig || nextDesign));
       window.dispatchEvent(new CustomEvent("plc-design-updated"));
-      setMessage("현재 맵 탭을 적용했습니다.");
+      setMessage("현재 맵 탭을 실제 맵에 적용했습니다.");
     } catch {
       setMessage("적용 실패");
     }
