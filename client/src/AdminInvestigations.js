@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "./api";
 
 function statusTone(item) {
@@ -28,6 +28,7 @@ function card(item) {
 
 export default function AdminInvestigations({ goBack, goBuilder }) {
   const [items, setItems] = useState([]);
+  const [viewType, setViewType] = useState("daily");
 
   const load = async () => {
     const res = await apiFetch(`/investigations?includeHidden=1&t=${Date.now()}`);
@@ -48,6 +49,10 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
   };
 
   useEffect(() => { load().catch(console.error); }, []);
+
+  const dailyItems = useMemo(() => items.filter((item) => item.type === "daily"), [items]);
+  const groupItems = useMemo(() => items.filter((item) => item.type !== "daily"), [items]);
+  const visibleItems = viewType === "daily" ? dailyItems : groupItems;
 
   const patchToggle = async (item, next) => {
     await apiFetch("/toggleInvestigation", {
@@ -97,8 +102,30 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
         </div>
       </div>
 
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className={viewType === "daily" ? "home-primary-button" : "ghost-button"}
+          onClick={() => setViewType("daily")}
+        >
+          일일조사 {dailyItems.length}
+        </button>
+        <button
+          type="button"
+          className={viewType === "group" ? "home-primary-button" : "ghost-button"}
+          onClick={() => setViewType("group")}
+        >
+          단체조사 {groupItems.length}
+        </button>
+      </div>
+
       <div style={{ display: "grid", gap: 14 }}>
-        {items.map((item) => {
+        {visibleItems.length === 0 ? (
+          <div style={card({})}>
+            {viewType === "daily" ? "표시할 일일조사가 없습니다." : "표시할 단체조사가 없습니다."}
+          </div>
+        ) : null}
+        {visibleItems.map((item) => {
           const tone = statusTone(item);
           return (
           <div key={item.id} style={card(item)}>

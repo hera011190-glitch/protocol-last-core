@@ -587,9 +587,26 @@ function readKnownNonUserRuntimeTokens() {
   }
 }
 
+const EXPLICIT_NON_ACCOUNT_IDS = new Set([
+  "부엌 종업원 기록",
+  "실종자의 흔적",
+  "초상화 속 인물",
+  "archive-slip",
+  "surehomogeneity",
+  "test1",
+  "ward-note",
+]);
+
+function isExplicitNonAccountId(id) {
+  const nextId = normalizeUserIdText(id);
+  if (!nextId) return true;
+  return EXPLICIT_NON_ACCOUNT_IDS.has(nextId) || EXPLICIT_NON_ACCOUNT_IDS.has(nextId.toLowerCase());
+}
+
 function isKnownNonUserRuntimeId(id) {
   const nextId = normalizeUserIdText(id);
   if (!nextId) return true;
+  if (isExplicitNonAccountId(nextId)) return true;
   const lower = nextId.toLowerCase();
   if (lower === "plc") return true;
   if (/^\d+$/.test(nextId)) return true;
@@ -4733,23 +4750,58 @@ function normalizeCustomTemplate(template) {
 
 let customInvestigationsDB = readCustomInvestigationsFromFile();
 
+function hasInvestigationVisualValue(def, key) {
+  return typeof def?.[key] === "string" && def[key].trim()
+    || typeof def?.data?.[key] === "string" && def.data[key].trim();
+}
+
+function mergeInvestigationVisualFieldsForPublish(def, existing) {
+  if (!existing) return def;
+  const next = clone(def || {});
+  next.data = { ...(next.data || {}) };
+
+  if (!hasInvestigationVisualValue(next, "listImage") && (existing.listImage || existing.data?.listImage)) {
+    next.listImage = existing.listImage || existing.data?.listImage || "";
+    next.data.listImage = next.data.listImage || next.listImage;
+  }
+  if (!hasInvestigationVisualValue(next, "entryImage") && (existing.entryImage || existing.data?.entryImage || next.listImage)) {
+    next.entryImage = existing.entryImage || existing.data?.entryImage || next.listImage || "";
+    next.data.entryImage = next.data.entryImage || next.entryImage;
+  }
+  if (!next.listImageFrame && !next.data.listImageFrame && (existing.listImageFrame || existing.data?.listImageFrame)) {
+    next.listImageFrame = normalizeInvestigationImageFrame(existing.listImageFrame || existing.data?.listImageFrame);
+    next.data.listImageFrame = next.data.listImageFrame || next.listImageFrame;
+  }
+  if (!next.entryImageFrame && !next.data.entryImageFrame && (existing.entryImageFrame || existing.data?.entryImageFrame || next.listImageFrame)) {
+    next.entryImageFrame = normalizeInvestigationImageFrame(existing.entryImageFrame || existing.data?.entryImageFrame || next.listImageFrame);
+    next.data.entryImageFrame = next.data.entryImageFrame || next.entryImageFrame;
+  }
+  if (!Number(next.imageUpdatedAt || next.data.imageUpdatedAt || 0) && Number(existing.imageUpdatedAt || existing.data?.imageUpdatedAt || 0)) {
+    next.imageUpdatedAt = Number(existing.imageUpdatedAt || existing.data?.imageUpdatedAt || 0);
+    next.data.imageUpdatedAt = next.imageUpdatedAt;
+  }
+  return next;
+}
+
 function upsertPublishedInvestigation(def) {
-  const built = buildInvestigation(def);
   const existingIndex = investigationsDB.findIndex((item) => item.id === def.id);
   const existing = existingIndex >= 0 ? investigationsDB[existingIndex] : null;
+  const publishDef = mergeInvestigationVisualFieldsForPublish(def, existing);
+  const built = buildInvestigation(publishDef);
   if (existing) {
-    built.opened = def?.opened !== undefined ? !!def.opened : !!existing.opened;
-    built.hidden = def?.hidden !== undefined ? !!def.hidden : !!existing.hidden;
-    built.scheduleEnabled = def?.scheduleEnabled !== undefined ? !!def.scheduleEnabled : !!existing.scheduleEnabled;
-    built.openAt = String(def?.openAt || existing.openAt || "");
-    built.closeAt = String(def?.closeAt || existing.closeAt || "");
+    built.opened = publishDef?.opened !== undefined ? !!publishDef.opened : !!existing.opened;
+    built.hidden = publishDef?.hidden !== undefined ? !!publishDef.hidden : !!existing.hidden;
+    built.scheduleEnabled = publishDef?.scheduleEnabled !== undefined ? !!publishDef.scheduleEnabled : !!existing.scheduleEnabled;
+    built.openAt = String(publishDef?.openAt || existing.openAt || "");
+    built.closeAt = String(publishDef?.closeAt || existing.closeAt || "");
     investigationsDB[existingIndex] = built;
   } else {
     investigationsDB.push(built);
   }
   writeRuntimeArray("investigations.json", investigationsDB);
   emitParticipantsUpdated();
-  emitInvestigationState(def.id);
+  emitInvestigationState(publishDef.id);
+  return built;
 }
 
 customInvestigationsDB.forEach((template) => {
@@ -4795,13 +4847,14 @@ app.post("/admin/publishInvestigation", (req, res) => {
   try {
     const nodeIds = Object.keys(def.data.nodes || {});
     if (!def.data.start || !def.data.nodes[def.data.start]) def.data.start = nodeIds[0];
-    upsertPublishedInvestigation(def);
+    const publishedItem = upsertPublishedInvestigation(def);
+    const persistedDef = serializeInvestigationForPersistence(publishedItem);
 
     const template = normalizeCustomTemplate({
-      id: def.id,
-      title: def.title,
-      type: def.type || "group",
-      json: def,
+      id: persistedDef.id,
+      title: persistedDef.title,
+      type: persistedDef.type || "group",
+      json: persistedDef,
     });
 
     customInvestigationsDB = [

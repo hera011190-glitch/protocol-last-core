@@ -594,8 +594,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                   zIndex: 2,
                   pointerEvents: "none",
                   overflow: "hidden",
-                  WebkitMaskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.95) ${Math.max(1, Math.min(100, tintReveal - 8))}%, rgba(0,0,0,0.28) ${Math.max(1, Math.min(100, tintReveal))}%, rgba(0,0,0,0) 100%)`,
-                  maskImage: `linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.95) ${Math.max(1, Math.min(100, tintReveal - 8))}%, rgba(0,0,0,0.28) ${Math.max(1, Math.min(100, tintReveal))}%, rgba(0,0,0,0) 100%)`,
+                  WebkitMaskImage: "linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.98) 72%, rgba(0,0,0,0.46) 90%, rgba(0,0,0,0) 100%)",
+                  maskImage: "linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.98) 72%, rgba(0,0,0,0.46) 90%, rgba(0,0,0,0) 100%)",
                   WebkitMaskRepeat: "no-repeat",
                   maskRepeat: "no-repeat",
                   mixBlendMode: "multiply",
@@ -614,7 +614,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                     width: renderedSpriteWidth,
                     height: renderedSpriteHeight,
                     objectFit: "contain",
-                    filter: "sepia(96%) saturate(260%) hue-rotate(316deg) brightness(0.82) contrast(128%)",
+                    filter: "sepia(100%) saturate(430%) hue-rotate(315deg) brightness(0.72) contrast(150%)",
                   }}
                 />
               </div>

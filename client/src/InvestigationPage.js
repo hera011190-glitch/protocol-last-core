@@ -1066,8 +1066,19 @@ useEffect(() => {
   const liveEventBanner = investigation?.eventBanner
     ? { text: investigation.eventBanner, type: investigation.eventBannerType, until: Number(investigation.eventBannerUntil || 0) }
     : null;
+  const currentBattleRoundKeyForRender = getBattleRoundKey(investigation);
+  const defeatPlaybackPending = !!(
+    investigation?.ended &&
+    investigation?.endedReason === "전멸" &&
+    Array.isArray(investigation?.lastBattleRound) &&
+    investigation.lastBattleRound.length > 0 &&
+    currentBattleRoundKeyForRender &&
+    autoBattleSubmitRef.current !== `replay:${currentBattleRoundKeyForRender}` &&
+    !keepEndResultOpenRef.current &&
+    !endedResultOpenedRef.current
+  );
   const delayedEventBannerActive = delayedBattleBanner && Number(delayedBattleBanner.until || 0) > nowTick;
-  const liveBattleEndBannerSuppressed = playbackEndingVisible && isBattleEndBannerText(liveEventBanner?.text);
+  const liveBattleEndBannerSuppressed = (playbackEndingVisible || defeatPlaybackPending) && isBattleEndBannerText(liveEventBanner?.text);
   const activeEventBanner = delayedEventBannerActive
     ? delayedBattleBanner
     : liveEventBanner && Number(liveEventBanner.until || 0) > nowTick && !liveBattleEndBannerSuppressed
@@ -1350,7 +1361,7 @@ useEffect(() => {
       setShowResult(true);
       return;
     }
-    if (battlePlaybackLocked || stagedBattleLogs.length > 0) {
+    if (battlePlaybackLocked || stagedBattleLogs.length > 0 || defeatPlaybackPending) {
       setShowResult(false);
       return;
     }
@@ -1367,7 +1378,7 @@ useEffect(() => {
         setShowResult(true);
       }
     }
-  }, [investigation?.ended, investigation?.endedReason, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant]);
+  }, [investigation?.ended, investigation?.endedReason, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant, defeatPlaybackPending]);
 
   if (!investigation || !currentNodeId || (!currentNode && !investigation?.ended)) {
     return (
@@ -1742,7 +1753,7 @@ useEffect(() => {
             >
               {(activeNpcScene.npcProfileImage || activeNpcScene.profileImage) ? (
                 <div style={{ borderRadius: 20, overflow: "hidden", background: "rgba(255,255,255,0.06)", height: 220, width: 180, minWidth: 180, maxWidth: 180, justifySelf: "start", alignSelf: "start", flexShrink: 0 }}>
-                  <img src={activeNpcScene.npcProfileImage || activeNpcScene.profileImage} alt={activeNpcScene.name || "NPC"} style={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", objectPosition: "center center", background: "rgba(0,0,0,0.16)", display: "block", margin: "0 auto" }} />
+                  <img src={activeNpcScene.npcProfileImage || activeNpcScene.profileImage} alt={activeNpcScene.name || "NPC"} style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "center center", background: "rgba(0,0,0,0.16)", display: "block" }} />
                 </div>
               ) : null}
 
@@ -3309,7 +3320,7 @@ function SceneVisualPanel({ currentNode, battleActive, leaders, participants, cu
     <div style={{ position: "absolute", inset: 0, minHeight: 0, borderRadius: 30, overflow: "hidden", border: "none", background: "radial-gradient(circle at 50% 30%, rgba(30,64,175,0.3), rgba(2,6,23,0.96))" }}>
       {sceneBackgroundImage ? <LazyImage src={sceneBackgroundImage} alt="조사 배경" eager fit="cover" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : null}
       <div style={{ position: "absolute", inset: 0, background: battleActive ? "rgba(48,10,18,0.42)" : currentNode?.image ? "rgba(2,6,23,0.26)" : "linear-gradient(rgba(2,6,23,0.18), rgba(2,6,23,0.42))" }} />
-      {npcVisual && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <div style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, display: "grid", placeItems: "end center", pointerEvents: "none" }}><LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", objectPosition: "center bottom", pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /></div> : null}
+      {npcVisual && (npcVisual?.sdImage || npcVisual?.image || npcVisual?.profileImage || npcVisual?.npcProfileImage || npcVisual?.portrait) ? <div style={{ position: "absolute", left: "calc(50% + 52px)", bottom: 192, width: 144, height: 178, display: "grid", placeItems: "end center", pointerEvents: "none" }}><LazyImage src={npcVisual.sdImage || npcVisual.image || npcVisual.profileImage || npcVisual.npcProfileImage || npcVisual.portrait} alt={npcVisual.name || "NPC"} placeholder={false} onError={(event) => { event.currentTarget.style.display = "none"; }} fit="contain" style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "center bottom", pointerEvents: "none", opacity: 0.82, filter: "drop-shadow(0 18px 36px rgba(0,0,0,0.32))" }} /></div> : null}
       {leader && !battleActive ? (
         <div style={{ position: "absolute", left: "50%", bottom: 188, transform: `translateX(-50%) translateY(${wobble}px)`, transition: "transform 0.18s ease", textAlign: "center" }}>
           {bubble ? <div style={{ position: "absolute", left: "50%", top: -16, transform: "translateX(-50%)", minWidth: 36, height: 36, padding: "0 12px", borderRadius: 999, background: battleActive ? "rgba(127,29,29,0.88)" : pendingReward ? "rgba(120,53,15,0.88)" : "rgba(30,64,175,0.88)", color: "white", display: "grid", placeItems: "center", fontWeight: 900, boxShadow: "0 10px 22px rgba(0,0,0,0.28)" }}>{bubble}</div> : null}

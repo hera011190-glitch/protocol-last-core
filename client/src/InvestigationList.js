@@ -26,6 +26,11 @@ function withImageVersion(src = "", version = 0) {
   return `${url}${url.includes("?") ? "&" : "?"}v=${stamp}`;
 }
 
+function isInvestigationAssetReference(src = "") {
+  const url = String(src || "").trim();
+  return /(?:^|\/)asset\/investigation\//.test(url);
+}
+
 function normalizeImageFrame(frame) {
   return {
     x: Math.max(0, Math.min(100, Number(frame?.x ?? 50))),
@@ -298,7 +303,10 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   }, [activeCharacter?.id, activeCharacter?.dailyAttemptsLeft]);
 
   useEffect(() => {
-    preloadInvestigationImages((Array.isArray(investigations) ? investigations : []).flatMap((item) => [item?.listImage, item?.entryImage]).filter(Boolean));
+    preloadInvestigationImages((Array.isArray(investigations) ? investigations : []).flatMap((item) => [
+      withImageVersion(item?.listImage, item?.imageUpdatedAt),
+      withImageVersion(item?.entryImage, item?.imageUpdatedAt),
+    ]).filter(Boolean));
   }, [investigations]);
 
   const dailyPool = useMemo(
@@ -443,11 +451,13 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
     setImageSaving(true);
     try {
       const payload = { investigationId: imageEditor.id };
+      const editorImage = String(imageEditor.image || "").trim();
+      const shouldSendImage = !!editorImage && !isInvestigationAssetReference(editorImage);
       if (imageEditor.mode === "entry") {
-        payload.entryImage = imageEditor.image || "";
+        if (shouldSendImage) payload.entryImage = editorImage;
         payload.entryImageFrame = normalizeImageFrame(imageEditor.frame);
       } else {
-        payload.listImage = imageEditor.image || "";
+        if (shouldSendImage) payload.listImage = editorImage;
         payload.listImageFrame = normalizeImageFrame(imageEditor.frame);
       }
       const res = await apiFetch('/admin/investigationCardImage', {

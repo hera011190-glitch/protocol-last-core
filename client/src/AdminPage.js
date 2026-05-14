@@ -48,10 +48,21 @@ function getAdminAccountId(user) {
   );
 }
 
+const EXPLICIT_NON_ACCOUNT_IDS = new Set([
+  "부엌 종업원 기록",
+  "실종자의 흔적",
+  "초상화 속 인물",
+  "archive-slip",
+  "surehomogeneity",
+  "test1",
+  "ward-note",
+]);
+
 function isSelectableAdminUserRow(user) {
   const id = getAdminAccountId(user);
   if (!id) return false;
   const lower = id.toLowerCase();
+  if (EXPLICIT_NON_ACCOUNT_IDS.has(id) || EXPLICIT_NON_ACCOUNT_IDS.has(lower)) return false;
   if (["plc", "id", "name", "items", "item", "users", "accounts", "members", "data", "rows", "design", "theme", "node", "npc", "battle", "shop", "reward", "monster", "enemy", "login", "auth", "registered", "register", "actionresults", "clue", "json", "relreq", "memo", "note", "adminmemo"].includes(lower)) return false;
   if (/^item-\d{8,}$/.test(lower)) return false;
   if (/^(custom|investigation|shop|item|node|map|design|theme|npc|battle|reward|monster|enemy|e-beast|login|auth|registered|actionresults|clue|relreq|memo|adminmemo)[-_:.]/i.test(id)) return false;
