@@ -114,14 +114,23 @@ export default function AdminMapManager({ goBack }) {
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [message, setMessage] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [dragState, setDragState] = useState(null);
   const previewRef = useRef(null);
 
   useEffect(() => {
-    fetch(buildApiUrl("/designConfig"))
+    setLoaded(false);
+    fetch(buildApiUrl("/designConfig"), { cache: "no-store" })
       .then((res) => res.json())
-      .then((data) => setDesign(ensureDesign(data)))
-      .catch(() => setDesign(ensureDesign(defaultDesign)));
+      .then((data) => {
+        setDesign(ensureDesign(data));
+        setLoaded(true);
+      })
+      .catch(() => {
+        setDesign(ensureDesign(defaultDesign));
+        setLoaded(false);
+        setMessage("맵 데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
+      });
   }, []);
 
   useEffect(() => {
@@ -259,6 +268,10 @@ export default function AdminMapManager({ goBack }) {
   };
 
   const save = async () => {
+    if (!loaded) {
+      setMessage("맵 데이터를 아직 불러오는 중입니다. 잠시 후 다시 저장해 주세요.");
+      return;
+    }
     try {
       const nextDesign = buildMapDesignPayload();
       const res = await fetch(buildApiUrl("/designMaps/saveDraft"), {
@@ -279,6 +292,10 @@ export default function AdminMapManager({ goBack }) {
   };
 
   const applyCollection = async () => {
+    if (!loaded) {
+      setMessage("맵 데이터를 아직 불러오는 중입니다. 잠시 후 다시 적용해 주세요.");
+      return;
+    }
     try {
       const nextDesign = buildMapDesignPayload();
       const res = await fetch(buildApiUrl("/designMaps/applyDraft"), {

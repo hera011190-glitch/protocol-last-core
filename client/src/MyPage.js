@@ -399,6 +399,25 @@ const PROFILE_FONT_OPTIONS = [
   { label: "궁서", value: `"Gungsuh", serif` },
 ];
 
+
+function isGeneratedCharacterAssetUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.startsWith("/asset/character/")) return true;
+  try {
+    const parsed = new URL(text, window.location.origin);
+    return parsed.pathname.startsWith("/asset/character/");
+  } catch {
+    return text.includes("/asset/character/");
+  }
+}
+
+function preserveEditableImageValue(value, fallback = "") {
+  const text = String(value || "").trim();
+  if (!text) return fallback || "";
+  return isGeneratedCharacterAssetUrl(text) ? (fallback || "") : value;
+}
+
 export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser, design, theme }) {
   const [allMyCharacters, setAllMyCharacters] = useState([]);
   const [allCharacters, setAllCharacters] = useState([]);
@@ -481,7 +500,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const loadCharacterDetail = async (characterId) => {
     if (!characterId) return null;
     try {
-      const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
+      const res = await fetch(buildApiUrl(`/character/${characterId}?t=${Date.now()}`), { cache: "no-store" });
       const data = await res.json();
       return data?.character || null;
     } catch {
@@ -663,10 +682,10 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
       rank: profileEdit.rank,
       oneLine: profileEdit.oneLine,
       profile: preservedProfile,
-      image: profileEdit.image,
-      mainImage: profileEdit.mainImage,
+      image: preserveEditableImageValue(profileEdit.image, latestDetail?.image),
+      mainImage: preserveEditableImageValue(profileEdit.mainImage, latestDetail?.mainImage),
       mainImageFrame: normalizeProfileCardFrame(profileEdit.mainImageFrame),
-      investigationImage: profileEdit.investigationImage,
+      investigationImage: preserveEditableImageValue(profileEdit.investigationImage, latestDetail?.investigationImage),
       profileBgm: profileEdit.profileBgm,
       profileBgmVolume: Math.max(0, Math.min(1, Number(profileEdit.profileBgmVolume ?? 1) || 1)),
     });

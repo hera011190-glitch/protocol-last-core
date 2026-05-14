@@ -13,6 +13,7 @@ import InvestigationPage from "./InvestigationPage";
 import renderElement from "./renderElement";
 import AppShellFrame, { mergeShellOverrideMaps, getSharedShellElementsFromDesign, getSharedShellOverridesFromDesign } from "./AppShellFrame";
 import { applyDomOverrides, buildSelectorFromNode, getNodeLabel } from "./designDomUtils";
+import { buildApiUrl } from "./api";
 
 const DESIGN_CACHE_KEY = "plc-design-cache";
 
@@ -820,7 +821,7 @@ export default function ThemeEditor({ goBack }) {
   const [previewCanvasHeight, setPreviewCanvasHeight] = useState(() => (typeof window !== "undefined" ? Math.max(900, window.innerHeight) : 900));
 
   useEffect(() => {
-    fetch("http://localhost:3001/designConfig", { cache: "no-store" })
+    fetch(buildApiUrl("/designConfig"), { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         const next = ensureDesign(data);
@@ -1047,16 +1048,17 @@ export default function ThemeEditor({ goBack }) {
 
   const save = async () => {
     const payload = ensureDesign(design);
-    const res = await fetch("http://localhost:3001/designConfig", {
+    const res = await fetch(buildApiUrl("/designConfig"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     if (!res.ok) return alert("저장 실패");
+    const data = await res.json().catch(() => null);
     try {
-      localStorage.setItem(DESIGN_CACHE_KEY, JSON.stringify(payload));
+      localStorage.removeItem(DESIGN_CACHE_KEY);
     } catch {}
-    window.dispatchEvent(new CustomEvent("plc-design-updated", { detail: { design: payload } }));
+    window.dispatchEvent(new CustomEvent("plc-design-updated"));
     setMessage("저장되었습니다.");
     setIsDirty(false);
     clearTimeout(saveMessageTimerRef.current);

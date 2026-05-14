@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import DesignPageFrame from "./DesignPageFrame";
+import { buildApiUrl } from "./api";
 
 function mapScheduleItems(items) {
   if (!Array.isArray(items)) return [];
@@ -417,7 +418,7 @@ export default function HomePage({ user, activeCharacter, openMy, goCharacters, 
         };
       }
 
-      const res = await fetch("http://localhost:3001/designConfig", {
+      const res = await fetch(buildApiUrl("/designConfig"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextDesign),

@@ -1455,6 +1455,43 @@ function isDataImage(value) {
   return typeof value === "string" && /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value);
 }
 
+function isDataAudio(value) {
+  return typeof value === "string" && /^data:audio\/[a-zA-Z0-9.+-]+;base64,/.test(value);
+}
+
+function isDataAsset(value) {
+  return isDataImage(value) || isDataAudio(value);
+}
+
+function isGeneratedCharacterAssetUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.startsWith("/asset/character/")) return true;
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    return parsed.pathname.startsWith("/asset/character/");
+  } catch {
+    return /\/asset\/character\//.test(text);
+  }
+}
+
+function getGeneratedCharacterAssetPath(value) {
+  const text = String(value || "").trim();
+  if (!text || !isGeneratedCharacterAssetUrl(text)) return "";
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    return parsed.searchParams.get("path") || "";
+  } catch {
+    const match = text.match(/[?&]path=([^&]+)/);
+    if (!match) return "";
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1] || "";
+    }
+  }
+}
+
 function pathSegments(pathKey = "") {
   return String(pathKey || "").match(/[^.[\]]+/g) || [];
 }
@@ -1474,6 +1511,20 @@ function mapDataImages(source, makeUrl, currentPath = "") {
     );
   }
   if (isDataImage(source)) return makeUrl(currentPath, source);
+  return source;
+}
+
+function mapDesignAssets(source, makeUrl, currentPath = "") {
+  if (Array.isArray(source)) return source.map((value, index) => mapDesignAssets(value, makeUrl, `${currentPath}[${index}]`));
+  if (source && typeof source === "object") {
+    return Object.fromEntries(
+      Object.entries(source).map(([key, value]) => {
+        const nextPath = currentPath ? `${currentPath}.${key}` : key;
+        return [key, mapDesignAssets(value, makeUrl, nextPath)];
+      })
+    );
+  }
+  if (isDataAsset(source)) return makeUrl(currentPath, source);
   return source;
 }
 
@@ -1500,9 +1551,9 @@ function reqFresh(req, etag) {
   return incoming && incoming.split(",").map((part) => part.trim()).includes(etag);
 }
 
-function sendDataImage(res, value) {
+function sendDataAsset(res, value) {
   const raw = String(value || "");
-  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  const match = raw.match(/^data:((?:image|audio)\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) return res.status(404).end();
   const [, mime, payload] = match;
   const etag = makeWeakEtagFromText(raw);
@@ -1516,7 +1567,27 @@ function sendDataImage(res, value) {
     cached = { mime, buffer: Buffer.from(payload, "base64") };
     rememberDataImageCache(etag, cached);
   }
+  const range = String(res.req?.headers?.range || "");
+  if (range) {
+    const total = cached.buffer.length;
+    const matchRange = range.match(/bytes=(\d*)-(\d*)/);
+    if (matchRange) {
+      const start = matchRange[1] ? Number(matchRange[1]) : 0;
+      const end = matchRange[2] ? Number(matchRange[2]) : total - 1;
+      if (Number.isFinite(start) && Number.isFinite(end) && start <= end && start < total) {
+        const safeEnd = Math.min(end, total - 1);
+        res.status(206);
+        res.set("Content-Range", `bytes ${start}-${safeEnd}/${total}`);
+        res.set("Content-Length", String(safeEnd - start + 1));
+        return res.send(cached.buffer.subarray(start, safeEnd + 1));
+      }
+    }
+  }
   return res.send(cached.buffer);
+}
+
+function sendDataImage(res, value) {
+  return sendDataAsset(res, value);
 }
 
 function toCharacterAssetUrl(characterId, pathKey, version = "") {
@@ -1568,6 +1639,8 @@ function markDaily(characterName) {
   dailyInvestigationAttempts[today][characterName] = true;
 }
 
+const DESIGN_MAPS_STORE_FILE = "designMaps.json";
+
 const defaultTheme = {
   bgMain: "#040812",
   panel: "rgba(10, 18, 34, 0.62)",
@@ -1597,6 +1670,8 @@ if (savedDesign && typeof savedDesign === "object") {
     sharedShellOverrides: typeof savedDesign.sharedShellOverrides === "object" && savedDesign.sharedShellOverrides ? savedDesign.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {}),
   };
 }
+
+designConfig = protectDesignMapsOnStartup(designConfig);
 
 let publicDesignShellCache = null;
 let publicDesignMapsCache = null;
@@ -3323,18 +3398,18 @@ app.get("/image-manifest", (req, res) => {
 
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
-  if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(res, value);
+  if (!isDataAsset(value)) return res.status(404).end();
+  return sendDataAsset(res, value);
 });
 
 app.get("/asset/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).end();
   let pathKey = String(req.query.path || "");
-  if (pathKey === "profileImage") pathKey = pickCharacterAssetPath(character, ["profileImage", "image", "avatar", "portraitImage", "portrait", "mainImage", "cardImage", "investigationImage", "spriteImage"]);
-  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterAssetPath(character, ["mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
-  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterAssetPath(character, ["spriteImage", "investigationImage", "sdImage", "sdImageUrl", "sd", "mainImage", "cardImage", "profileImage", "image"]);
-  const value = getValueByPath(character, pathKey || "");
+  if (pathKey === "profileImage") pathKey = pickCharacterDataAssetPath(character, ["profileImage", "image", "avatar", "portraitImage", "portrait", "mainImage", "cardImage", "fullBodyImage", "fullImage", "investigationImage", "spriteImage"]);
+  if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterDataAssetPath(character, ["mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
+  if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterDataAssetPath(character, ["spriteImage", "investigationImage", "sdImage", "sdImageUrl", "sd", "mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
+  const value = getCharacterDataImageByPath(character, pathKey || "");
   if (!isDataImage(value)) return res.status(404).end();
   return sendDataImage(res, value);
 });
@@ -3346,6 +3421,60 @@ app.get("/asset/investigation/:id", (req, res) => {
   if (!isDataImage(value)) return res.status(404).end();
   return sendDataImage(res, value);
 });
+function readDedicatedDesignMapsStore() {
+  return readJsonFromPath(resolveDataPath(DESIGN_MAPS_STORE_FILE), null);
+}
+
+function writeDedicatedDesignMapsStore(mapRoot) {
+  if (!hasMeaningfulDesignMaps(mapRoot)) return;
+  try {
+    writeJsonAtomicSync(resolveDataPath(DESIGN_MAPS_STORE_FILE), mapRoot);
+  } catch (error) {
+    console.error("design maps store save failed", error);
+  }
+}
+
+function getProtectedDesignMaps(previousMaps = null) {
+  const dedicatedMaps = readDedicatedDesignMapsStore();
+  if (hasMeaningfulDesignMaps(dedicatedMaps)) return dedicatedMaps;
+  if (hasMeaningfulDesignMaps(previousMaps)) return previousMaps;
+  const currentMaps = designConfig?.siteContent?.maps;
+  if (hasMeaningfulDesignMaps(currentMaps)) return currentMaps;
+  return null;
+}
+
+function protectDesignMapsOnStartup(config) {
+  const source = config && typeof config === "object" ? config : {};
+  const siteContent = source.siteContent && typeof source.siteContent === "object" ? source.siteContent : {};
+  const dedicatedMaps = readDedicatedDesignMapsStore();
+  const savedMaps = siteContent.maps;
+  const protectedMaps = hasMeaningfulDesignMaps(dedicatedMaps)
+    ? dedicatedMaps
+    : (hasMeaningfulDesignMaps(savedMaps) ? savedMaps : null);
+  if (!protectedMaps) return source;
+  if (!hasMeaningfulDesignMaps(dedicatedMaps)) writeDedicatedDesignMapsStore(protectedMaps);
+  return {
+    ...source,
+    siteContent: {
+      ...siteContent,
+      maps: protectedMaps,
+    },
+  };
+}
+
+function applyProtectedDesignMapsToCurrentConfig(previousMaps = null) {
+  const protectedMaps = getProtectedDesignMaps(previousMaps);
+  if (!protectedMaps) return null;
+  designConfig = {
+    ...(designConfig || {}),
+    siteContent: {
+      ...((designConfig && designConfig.siteContent) || {}),
+      maps: protectedMaps,
+    },
+  };
+  return protectedMaps;
+}
+
 function hasMeaningfulDesignMaps(mapRoot) {
   if (!mapRoot || typeof mapRoot !== "object") return false;
   const presets = Array.isArray(mapRoot.presets) ? mapRoot.presets : [];
@@ -3489,7 +3618,9 @@ function buildAppliedMapRootFromPayload(incomingRoot = {}, currentRoot = {}) {
   };
 }
 
-function commitDesignConfigChange() {
+function commitDesignConfigChange(options = {}) {
+  const preserveProtectedMaps = options?.preserveProtectedMaps !== false;
+  if (preserveProtectedMaps) applyProtectedDesignMapsToCurrentConfig(designConfig?.siteContent?.maps);
   designAssetVersion = Date.now();
   publicDesignShellCache = null;
   publicDesignMapsCache = null;
@@ -3501,28 +3632,64 @@ function commitDesignConfigChange() {
   }
 }
 
+function mergeDesignBgmSafely(previousBgm = {}, incomingBgm = {}, { allowClear = false } = {}) {
+  const previous = previousBgm && typeof previousBgm === "object" ? previousBgm : {};
+  const incoming = incomingBgm && typeof incomingBgm === "object" ? incomingBgm : {};
+  const merged = { ...previous, ...incoming };
+  ["site", "home"].forEach((key) => {
+    const incomingHasKey = Object.prototype.hasOwnProperty.call(incoming, key);
+    const incomingValue = String(incoming[key] || "");
+    const previousValue = String(previous[key] || "");
+    if (!allowClear && incomingHasKey && !incomingValue && previousValue) {
+      merged[key] = previous[key];
+    }
+  });
+  ["siteVolume", "volume"].forEach((key) => {
+    if (merged[key] !== undefined) {
+      const num = Number(merged[key]);
+      merged[key] = Number.isFinite(num) ? Math.max(0, Math.min(1, num)) : (previous[key] ?? 1);
+    }
+  });
+  return merged;
+}
+
 app.post("/designConfig", (req, res) => {
-  const payload = req.body && typeof req.body === "object" ? req.body : {};
-  const previousMaps = designConfig?.siteContent?.maps;
-  const incomingMaps = payload?.siteContent?.maps;
-  const shouldPreserveMaps = hasMeaningfulDesignMaps(previousMaps) && !hasMeaningfulDesignMaps(incomingMaps);
+  const rawPayload = req.body && typeof req.body === "object" ? req.body : {};
+  const payload = { ...rawPayload };
+  delete payload.__allowBgmClear;
+  delete payload.__intent;
+  const previousConfig = designConfig && typeof designConfig === "object" ? designConfig : {};
+  const previousMaps = getProtectedDesignMaps(previousConfig?.siteContent?.maps) || previousConfig?.siteContent?.maps;
+  const hasIncomingSiteContent = payload.siteContent && typeof payload.siteContent === "object";
+  const allowBgmClear = rawPayload.__allowBgmClear === true || rawPayload.__intent === "siteBgm";
+
   const nextSiteContent = {
     ...(defaultDesign.siteContent || {}),
-    ...(payload.siteContent || {}),
+    ...(previousConfig.siteContent || {}),
+    ...(hasIncomingSiteContent ? payload.siteContent : {}),
   };
-  if (shouldPreserveMaps) {
-    nextSiteContent.maps = previousMaps;
-  } else if (incomingMaps && typeof incomingMaps === "object") {
-    nextSiteContent.maps = buildDraftMapRootFromPayload(incomingMaps, previousMaps || {});
+
+  if (hasIncomingSiteContent && payload.siteContent && Object.prototype.hasOwnProperty.call(payload.siteContent, "bgm")) {
+    nextSiteContent.bgm = mergeDesignBgmSafely(previousConfig?.siteContent?.bgm, payload.siteContent.bgm, { allowClear: allowBgmClear });
   }
+
+  // 맵 데이터는 다른 저장(홈, BGM, 캐릭터, 일반 디자인 저장)에서 절대 바뀌지 않게 보호합니다.
+  // 실제 맵 변경은 /designMaps/saveDraft 또는 /designMaps/applyDraft에서만 처리합니다.
+  if (hasMeaningfulDesignMaps(previousMaps)) nextSiteContent.maps = previousMaps;
+
   designConfig = {
     ...defaultDesign,
+    ...previousConfig,
     ...payload,
-    theme: { ...(defaultDesign.theme || {}), ...(payload.theme || {}) },
-    pages: { ...(defaultDesign.pages || {}), ...(payload.pages || {}) },
+    theme: { ...(defaultDesign.theme || {}), ...(previousConfig.theme || {}), ...(payload.theme || {}) },
+    pages: { ...(defaultDesign.pages || {}), ...(previousConfig.pages || {}), ...(payload.pages || {}) },
     siteContent: nextSiteContent,
-    sharedShellElements: Array.isArray(payload.sharedShellElements) ? payload.sharedShellElements : (Array.isArray(defaultDesign.sharedShellElements) ? defaultDesign.sharedShellElements : []),
-    sharedShellOverrides: typeof payload.sharedShellOverrides === "object" && payload.sharedShellOverrides ? payload.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {}),
+    sharedShellElements: Array.isArray(payload.sharedShellElements)
+      ? payload.sharedShellElements
+      : (Array.isArray(previousConfig.sharedShellElements) ? previousConfig.sharedShellElements : (Array.isArray(defaultDesign.sharedShellElements) ? defaultDesign.sharedShellElements : [])),
+    sharedShellOverrides: typeof payload.sharedShellOverrides === "object" && payload.sharedShellOverrides
+      ? payload.sharedShellOverrides
+      : (typeof previousConfig.sharedShellOverrides === "object" && previousConfig.sharedShellOverrides ? previousConfig.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {})),
   };
   commitDesignConfigChange();
 
@@ -3532,11 +3699,13 @@ app.post("/designConfig", (req, res) => {
 app.post("/designMaps/saveDraft", (req, res) => {
   const incomingMaps = req.body?.maps && typeof req.body.maps === "object" ? req.body.maps : {};
   const previousMaps = designConfig?.siteContent?.maps || {};
+  const nextMaps = buildDraftMapRootFromPayload(incomingMaps, previousMaps);
+  writeDedicatedDesignMapsStore(nextMaps);
   designConfig = {
     ...designConfig,
     siteContent: {
       ...(designConfig.siteContent || {}),
-      maps: buildDraftMapRootFromPayload(incomingMaps, previousMaps),
+      maps: nextMaps,
     },
   };
   commitDesignConfigChange();
@@ -3546,11 +3715,13 @@ app.post("/designMaps/saveDraft", (req, res) => {
 app.post("/designMaps/applyDraft", (req, res) => {
   const incomingMaps = req.body?.maps && typeof req.body.maps === "object" ? req.body.maps : {};
   const previousMaps = designConfig?.siteContent?.maps || {};
+  const nextMaps = buildAppliedMapRootFromPayload(incomingMaps, previousMaps);
+  writeDedicatedDesignMapsStore(nextMaps);
   designConfig = {
     ...designConfig,
     siteContent: {
       ...(designConfig.siteContent || {}),
-      maps: buildAppliedMapRootFromPayload(incomingMaps, previousMaps),
+      maps: nextMaps,
     },
   };
   commitDesignConfigChange();
@@ -3783,9 +3954,9 @@ app.post("/updateCharacter", (req, res) => {
 
   // 중요: 이미지 / 프로필 글 / BGM은 빈 값으로 기존 데이터를 덮어쓰지 않게 보호합니다.
   // 브라우저를 바꾸거나 캐시가 비어 있는 운영 화면에서 저장해도 기존 캐릭터 정보가 사라지지 않도록 합니다.
-  assignCharacterStringFieldSafely(char, "image", image ?? profileImage, { protectExisting: true });
-  assignCharacterStringFieldSafely(char, "mainImage", mainImage ?? cardImage, { protectExisting: true });
-  assignCharacterStringFieldSafely(char, "investigationImage", investigationImage ?? spriteImage, { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "image", sanitizeIncomingCharacterImageValue(char, image) ?? sanitizeIncomingCharacterImageValue(char, profileImage), { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "mainImage", sanitizeIncomingCharacterImageValue(char, mainImage) ?? sanitizeIncomingCharacterImageValue(char, cardImage), { protectExisting: true });
+  assignCharacterStringFieldSafely(char, "investigationImage", sanitizeIncomingCharacterImageValue(char, investigationImage) ?? sanitizeIncomingCharacterImageValue(char, spriteImage), { protectExisting: true });
   assignCharacterStringFieldSafely(char, "profileBgm", profileBgm ?? bgmUrl, { protectExisting: true });
   assignCharacterStringFieldSafely(char, "profile", profile ?? profileText ?? profileContent, { protectExisting: true });
   assignCharacterStringFieldSafely(char, "profileText", profileText ?? profile, { protectExisting: true });
@@ -5153,11 +5324,53 @@ function summarizeCharacter(character) {
   };
 }
 
+function resolveCharacterDataImageValue(character, value, seen = new Set()) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isDataImage(raw)) return raw;
+  if (!isGeneratedCharacterAssetUrl(raw)) return "";
+  const refPath = getGeneratedCharacterAssetPath(raw);
+  if (!refPath || seen.has(refPath)) return "";
+  seen.add(refPath);
+  return resolveCharacterDataImageValue(character, getValueByPath(character, refPath), seen);
+}
+
+function getCharacterDataImageByPath(character, pathKey = "") {
+  const key = String(pathKey || "").trim();
+  if (!key) return "";
+  return resolveCharacterDataImageValue(character, getValueByPath(character, key), new Set([key]));
+}
+
+function pickCharacterDataAssetPath(character, candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [candidates];
+  for (const key of list) {
+    if (getCharacterDataImageByPath(character, key)) return key;
+  }
+  return "";
+}
+
+function sanitizeIncomingCharacterImageValue(character, value) {
+  if (value === undefined) return undefined;
+  const text = String(value || "").trim();
+  if (!text) return value;
+  if (!isGeneratedCharacterAssetUrl(text)) return value;
+  const refPath = getGeneratedCharacterAssetPath(text);
+  const resolved = refPath ? getCharacterDataImageByPath(character, refPath) : "";
+  return resolved || undefined;
+}
+
 function pickCharacterAssetPath(character, candidates = []) {
   const list = Array.isArray(candidates) ? candidates : [candidates];
   for (const key of list) {
     const value = character?.[key];
-    if (typeof value === "string" && value.trim()) return key;
+    if (isDataImage(value)) return key;
+  }
+  for (const key of list) {
+    const value = character?.[key];
+    if (typeof value === "string" && value.trim() && !isGeneratedCharacterAssetUrl(value)) return key;
+  }
+  for (const key of list) {
+    if (getCharacterDataImageByPath(character, key)) return key;
   }
   return "";
 }
@@ -5260,7 +5473,7 @@ function buildPublicDesignShellConfig(config) {
   const source = config && typeof config === "object" ? config : {};
   const nextSiteContent = { ...(source.siteContent || {}) };
   delete nextSiteContent.maps;
-  return mapDataImages({
+  return mapDesignAssets({
     ...source,
     siteContent: nextSiteContent,
   }, (pathKey) => toDesignAssetUrl(pathKey));

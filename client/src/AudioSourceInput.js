@@ -40,6 +40,9 @@ export default function AudioSourceInput({
 }) {
   const fileRef = useRef(null);
   const nextVolume = clampVolume(volume);
+  const rawValue = String(value || "");
+  const isEmbeddedAudio = rawValue.startsWith("data:audio/");
+  const inputValue = isEmbeddedAudio ? "" : rawValue;
 
   useEffect(() => {
     if (!previewScope) return undefined;
@@ -86,9 +89,9 @@ export default function AudioSourceInput({
         ) : null}
       </div>
       <input
-        value={value || ""}
+        value={inputValue}
         onChange={(event) => onChange?.(event.target.value)}
-        placeholder={placeholder}
+        placeholder={isEmbeddedAudio ? "업로드된 오디오 파일이 연결되어 있습니다." : placeholder}
         style={{ ...inputStyle, marginTop: 0, padding: compact ? "10px 12px" : "12px 14px" }}
       />
       <div style={{ display: "grid", gap: 8 }}>
@@ -119,7 +122,7 @@ export default function AudioSourceInput({
       </div>
       {value ? (
         <div style={{ color: "#35566f", fontSize: 12, lineHeight: 1.6, wordBreak: "break-all" }}>
-          연결됨
+          {isEmbeddedAudio ? "업로드된 오디오 파일 연결됨" : "연결됨"}
         </div>
       ) : null}
     </div>

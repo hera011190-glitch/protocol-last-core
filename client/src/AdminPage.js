@@ -303,6 +303,25 @@ const PROFILE_FONT_OPTIONS = [
 
 const adminApi = (path) => buildApiUrl(path);
 
+
+function isGeneratedCharacterAssetUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.startsWith("/asset/character/")) return true;
+  try {
+    const parsed = new URL(text, window.location.origin);
+    return parsed.pathname.startsWith("/asset/character/");
+  } catch {
+    return text.includes("/asset/character/");
+  }
+}
+
+function preserveEditableImageValue(value, fallback = "") {
+  const text = String(value || "").trim();
+  if (!text) return fallback || "";
+  return isGeneratedCharacterAssetUrl(text) ? (fallback || "") : value;
+}
+
 function normalizeSavedCharacterPayload(character) {
   if (!character || typeof character !== "object") return character;
   const version = Number(character.assetVersion || character.updatedAt || Date.now());
@@ -540,6 +559,8 @@ export default function AdminPage({
       const current = await currentRes.json();
       const next = {
         ...(current || {}),
+        __intent: "siteBgm",
+        __allowBgmClear: true,
         siteContent: {
           ...((current && current.siteContent) || {}),
           bgm: {
@@ -560,9 +581,9 @@ export default function AdminPage({
         return;
       }
       try {
-        localStorage.setItem("plc-design-cache", JSON.stringify(saved.designConfig));
+        localStorage.removeItem("plc-design-cache");
       } catch {}
-      window.dispatchEvent(new CustomEvent("plc-design-updated", { detail: { design: saved.designConfig } }));
+      window.dispatchEvent(new CustomEvent("plc-design-updated"));
       setMessage("홈페이지 BGM 저장 완료");
     } catch {
       setMessage("홈페이지 BGM 저장 실패");
@@ -861,9 +882,9 @@ export default function AdminPage({
       body: JSON.stringify({
         charId: selectedCharacter.id,
         name: edit.name,
-        image: edit.image || latestDetail.image || "",
-        mainImage: edit.mainImage || latestDetail.mainImage || "",
-        investigationImage: edit.investigationImage || latestDetail.investigationImage || "",
+        image: preserveEditableImageValue(edit.image, latestDetail.image),
+        mainImage: preserveEditableImageValue(edit.mainImage, latestDetail.mainImage),
+        investigationImage: preserveEditableImageValue(edit.investigationImage, latestDetail.investigationImage),
         profile: preservedProfile,
         level: Number(edit.level || 1),
         statPoints: Number(edit.statPoints || 0),

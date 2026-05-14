@@ -264,16 +264,26 @@ const SD_IMAGE_CACHE_TOKEN = "stable";
 
 function readCachedMapConfig() {
   try {
-    const raw = sessionStorage.getItem(SD_MAP_CONFIG_CACHE_KEY) || localStorage.getItem(SD_MAP_CONFIG_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = sessionStorage.getItem(SD_MAP_CONFIG_CACHE_KEY);
+    if (!raw) {
+      try { localStorage.removeItem(SD_MAP_CONFIG_CACHE_KEY); } catch {}
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    const savedAt = Number(parsed?.__savedAt || 0);
+    if (!savedAt || Date.now() - savedAt > 5 * 60 * 1000) {
+      clearCachedMapConfig();
+      return null;
+    }
+    return parsed?.maps && typeof parsed.maps === "object" ? parsed.maps : parsed;
   } catch {
     return null;
   }
 }
 
 function writeCachedMapConfig(value) {
-  try { sessionStorage.setItem(SD_MAP_CONFIG_CACHE_KEY, JSON.stringify(value || {})); } catch {}
-  try { localStorage.setItem(SD_MAP_CONFIG_CACHE_KEY, JSON.stringify(value || {})); } catch {}
+  try { sessionStorage.setItem(SD_MAP_CONFIG_CACHE_KEY, JSON.stringify({ __savedAt: Date.now(), maps: value || {} })); } catch {}
+  try { localStorage.removeItem(SD_MAP_CONFIG_CACHE_KEY); } catch {}
 }
 
 function clearCachedMapConfig() {

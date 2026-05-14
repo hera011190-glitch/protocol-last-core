@@ -7,6 +7,23 @@ import { renderProfileRichContent } from "./profileRichText";
 import { buildApiUrl } from "./api";
 
 
+
+function isDataImage(value) {
+  return typeof value === "string" && value.startsWith("data:image/");
+}
+
+function isGeneratedCharacterAssetUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.startsWith("/asset/character/")) return true;
+  try {
+    const parsed = new URL(text, window.location.origin);
+    return parsed.pathname.startsWith("/asset/character/");
+  } catch {
+    return text.includes("/asset/character/");
+  }
+}
+
 function firstNonEmpty(...values) {
   for (const value of values) {
     const text = String(value || "").trim();
@@ -23,6 +40,7 @@ function mergeCharacterWithoutBlankingImages(base, hydrated) {
     const hydratedValue = String(hydrated?.[key] || "").trim();
     const baseValue = String(base?.[key] || "").trim();
     if (!hydratedValue && baseValue) merged[key] = baseValue;
+    if (isDataImage(baseValue) && isGeneratedCharacterAssetUrl(hydratedValue)) merged[key] = baseValue;
   });
   return merged;
 }
