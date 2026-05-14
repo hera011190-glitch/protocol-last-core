@@ -64,7 +64,43 @@ const DATA_DIR = pickRuntimeDataDir();
 const BUNDLED_ASSET_DIR = path.join(__dirname, "public_assets");
 const RUNTIME_ASSET_DIR = path.join(DATA_DIR, "public_assets");
 const DATA_IMAGE_COMPACT_MIN_BYTES = Number(process.env.DATA_IMAGE_COMPACT_MIN_BYTES || 48 * 1024);
-const MAX_STARTUP_JSON_PARSE_BYTES = Number(process.env.MAX_STARTUP_JSON_PARSE_BYTES || 8 * 1024 * 1024);
+const MAX_STARTUP_JSON_PARSE_BYTES = Number(process.env.MAX_STARTUP_JSON_PARSE_BYTES || 24 * 1024 * 1024);
+const MAX_DATA_ASSET_MEMORY_CACHE_BYTES = Number(process.env.MAX_DATA_ASSET_MEMORY_CACHE_BYTES || 1024 * 1024);
+const MAX_TOTAL_DATA_ASSET_MEMORY_CACHE_BYTES = Number(process.env.MAX_TOTAL_DATA_ASSET_MEMORY_CACHE_BYTES || 12 * 1024 * 1024);
+
+function isAssetFileUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.startsWith("/asset-file/")) return true;
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    return parsed.pathname.startsWith("/asset-file/");
+  } catch {
+    return /\/asset-file\//.test(text);
+  }
+}
+
+function getAssetFileRelativePath(value) {
+  const text = String(value || "").trim();
+  if (!isAssetFileUrl(text)) return "";
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    return decodeURIComponent(parsed.pathname.replace(/^\/asset-file\//, ""));
+  } catch {
+    return text.replace(/^.*?\/asset-file\//, "");
+  }
+}
+
+function sendAssetFileUrl(res, value) {
+  const relative = getAssetFileRelativePath(value);
+  if (!relative || relative.includes("..")) return res.status(404).end();
+  const runtimePath = path.join(RUNTIME_ASSET_DIR, relative);
+  const bundledPath = path.join(BUNDLED_ASSET_DIR, relative);
+  const foundPath = fs.existsSync(runtimePath) ? runtimePath : (fs.existsSync(bundledPath) ? bundledPath : "");
+  if (!foundPath) return res.redirect(302, `/asset-file/${relative}`);
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  return res.sendFile(foundPath);
+}
 
 function getAssetExtensionFromMime(mime = "") {
   const normalized = String(mime || "").toLowerCase();
@@ -123,6 +159,55 @@ function compactBase64DataUrlsInText(raw, namespace) {
   });
 
   return { text, changed };
+}
+
+function compactSingleDataUrlToAssetFile(value, namespace) {
+  const raw = String(value || "");
+  const match = raw.match(/^data:([a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+\/_=-]+)$/);
+  if (!match) return raw;
+  const [, mime, base64Text] = match;
+  const targetNamespace = String(namespace || "assets").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const targetDir = path.join(RUNTIME_ASSET_DIR, targetNamespace);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const normalizedBase64 = String(base64Text || "").replace(/-/g, "+").replace(/_/g, "/");
+  const hash = crypto
+    .createHash("sha256")
+    .update(String(mime || ""))
+    .update(":")
+    .update(normalizedBase64.slice(0, 8192))
+    .update(":")
+    .update(String(normalizedBase64.length))
+    .digest("hex")
+    .slice(0, 24);
+  const assetName = `${hash}.${getAssetExtensionFromMime(mime)}`;
+  const assetPath = path.join(targetDir, assetName);
+  if (!fs.existsSync(assetPath)) fs.writeFileSync(assetPath, Buffer.from(normalizedBase64, "base64"));
+  return `/asset-file/${targetNamespace}/${assetName}`;
+}
+
+function compactDataUrlsInValue(value, namespace, seen = new WeakSet()) {
+  if (typeof value === "string") {
+    if (value.startsWith("data:") && value.includes(";base64,")) {
+      try { return compactSingleDataUrlToAssetFile(value, namespace); } catch (error) {
+        console.error(`[asset-compact] 메모리 data URL 분리 실패: ${namespace}`, error.message);
+        return value;
+      }
+    }
+    return value;
+  }
+  if (!value || typeof value !== "object") return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      value[i] = compactDataUrlsInValue(value[i], namespace, seen);
+    }
+    return value;
+  }
+  Object.keys(value).forEach((key) => {
+    value[key] = compactDataUrlsInValue(value[key], namespace, seen);
+  });
+  return value;
 }
 
 function compactDataImagesInJsonFile(filePath, namespace) {
@@ -238,14 +323,24 @@ function safeReadJsonFileStrict(filePath, fallback = null, label = "json") {
     const stat = fs.statSync(filePath);
     if (!stat.isFile()) return fallback;
 
-    if (stat.size > MAX_STARTUP_JSON_PARSE_BYTES) {
-      console.error(`[json-safe] ${label} 파일이 너무 커서 서버 시작 중 파싱하지 않았습니다: ${filePath} (${stat.size} bytes)`);
+    if (stat.size > DATA_IMAGE_COMPACT_MIN_BYTES) {
+      try {
+        compactDataImagesInJsonFile(filePath, path.basename(String(filePath || label), ".json"));
+      } catch (error) {
+        console.error(`[json-safe] ${label} 사전 에셋 분리 실패: ${filePath}`, error.message);
+      }
+    }
+
+    const nextStat = fs.statSync(filePath);
+    if (nextStat.size > MAX_STARTUP_JSON_PARSE_BYTES) {
+      console.error(`[json-safe] ${label} 파일이 너무 커서 서버 시작 중 파싱하지 않았습니다: ${filePath} (${nextStat.size} bytes)`);
       return fallback;
     }
 
-    if (stat.size > 1024 * 1024) {
-      console.log(`[json-safe] ${label} 읽는 중: ${path.basename(filePath)} (${stat.size} bytes)`);
+    if (nextStat.size > 1024 * 1024) {
+      console.log(`[json-safe] ${label} 읽는 중: ${path.basename(filePath)} (${nextStat.size} bytes)`);
     }
+
 
     return JSON.parse(fs.readFileSync(filePath, "utf-8"));
   } catch (error) {
@@ -334,10 +429,9 @@ const io = new Server(server, { cors: corsOptions });
 const pendingJsonWrites = new Map();
 
 function stringifyRuntimeJsonPayload(filePath, value) {
-  const rawPayload = JSON.stringify(value === undefined ? null : value, null, 2);
   const namespace = path.basename(String(filePath || "assets"), ".json");
-  const compacted = compactBase64DataUrlsInText(rawPayload, namespace);
-  return compacted.text;
+  const compactedValue = compactDataUrlsInValue(value === undefined ? null : value, namespace);
+  return JSON.stringify(compactedValue, null, 2);
 }
 
 function writeJsonAtomicSync(filePath, value) {
@@ -1463,6 +1557,16 @@ function isDataAsset(value) {
   return isDataImage(value) || isDataAudio(value);
 }
 
+function isResolvableAssetValue(value) {
+  return isDataAsset(value) || isAssetFileUrl(value);
+}
+
+function isResolvableImageValue(value) {
+  if (isDataImage(value)) return true;
+  if (!isAssetFileUrl(value)) return false;
+  return /\.(png|jpe?g|gif|webp|svg)(?:$|[?#])/i.test(String(value || ""));
+}
+
 function isGeneratedCharacterAssetUrl(value) {
   const text = String(value || "").trim();
   if (!text) return false;
@@ -1529,7 +1633,8 @@ function mapDesignAssets(source, makeUrl, currentPath = "") {
 }
 
 const DATA_IMAGE_RESPONSE_CACHE = new Map();
-const DATA_IMAGE_RESPONSE_CACHE_LIMIT = Number(process.env.IMAGE_MEMORY_CACHE_LIMIT || 160);
+const DATA_IMAGE_RESPONSE_CACHE_LIMIT = Number(process.env.IMAGE_MEMORY_CACHE_LIMIT || 24);
+let DATA_IMAGE_RESPONSE_CACHE_BYTES = 0;
 
 function makeWeakEtagFromText(text) {
   const source = String(text || "");
@@ -1538,10 +1643,20 @@ function makeWeakEtagFromText(text) {
 }
 
 function rememberDataImageCache(key, value) {
-  if (DATA_IMAGE_RESPONSE_CACHE.has(key)) DATA_IMAGE_RESPONSE_CACHE.delete(key);
-  DATA_IMAGE_RESPONSE_CACHE.set(key, value);
-  while (DATA_IMAGE_RESPONSE_CACHE.size > DATA_IMAGE_RESPONSE_CACHE_LIMIT) {
+  const byteLength = Number(value?.byteLength || value?.buffer?.length || 0);
+  if (!Number.isFinite(byteLength) || byteLength <= 0) return;
+  if (byteLength > MAX_DATA_ASSET_MEMORY_CACHE_BYTES) return;
+  if (DATA_IMAGE_RESPONSE_CACHE.has(key)) {
+    const prev = DATA_IMAGE_RESPONSE_CACHE.get(key);
+    DATA_IMAGE_RESPONSE_CACHE_BYTES -= Number(prev?.byteLength || prev?.buffer?.length || 0);
+    DATA_IMAGE_RESPONSE_CACHE.delete(key);
+  }
+  DATA_IMAGE_RESPONSE_CACHE.set(key, { ...value, byteLength });
+  DATA_IMAGE_RESPONSE_CACHE_BYTES += byteLength;
+  while (DATA_IMAGE_RESPONSE_CACHE.size > DATA_IMAGE_RESPONSE_CACHE_LIMIT || DATA_IMAGE_RESPONSE_CACHE_BYTES > MAX_TOTAL_DATA_ASSET_MEMORY_CACHE_BYTES) {
     const firstKey = DATA_IMAGE_RESPONSE_CACHE.keys().next().value;
+    const firstValue = DATA_IMAGE_RESPONSE_CACHE.get(firstKey);
+    DATA_IMAGE_RESPONSE_CACHE_BYTES -= Number(firstValue?.byteLength || firstValue?.buffer?.length || 0);
     DATA_IMAGE_RESPONSE_CACHE.delete(firstKey);
   }
 }
@@ -1552,6 +1667,7 @@ function reqFresh(req, etag) {
 }
 
 function sendDataAsset(res, value) {
+  if (isAssetFileUrl(value)) return sendAssetFileUrl(res, value);
   const raw = String(value || "");
   const match = raw.match(/^data:((?:image|audio)\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) return res.status(404).end();
@@ -1562,10 +1678,13 @@ function sendDataAsset(res, value) {
   res.set("Accept-Ranges", "bytes");
   res.type(mime);
   if (reqFresh(res.req, etag)) return res.status(304).end();
-  let cached = DATA_IMAGE_RESPONSE_CACHE.get(etag);
+
+  const expectedBytes = Math.floor(String(payload || "").length * 0.75);
+  const canCache = mime.startsWith("image/") && expectedBytes <= MAX_DATA_ASSET_MEMORY_CACHE_BYTES;
+  let cached = canCache ? DATA_IMAGE_RESPONSE_CACHE.get(etag) : null;
   if (!cached) {
     cached = { mime, buffer: Buffer.from(payload, "base64") };
-    rememberDataImageCache(etag, cached);
+    if (canCache) rememberDataImageCache(etag, cached);
   }
   const range = String(res.req?.headers?.range || "");
   if (range) {
@@ -1597,6 +1716,11 @@ function toCharacterAssetUrl(characterId, pathKey, version = "") {
 
 function toInvestigationAssetUrl(investigationId, pathKey) {
   return `/asset/investigation/${encodeURIComponent(String(investigationId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+}
+
+function toShopAssetUrl(itemId, pathKey, version = "") {
+  const base = `/asset/shop/${encodeURIComponent(String(itemId || "unknown"))}?path=${encodeURIComponent(String(pathKey || ""))}`;
+  return version ? `${base}&v=${encodeURIComponent(String(version))}` : base;
 }
 
 function toDesignAssetUrl(pathKey, version = designAssetVersion) {
@@ -1855,7 +1979,8 @@ function normalizeActionResult(result) {
   const clueImage = String(result?.clueImage || "");
   return {
     log: String(result?.log || ""),
-    points: Number(result?.points || 0),
+    rewardExp: Number(result?.rewardExp ?? result?.exp ?? 0),
+    rewardCoins: Number(result?.rewardCoins ?? result?.coins ?? 0),
     item: String(result?.item || ""),
     reward: String(result?.reward || ""),
     clue: clueTitle
@@ -1886,6 +2011,8 @@ function normalizeBattleEnemy(enemy, index = 0) {
     aoe_chance: Number(enemy?.aoe_chance ?? 0.3),
     finisher_chance: Number(enemy?.finisher_chance ?? 0.05),
     finisherType: String(enemy?.finisherType || "single"),
+    rewardExp: Number(enemy?.rewardExp ?? enemy?.expReward ?? 0),
+    rewardCoins: Number(enemy?.rewardCoins ?? enemy?.coinReward ?? 0),
     rewardPoints: Number(enemy?.rewardPoints || 0),
     rewardItem: String(enemy?.rewardItem || ""),
     image: String(enemy?.image || ""),
@@ -1921,6 +2048,8 @@ function normalizeBattle(battle) {
   const normalized = {
     ...normalizeBattleEnemy({ ...battle, name: battle?.name || (enemies.length > 1 ? `E-Beast x${enemies.length}` : enemies[0]?.name) }, 0),
     enemies,
+    rewardExp: Number(battle?.rewardExp ?? enemies.reduce((sum, enemy) => sum + Number(enemy.rewardExp || 0), 0)),
+    rewardCoins: Number(battle?.rewardCoins ?? enemies.reduce((sum, enemy) => sum + Number(enemy.rewardCoins || 0), 0)),
     rewardPoints: Number(battle?.rewardPoints ?? enemies.reduce((sum, enemy) => sum + Number(enemy.rewardPoints || 0), 0)),
     rewardItem: String(battle?.rewardItem || ""),
   };
@@ -2667,6 +2796,56 @@ function addSharedLog(item, text) {
   item.sharedLogs.push(createLogEntry(text));
 }
 
+function normalizeProgressRewardValue(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.floor(numeric);
+}
+
+function applyProgressRewardToCharacter(char, expReward = 0, coinReward = 0) {
+  if (!char) return false;
+  const exp = normalizeProgressRewardValue(expReward);
+  const coins = normalizeProgressRewardValue(coinReward);
+  let changed = false;
+  if (exp > 0) {
+    char.exp = Number(char.exp || 0) + exp;
+    while (char.exp >= (char.level || 1) * 100) {
+      char.exp -= (char.level || 1) * 100;
+      char.level = Number(char.level || 1) + 1;
+      char.statPoints = Number(char.statPoints || 0) + 3;
+    }
+    changed = true;
+  }
+  if (coins > 0) {
+    char.coins = Number(char.coins || 0) + coins;
+    changed = true;
+  }
+  if (changed) {
+    char.updatedAt = Date.now();
+    char.assetVersion = char.updatedAt;
+  }
+  return changed;
+}
+
+function grantProgressRewardsToInvestigationParticipants(item, expReward = 0, coinReward = 0) {
+  const exp = normalizeProgressRewardValue(expReward);
+  const coins = normalizeProgressRewardValue(coinReward);
+  if (!item || (exp <= 0 && coins <= 0)) return 0;
+  const receivers = (Array.isArray(item.participants) ? item.participants : []).filter(isInvestigationPlayableParticipant);
+  let changedCount = 0;
+  receivers.forEach((participant) => {
+    const char = charactersDB.find((c) => String(c.id) === String(participant.id)) || charactersDB.find((c) => String(c.name) === String(participant.name));
+    if (!char) return;
+    if (applyProgressRewardToCharacter(char, exp, coins)) changedCount += 1;
+  });
+  if (changedCount > 0) {
+    markCharactersDirty();
+    writeRuntimeArray("characters.json", charactersDB);
+    emitParticipantsUpdated();
+  }
+  return changedCount;
+}
+
 function applyRewardToCharacter(char, reward) {
   if (!char || !reward) return false;
   let changed = false;
@@ -2677,6 +2856,12 @@ function applyRewardToCharacter(char, reward) {
   if ((reward.type === "statPoints" || reward.type === "stat" || reward.type === "stat_points") && reward.value !== undefined) {
     char.statPoints = Number(char.statPoints || 0) + Number(reward.value || 0);
     changed = true;
+  }
+  if ((reward.type === "exp" || reward.type === "experience") && reward.value !== undefined) {
+    changed = applyProgressRewardToCharacter(char, Number(reward.value || 0), 0) || changed;
+  }
+  if ((reward.type === "coin" || reward.type === "coins") && reward.value !== undefined) {
+    changed = applyProgressRewardToCharacter(char, 0, Number(reward.value || 0)) || changed;
   }
   if (changed) {
     char.updatedAt = Date.now();
@@ -2762,8 +2947,17 @@ function applyActionRewards(item, result, locationName) {
   const textParts = [result.log || `[${locationName}] ${locationName}에서 단서를 조사했습니다.`];
   let changed = false;
 
-  if (typeof result.points === "number") {
-    changed = true;
+  const rewardExp = normalizeProgressRewardValue(result.rewardExp ?? result.exp ?? 0);
+  const rewardCoins = normalizeProgressRewardValue(result.rewardCoins ?? result.coins ?? 0);
+  if (rewardExp > 0 || rewardCoins > 0) {
+    const receiverCount = grantProgressRewardsToInvestigationParticipants(item, rewardExp, rewardCoins);
+    if (receiverCount > 0) {
+      const rewardTexts = [];
+      if (rewardExp > 0) rewardTexts.push(`경험치 +${rewardExp}`);
+      if (rewardCoins > 0) rewardTexts.push(`코인 +${rewardCoins}`);
+      textParts.push(`${rewardTexts.join(", ")} 지급`);
+      changed = true;
+    }
   }
 
   if (result.item) {
@@ -3266,25 +3460,32 @@ function applyBattleTurn(item, actions) {
     setEventBanner(item, "승리", "success", 2600);
     const victoryText = `[${node.name}] ${defeatedEnemies.map((enemy) => enemy.name).join(", ")}를 제압했습니다.${rewardItems.length ? ` ${rewardItems.join(", ")} 획득` : ""}`;
     item.sharedLog = victoryText;
-    persistRoundLogsToShared(roundLogs);
     item.sharedLogs.push(createLogEntry(victoryText));
     item.sharedLogs = item.sharedLogs.slice(-160);
     item.lastBattleRound = roundLogs;
     item.pendingBattleActions = {};
     item.battleTurn += 1;
     refreshInvestigationCompletionState(item);
-    const expReward = 15 + rewardPoints;
-    item.participants.forEach((participant) => {
-      const char = charactersDB.find((c) => c.id === participant.id);
-      if (!char) return;
-      char.exp = Number(char.exp || 0) + expReward;
-      char.coins = Number(char.coins || 0) + Math.max(8, Math.floor(rewardPoints / 2));
-      while (char.exp >= (char.level || 1) * 100) {
-        char.exp -= (char.level || 1) * 100;
-        char.level = Number(char.level || 1) + 1;
-        char.statPoints = Number(char.statPoints || 0) + 3;
+    const hasExplicitBattleRewards = defeatedEnemies.some((enemy) => enemy.rewardExp !== undefined || enemy.rewardCoins !== undefined);
+    const expReward = hasExplicitBattleRewards
+      ? defeatedEnemies.reduce((sum, enemy) => sum + normalizeProgressRewardValue(enemy.rewardExp || 0), 0)
+      : (rewardPoints > 0 ? 15 + rewardPoints : 0);
+    const coinReward = hasExplicitBattleRewards
+      ? defeatedEnemies.reduce((sum, enemy) => sum + normalizeProgressRewardValue(enemy.rewardCoins || 0), 0)
+      : (rewardPoints > 0 ? Math.max(8, Math.floor(rewardPoints / 2)) : 0);
+    const progressRewardTexts = [];
+    if (expReward > 0) progressRewardTexts.push(`경험치 +${expReward}`);
+    if (coinReward > 0) progressRewardTexts.push(`코인 +${coinReward}`);
+    if (progressRewardTexts.length > 0) {
+      const receiverCount = grantProgressRewardsToInvestigationParticipants(item, expReward, coinReward);
+      if (receiverCount > 0) {
+        roundLogs.push(createBattleLogEntry(`[보상] ${progressRewardTexts.join(", ")} 지급`, "allies", { effect: "reward", snapshot: makeBattleSnapshot(item, battle) }));
       }
-    });
+    }
+    persistRoundLogsToShared(roundLogs);
+    item.lastBattleRound = roundLogs;
+    item.sharedLogs = item.sharedLogs.slice(-160);
+    saveInvestigationsRuntimeState();
     emitInvestigationState(item.id);
     return { success: true };
   }
@@ -3371,7 +3572,7 @@ function applyBattleTurn(item, actions) {
 
 
 
-app.get("/designConfig", (req, res) => res.json(designConfig));
+app.get("/designConfig", (req, res) => res.json(buildAdminDesignConfig()));
 
 app.get("/presetSkills", (req, res) => res.json(getPresetSkillList()));
 
@@ -3398,7 +3599,7 @@ app.get("/image-manifest", (req, res) => {
 
 app.get("/asset/design", (req, res) => {
   const value = getValueByPath(designConfig, req.query.path || "");
-  if (!isDataAsset(value)) return res.status(404).end();
+  if (!isResolvableAssetValue(value)) return res.status(404).end();
   return sendDataAsset(res, value);
 });
 
@@ -3410,16 +3611,24 @@ app.get("/asset/character/:id", (req, res) => {
   if (pathKey === "mainImage" || pathKey === "cardImage") pathKey = pickCharacterDataAssetPath(character, ["mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
   if (pathKey === "investigationImage" || pathKey === "spriteImage") pathKey = pickCharacterDataAssetPath(character, ["spriteImage", "investigationImage", "sdImage", "sdImageUrl", "sd", "mainImage", "cardImage", "fullBodyImage", "fullImage", "profileImage", "image"]);
   const value = getCharacterDataImageByPath(character, pathKey || "");
-  if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(res, value);
+  if (!isResolvableAssetValue(value)) return res.status(404).end();
+  return sendDataAsset(res, value);
 });
 
 app.get("/asset/investigation/:id", (req, res) => {
   const item = investigationsDB.find((entry) => String(entry.id) === String(req.params.id));
   if (!item) return res.status(404).end();
   const value = getValueByPath(item, req.query.path || "");
-  if (!isDataImage(value)) return res.status(404).end();
-  return sendDataImage(res, value);
+  if (!isResolvableAssetValue(value)) return res.status(404).end();
+  return sendDataAsset(res, value);
+});
+
+app.get("/asset/shop/:id", (req, res) => {
+  const item = (shopItemsDB || []).find((entry) => String(entry.id) === String(req.params.id));
+  if (!item) return res.status(404).end();
+  const value = getValueByPath(item, req.query.path || "image");
+  if (!isResolvableAssetValue(value)) return res.status(404).end();
+  return sendDataAsset(res, value);
 });
 function readDedicatedDesignMapsStore() {
   return readJsonFromPath(resolveDataPath(DESIGN_MAPS_STORE_FILE), null);
@@ -3653,12 +3862,39 @@ function mergeDesignBgmSafely(previousBgm = {}, incomingBgm = {}, { allowClear =
   return merged;
 }
 
+function normalizeDesignAssetProxyReferences(value, previousConfig, currentPath = "", seen = new WeakSet()) {
+  if (typeof value === "string") {
+    if (!value.includes("/asset/design")) return value;
+    const resolved = resolveDesignAssetProxyValue(value);
+    if (resolved) return resolved;
+    const fallback = currentPath ? getValueByPath(previousConfig, currentPath) : undefined;
+    return typeof fallback === "string" && fallback ? fallback : value;
+  }
+  if (!value || typeof value !== "object") return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item, index) => normalizeDesignAssetProxyReferences(item, previousConfig, `${currentPath}[${index}]`, seen));
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => {
+    const nextPath = currentPath ? `${currentPath}.${key}` : key;
+    return [key, normalizeDesignAssetProxyReferences(child, previousConfig, nextPath, seen)];
+  }));
+}
+
+function buildAdminDesignConfig() {
+  return mapDesignAssets(designConfig, (pathKey) => toDesignAssetUrl(pathKey));
+}
+
 app.post("/designConfig", (req, res) => {
   const rawPayload = req.body && typeof req.body === "object" ? req.body : {};
   const payload = { ...rawPayload };
   delete payload.__allowBgmClear;
   delete payload.__intent;
   const previousConfig = designConfig && typeof designConfig === "object" ? designConfig : {};
+  const normalizedPayload = normalizeDesignAssetProxyReferences(payload, previousConfig);
+  Object.keys(payload).forEach((key) => delete payload[key]);
+  Object.assign(payload, normalizedPayload);
   const previousMaps = getProtectedDesignMaps(previousConfig?.siteContent?.maps) || previousConfig?.siteContent?.maps;
   const hasIncomingSiteContent = payload.siteContent && typeof payload.siteContent === "object";
   const allowBgmClear = rawPayload.__allowBgmClear === true || rawPayload.__intent === "siteBgm";
@@ -3693,7 +3929,7 @@ app.post("/designConfig", (req, res) => {
   };
   commitDesignConfigChange();
 
-  res.json({ success: true, designConfig });
+  res.json({ success: true, designConfig: buildAdminDesignConfig() });
 });
 
 app.post("/designMaps/saveDraft", (req, res) => {
@@ -3709,7 +3945,7 @@ app.post("/designMaps/saveDraft", (req, res) => {
     },
   };
   commitDesignConfigChange();
-  res.json({ success: true, designConfig });
+  res.json({ success: true, designConfig: buildAdminDesignConfig() });
 });
 
 app.post("/designMaps/applyDraft", (req, res) => {
@@ -3725,7 +3961,7 @@ app.post("/designMaps/applyDraft", (req, res) => {
     },
   };
   commitDesignConfigChange();
-  res.json({ success: true, designConfig });
+  res.json({ success: true, designConfig: buildAdminDesignConfig() });
 });
 
 app.post("/register", (req, res) => {
@@ -4027,8 +4263,8 @@ app.post("/updateCharacter", (req, res) => {
   return res.json({ success: true, character: buildPublicCharacter(char) });
 });
 
-app.get("/characters/:ownerId", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(attachRelationsToCharacter)); });
-app.get("/characters", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.map(attachRelationsToCharacter)); });
+app.get("/characters/:ownerId", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(buildPublicCharacter)); });
+app.get("/characters", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.map(buildPublicCharacter)); });
 app.delete("/admin/characters/:id", (req, res) => {
   const id = String(req.params.id || "");
   const target = charactersDB.find((character) => String(character.id) === id);
@@ -4578,6 +4814,17 @@ function applyNpcOptionOutcome(item, option) {
   if (!item || !option) return;
   if (option.rewardItem) queueRewardAssignment(item, { type: "item", label: option.rewardItem, value: option.rewardItem });
   if (option.rewardStatPoints) queueRewardAssignment(item, { type: "statPoints", label: `스탯 포인트 +${option.rewardStatPoints}`, value: Number(option.rewardStatPoints) });
+  const rewardExp = normalizeProgressRewardValue(option.rewardExp ?? option.exp ?? 0);
+  const rewardCoins = normalizeProgressRewardValue(option.rewardCoins ?? option.coins ?? 0);
+  if (rewardExp > 0 || rewardCoins > 0) {
+    const receiverCount = grantProgressRewardsToInvestigationParticipants(item, rewardExp, rewardCoins);
+    if (receiverCount > 0) {
+      const rewardTexts = [];
+      if (rewardExp > 0) rewardTexts.push(`경험치 +${rewardExp}`);
+      if (rewardCoins > 0) rewardTexts.push(`코인 +${rewardCoins}`);
+      addSharedLog(item, `[NPC 보상] ${rewardTexts.join(", ")} 지급`);
+    }
+  }
   if (option.clue) addClue(item, typeof option.clue === "string" ? { title: option.clue, text: option.clue } : option.clue);
 
   if (typeof option.nextIndex === "number" && Number.isFinite(option.nextIndex)) {
@@ -5327,7 +5574,7 @@ function summarizeCharacter(character) {
 function resolveCharacterDataImageValue(character, value, seen = new Set()) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  if (isDataImage(raw)) return raw;
+  if (isResolvableAssetValue(raw)) return raw;
   if (!isGeneratedCharacterAssetUrl(raw)) return "";
   const refPath = getGeneratedCharacterAssetPath(raw);
   if (!refPath || seen.has(refPath)) return "";
@@ -5353,6 +5600,7 @@ function sanitizeIncomingCharacterImageValue(character, value) {
   if (value === undefined) return undefined;
   const text = String(value || "").trim();
   if (!text) return value;
+  if (isAssetFileUrl(text)) return text;
   if (!isGeneratedCharacterAssetUrl(text)) return value;
   const refPath = getGeneratedCharacterAssetPath(text);
   const resolved = refPath ? getCharacterDataImageByPath(character, refPath) : "";
@@ -5363,7 +5611,7 @@ function pickCharacterAssetPath(character, candidates = []) {
   const list = Array.isArray(candidates) ? candidates : [candidates];
   for (const key of list) {
     const value = character?.[key];
-    if (isDataImage(value)) return key;
+    if (isResolvableImageValue(value)) return key;
   }
   for (const key of list) {
     const value = character?.[key];
@@ -5407,16 +5655,18 @@ function buildPublicCharacterSummary(character) {
   const version = summary.assetVersion || summary.updatedAt || "";
   const toUrl = (pathKey, fallbackValue) => {
     const rawValue = getValueByPath(character, pathKey);
-    if (isDataImage(rawValue)) return toCharacterAssetUrl(characterId, pathKey, version);
+    if (isDataAsset(rawValue)) return toCharacterAssetUrl(characterId, pathKey, version);
     return typeof rawValue === "string" && rawValue.trim() ? rawValue : (fallbackValue || "");
   };
 
   const profileImage = profilePath ? toUrl(profilePath, summary.profileImage) : summary.profileImage;
   const mainImage = mainPath ? toUrl(mainPath, summary.mainImage) : summary.mainImage;
   const investigationImage = spritePath ? toUrl(spritePath, summary.investigationImage) : summary.investigationImage;
+  const profileBgm = summary.profileBgm ? toUrl("profileBgm", summary.profileBgm) : "";
 
   return {
     ...summary,
+    profileBgm,
     image: profileImage,
     profileImage,
     mainImage,
@@ -5466,7 +5716,7 @@ function buildPublicCharacter(character) {
   if (!character) return character;
   const detailed = attachRelationsToCharacter(character);
   const version = detailed.assetVersion || detailed.updatedAt || character.assetVersion || character.updatedAt || "";
-  return mapDataImages(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
+  return mapDesignAssets(detailed, (pathKey) => toCharacterAssetUrl(character.id || character.name || "unknown", pathKey, version));
 }
 
 function buildPublicDesignShellConfig(config) {
@@ -5780,7 +6030,7 @@ function buildPublicInvestigationState(item) {
 app.get("/character/:id", (req, res) => {
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했습니다." });
-  res.json({ success: true, character: attachRelationsToCharacter(character) });
+  res.json({ success: true, character: buildPublicCharacter(character) });
 });
 
 app.get("/character-public/:id", (req, res) => {
@@ -5985,6 +6235,50 @@ function normalizeShopItem(item = {}) {
   };
 }
 
+
+function isGeneratedShopAssetUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    return parsed.pathname.startsWith("/asset/shop/");
+  } catch {
+    return /\/asset\/shop\//.test(text);
+  }
+}
+
+function getGeneratedShopAssetPath(value) {
+  const text = String(value || "").trim();
+  if (!text || !isGeneratedShopAssetUrl(text)) return "";
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    return parsed.searchParams.get("path") || "image";
+  } catch {
+    const match = text.match(/[?&]path=([^&]+)/);
+    return match ? decodeURIComponent(match[1]) : "image";
+  }
+}
+
+function sanitizeIncomingShopItemImageValue(previousItem, value) {
+  if (value === undefined) return undefined;
+  const text = String(value || "").trim();
+  if (!text) return value;
+  if (isAssetFileUrl(text) || isDataImage(text)) return text;
+  if (!isGeneratedShopAssetUrl(text)) return value;
+  const pathKey = getGeneratedShopAssetPath(text) || "image";
+  const previous = getValueByPath(previousItem || {}, pathKey);
+  return previous || undefined;
+}
+
+function buildPublicShopItem(item = {}) {
+  const normalized = normalizeShopItem(item);
+  const version = normalized.updatedAt || normalized.assetVersion || "";
+  if (isDataImage(normalized.image)) {
+    normalized.image = toShopAssetUrl(normalized.id, "image", version);
+  }
+  return normalized;
+}
+
 function readJsonFileSafe(filePath, fallback) {
   try {
     const parsed = safeReadJsonFileStrict(filePath, fallback, path.basename(String(filePath || "json")));
@@ -6095,7 +6389,7 @@ function syncShopItemsWithKnownItems() {
 
 app.get("/shopItems", (req, res) => {
   syncShopItemsWithKnownItems();
-  res.json(shopItemsDB.map(normalizeShopItem));
+  res.json(shopItemsDB.map(buildPublicShopItem));
 });
 app.post("/shopItems/reorder", (req, res) => {
   syncShopItemsWithKnownItems();
@@ -6118,18 +6412,24 @@ app.post("/shopItems/reorder", (req, res) => {
 
   shopItemsDB = nextItems.map(normalizeShopItem);
   writeJsonFileSafe(shopItemsPath, shopItemsDB);
-  res.json({ success: true, items: shopItemsDB.map(normalizeShopItem) });
+  res.json({ success: true, items: shopItemsDB.map(buildPublicShopItem) });
 });
 app.post("/shopItems", (req, res) => {
   syncShopItemsWithKnownItems();
-  const payload = normalizeShopItem(req.body || {});
-  const id = payload.id || `item-${Date.now()}`;
+  const rawPayload = req.body || {};
+  const id = rawPayload.id || `item-${Date.now()}`;
   const target = shopItemsDB.find((item) => String(item.id) === String(id));
+  const payload = normalizeShopItem({
+    ...rawPayload,
+    id,
+    image: sanitizeIncomingShopItemImageValue(target, rawPayload.image ?? rawPayload.icon),
+    updatedAt: Date.now(),
+  });
   if (target) Object.assign(target, normalizeShopItem({ ...target, ...payload, id }));
   else shopItemsDB.push(normalizeShopItem({ ...payload, id }));
   writeJsonFileSafe(shopItemsPath, shopItemsDB.map(normalizeShopItem));
   syncShopItemsWithKnownItems();
-  res.json({ success: true, items: shopItemsDB.map(normalizeShopItem) });
+  res.json({ success: true, items: shopItemsDB.map(buildPublicShopItem) });
 });
 app.delete("/shopItems/:id", (req, res) => {
   shopItemsDB = shopItemsDB.filter((item) => String(item.id) !== String(req.params.id));
@@ -6199,7 +6499,7 @@ app.post("/shop/buy", (req, res) => {
 
   const saved = writeRuntimeArray("characters.json", charactersDB);
   if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
-  return res.json({ success: true, character: buildPublicCharacter(char), item: normalizeShopItem(item) });
+  return res.json({ success: true, character: buildPublicCharacter(char), item: buildPublicShopItem(item) });
 });
 
 app.post("/shop/sell", (req, res) => {
@@ -6225,7 +6525,7 @@ app.post("/shop/sell", (req, res) => {
 
   const saved = writeRuntimeArray("characters.json", charactersDB);
   if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
-  return res.json({ success: true, character: buildPublicCharacter(char), item: normalizeShopItem(item) });
+  return res.json({ success: true, character: buildPublicCharacter(char), item: buildPublicShopItem(item) });
 });
 
 app.post("/shop/use", (req, res) => {
@@ -6427,7 +6727,7 @@ appBootReady = true;
 if (!IS_ASSET_COMPACT_CHILD) {
   // Render 헬스체크가 안정적으로 통과한 뒤에만 이미지/JSON 정리 작업을 시작합니다.
   // Render에서는 기본 자동 실행을 끄고, 필요할 때 PLC_ASSET_COMPACT_ON_RENDER=1로만 켭니다.
-  const shouldRunAssetCompact = process.env.PLC_DISABLE_ASSET_COMPACT !== "1" && (!process.env.RENDER || process.env.PLC_ASSET_COMPACT_ON_RENDER === "1");
+  const shouldRunAssetCompact = process.env.PLC_ENABLE_ASSET_COMPACT === "1";
   if (shouldRunAssetCompact) {
     const assetCompactDelayMs = Number(process.env.PLC_ASSET_COMPACT_DELAY_MS || (process.env.RENDER ? 600000 : 3000));
     setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);

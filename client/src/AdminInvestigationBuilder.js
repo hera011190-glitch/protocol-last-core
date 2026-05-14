@@ -144,7 +144,7 @@ function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, sca
 }
 
 function emptyAction() {
-  return { label: "", log: "", points: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
+  return { label: "", log: "", rewardExp: 0, rewardCoins: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
 }
 
 function createNode(id = `node-${Date.now()}`) {
@@ -309,7 +309,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
               agi: Number(node.battle.agi || 0),
               aoe_chance: Number(node.battle.aoe_chance || 0),
               finisher_chance: Number(node.battle.finisher_chance || 0),
-              rewardPoints: Number(node.battle.rewardPoints || 0),
+              rewardExp: Number(node.battle.rewardExp || 0),
+              rewardCoins: Number(node.battle.rewardCoins || 0),
             } : null,
             npcScene: node.npcScene ? {
               ...node.npcScene,
@@ -320,6 +321,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   text: String(option.text || ""),
                   nextIndex: normalizeOptionalNpcLineIndex(option.nextIndex),
                   rewardItem: String(option.rewardItem || ""),
+                  rewardExp: Number(option.rewardExp || 0),
+                  rewardCoins: Number(option.rewardCoins || 0),
                   rewardStatPoints: Number(option.rewardStatPoints || 0),
                   clue: option.clue || "",
                 })),
@@ -340,7 +343,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
               Object.entries(node.actionResults || {}).map(([key, value]) => [key, {
                 ...value,
                 log: String(value?.log || ""),
-                points: Number(value?.points || 0),
+                rewardExp: Number(value?.rewardExp || 0),
+                rewardCoins: Number(value?.rewardCoins || 0),
                 item: String(value?.item || ""),
                 reward: String(value?.reward || ""),
                 clue: String(value?.clue || ""),
@@ -363,6 +367,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const res = await apiFetch("/admin/customInvestigations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await readJsonResponseSafely(res, "조사 템플릿 저장 응답을 읽지 못했습니다.");
     if (!data.success || !res.ok) return alert(data.message || "저장 실패");
+    if (data.template?.id) {
+      setSavedList((prev) => [data.template, ...prev.filter((item) => item.id !== data.template.id)]);
+    }
     setMessage("저장됐습니다.");
     loadSaved();
   };
@@ -374,6 +381,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     if (!data.success || !res.ok) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
     setBuilder((prev) => ({ ...prev, start: payload.data?.start || prev.start, imageUpdatedAt: payload.imageUpdatedAt || prev.imageUpdatedAt }));
     setSelectedNodeId((prevSelectedNodeId) => builder.nodes.some((node) => node.id === prevSelectedNodeId) ? prevSelectedNodeId : (payload.data?.start || prevSelectedNodeId));
+    setSavedList((prev) => [{ id: payload.id, title: payload.title, type: payload.type, json: payload }, ...prev.filter((item) => item.id !== payload.id)]);
     setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영됐습니다.");
     loadSaved();
   };
@@ -570,12 +578,12 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     };
   }, [draggingNodeId]);
 
-  const createBattleEnemy = () => ({ id: `enemy-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: "새 E-Beast", hp: 40, maxHp: 40, atk: 8, def: 3, agi: 6, aoe_chance: 0.3, finisher_chance: 0.05, finisherType: "single", rewardPoints: 10, rewardItem: "", image: "" });
+  const createBattleEnemy = () => ({ id: `enemy-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: "새 E-Beast", hp: 40, maxHp: 40, atk: 8, def: 3, agi: 6, aoe_chance: 0.3, finisher_chance: 0.05, finisherType: "single", rewardExp: 0, rewardCoins: 0, rewardItem: "", image: "" });
 
   const getBattleEnemiesForEditor = (battle) => {
     if (!battle) return [];
     if (Array.isArray(battle.enemies) && battle.enemies.length > 0) return battle.enemies;
-    return [{ id: "enemy-1", name: battle.name || "새 E-Beast", hp: Number(battle.hp || 40), maxHp: Number(battle.maxHp || battle.hp || 40), atk: Number(battle.atk || 8), def: Number(battle.def || 3), agi: Number(battle.agi || 6), aoe_chance: Number(battle.aoe_chance ?? 0.3), finisher_chance: Number(battle.finisher_chance ?? 0.05), finisherType: battle.finisherType || "single", rewardPoints: Number(battle.rewardPoints || 10), rewardItem: battle.rewardItem || "", image: battle.image || "" }];
+    return [{ id: "enemy-1", name: battle.name || "새 E-Beast", hp: Number(battle.hp || 40), maxHp: Number(battle.maxHp || battle.hp || 40), atk: Number(battle.atk || 8), def: Number(battle.def || 3), agi: Number(battle.agi || 6), aoe_chance: Number(battle.aoe_chance ?? 0.3), finisher_chance: Number(battle.finisher_chance ?? 0.05), finisherType: battle.finisherType || "single", rewardExp: Number(battle.rewardExp || 0), rewardCoins: Number(battle.rewardCoins || 0), rewardItem: battle.rewardItem || "", image: battle.image || "" }];
   };
 
   const updateBattleEnemy = (enemyIndex, patch) => {
@@ -739,7 +747,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           </div>)}
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>조사 버튼</div>
-          <div style={{ color: "#6a87a3", fontSize: 13 }}>조사 버튼은 이 구역에서 실행할 상호작용이야. 결과 로그는 실행 직후 뜨는 문장이고, 아이템/단서/포인트는 보상으로 지급돼.</div>
+          <div style={{ color: "#6a87a3", fontSize: 13 }}>조사 버튼은 이 구역에서 실행할 상호작용이야. 결과 로그는 실행 직후 뜨는 문장이고, 경험치/코인/아이템/단서는 보상으로 지급돼.</div>
           {(selectedNode.investigations || []).map((label, idx) => <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 8, alignItems: "end" }}>
             <div style={{ display: "grid", gap: 6 }}>
               <div style={fieldLabelStyle}>조사 버튼 이름</div>
@@ -759,9 +767,15 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div style={{ display: "grid", gap: 6 }}>
-                    <div style={fieldLabelStyle}>획득 포인트</div>
-                    <input type="number" value={result.points || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, points: Number(e.target.value || 0) } } }))} placeholder="포인트" style={inputStyle} />
+                    <div style={fieldLabelStyle}>획득 경험치</div>
+                    <input type="number" value={result.rewardExp || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, rewardExp: Number(e.target.value || 0) } } }))} placeholder="경험치" style={inputStyle} />
                   </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={fieldLabelStyle}>획득 코인</div>
+                    <input type="number" value={result.rewardCoins || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, rewardCoins: Number(e.target.value || 0) } } }))} placeholder="코인" style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={fieldLabelStyle}>보상 아이템</div>
                     <select value={result.item || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, item: e.target.value } } }))} style={inputStyle}><option value="">보상 아이템 선택</option>{catalog.map((item) => <option key={item.id || item.name} value={item.id || item.name}>{item.name || item.id}</option>)}</select>
@@ -871,6 +885,16 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                         <input type="number" value={option.rewardStatPoints || 0} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { rewardStatPoints: Number(e.target.value || 0) })} placeholder="보상 스탯 포인트" style={inputStyle} />
                       </div>
                     </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={fieldLabelStyle}>선택 시 보상 경험치</div>
+                        <input type="number" value={option.rewardExp || 0} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { rewardExp: Number(e.target.value || 0) })} placeholder="경험치" style={inputStyle} />
+                      </div>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={fieldLabelStyle}>선택 시 보상 코인</div>
+                        <input type="number" value={option.rewardCoins || 0} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { rewardCoins: Number(e.target.value || 0) })} placeholder="코인" style={inputStyle} />
+                      </div>
+                    </div>
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={fieldLabelStyle}>선택 시 보상 단서 제목</div>
                       <input value={option.clue || ""} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { clue: e.target.value })} placeholder="보상 단서" style={{ ...inputStyle, marginTop: 8 }} />
@@ -886,7 +910,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>전투</div>
           <div style={{ color: "#6a87a3", fontSize: 13 }}>한 공간에 적군을 여러 명 넣을 수 있습니다. 적군 턴은 그대로 한 번이고, 등록된 적들이 차례로 행동합니다.</div>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!selectedNode.battle} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: e.target.checked ? { name: "적군", enemies: [createBattleEnemy()], rewardItem: "", rewardPoints: 0 } : null }))} />전투 사용</label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!selectedNode.battle} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, battle: e.target.checked ? { name: "적군", enemies: [createBattleEnemy()], rewardItem: "", rewardExp: 0, rewardCoins: 0 } : null }))} />전투 사용</label>
           {selectedNode.battle ? <div style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gap: 6 }}>
               <div style={fieldLabelStyle}>전투 이름</div>
@@ -913,9 +937,10 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>필살기 확률</div><input type="number" step="0.05" value={enemy.finisher_chance || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { finisher_chance: Number(e.target.value || 0) })} placeholder="필살기 확률" style={inputStyle} /></div>
                   <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>필살기 범위</div><select value={enemy.finisherType || "single"} onChange={(e) => updateBattleEnemy(enemyIndex, { finisherType: e.target.value })} style={inputStyle}><option value="single">필살기 단일</option><option value="aoe">필살기 전체</option></select></div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                   <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 보상 아이템</div><select value={enemy.rewardItem || ""} onChange={(e) => updateBattleEnemy(enemyIndex, { rewardItem: e.target.value })} style={inputStyle}><option value="">보상 아이템 선택</option>{catalog.map((item) => <option key={item.id || item.name} value={item.id || item.name}>{item.name || item.id}</option>)}</select></div>
-                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 보상 포인트</div><input type="number" value={enemy.rewardPoints || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { rewardPoints: Number(e.target.value || 0) })} placeholder="보상 포인트" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 경험치</div><input type="number" value={enemy.rewardExp || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { rewardExp: Number(e.target.value || 0) })} placeholder="경험치" style={inputStyle} /></div>
+                  <div style={{ display: "grid", gap: 6 }}><div style={fieldLabelStyle}>전투 승리 코인</div><input type="number" value={enemy.rewardCoins || 0} onChange={(e) => updateBattleEnemy(enemyIndex, { rewardCoins: Number(e.target.value || 0) })} placeholder="코인" style={inputStyle} /></div>
                 </div>
                 <ImageDropInput label="몬스터 이미지" value={enemy.image || ""} onChange={(value) => updateBattleEnemy(enemyIndex, { image: value })} previewHeight={120} previewFit="contain" compact />
               </div>
