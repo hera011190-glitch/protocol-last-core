@@ -612,8 +612,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   const tintLayerTop = Math.max(0, visibleTop + visibleHeight - tintLayerHeight);
   const tintSolidStop = tintLayerHeight > 0 ? Math.max(18, Math.min(92, Math.round((visibleRevealHeight / tintLayerHeight) * 100))) : 100;
   const tintGradient = tintReveal >= 99.5
-    ? "linear-gradient(to top, rgba(70,0,0,0.99) 0%, rgba(118,0,0,0.98) 62%, rgba(76,0,0,0.9) 100%)"
-    : `linear-gradient(to top, rgba(70,0,0,0.99) 0%, rgba(118,0,0,0.98) ${tintSolidStop}%, rgba(92,0,0,0.62) ${Math.min(100, tintSolidStop + 4)}%, rgba(55,0,0,0) 100%)`;
+    ? "linear-gradient(to top, rgba(74,0,0,1) 0%, rgba(128,0,0,1) 64%, rgba(82,0,0,0.96) 100%)"
+    : `linear-gradient(to top, rgba(74,0,0,1) 0%, rgba(128,0,0,1) ${tintSolidStop}%, rgba(86,0,0,0.82) ${Math.min(100, tintSolidStop + 7)}%, rgba(58,0,0,0.16) 100%)`;
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (

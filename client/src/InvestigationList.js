@@ -5,6 +5,7 @@ import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
 const INVESTIGATION_VISUAL_CACHE_KEY = "plc-cache-investigation-card-visuals";
+const INVESTIGATION_ENTRY_VISUAL_CACHE_KEY = "plc-cache-investigation-entry-card-visuals";
 
 const PRELOADED_INVESTIGATION_IMAGES = new Set();
 
@@ -87,6 +88,71 @@ function adminEditButtonStyle(top = 18) {
     fontWeight: 900,
     cursor: "pointer",
   };
+}
+
+function normalizeEntryVisual(row = {}) {
+  return {
+    listImage: String(row?.listImage || ""),
+    entryImage: String(row?.entryImage || row?.listImage || ""),
+    listImageFrame: row?.listImageFrame || null,
+    entryImageFrame: row?.entryImageFrame || row?.listImageFrame || null,
+    imageUpdatedAt: Number(row?.imageUpdatedAt || 0),
+  };
+}
+
+function readCachedEntryVisuals() {
+  try {
+    const raw = localStorage.getItem(INVESTIGATION_ENTRY_VISUAL_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      daily: normalizeEntryVisual(parsed?.daily || {}),
+      group: normalizeEntryVisual(parsed?.group || {}),
+    };
+  } catch {
+    return { daily: normalizeEntryVisual({}), group: normalizeEntryVisual({}) };
+  }
+}
+
+function writeCachedEntryVisuals(next) {
+  try {
+    if (!next || typeof next !== "object") return;
+    localStorage.setItem(INVESTIGATION_ENTRY_VISUAL_CACHE_KEY, JSON.stringify({
+      daily: normalizeEntryVisual(next.daily || {}),
+      group: normalizeEntryVisual(next.group || {}),
+    }));
+  } catch {}
+}
+
+function mergeEntryVisuals(base, incoming) {
+  const previous = base || readCachedEntryVisuals();
+  const next = {
+    daily: { ...(previous.daily || {}) },
+    group: { ...(previous.group || {}) },
+  };
+  ["daily", "group"].forEach((type) => {
+    const visual = normalizeEntryVisual(incoming?.[type] || {});
+    if (visual.entryImage || visual.listImage) {
+      next[type] = {
+        listImage: visual.listImage || next[type].listImage || "",
+        entryImage: visual.entryImage || next[type].entryImage || visual.listImage || next[type].listImage || "",
+        listImageFrame: visual.listImageFrame || next[type].listImageFrame || null,
+        entryImageFrame: visual.entryImageFrame || next[type].entryImageFrame || visual.listImageFrame || next[type].listImageFrame || null,
+        imageUpdatedAt: Number(visual.imageUpdatedAt || next[type].imageUpdatedAt || Date.now()),
+      };
+    }
+  });
+  writeCachedEntryVisuals(next);
+  return next;
+}
+
+function rememberEntryVisualFromRows(rows, current) {
+  const next = current || readCachedEntryVisuals();
+  const daily = (Array.isArray(rows) ? rows : []).find((item) => item?.type === "daily" && String(item?.entryImage || item?.listImage || "").trim());
+  const group = (Array.isArray(rows) ? rows : []).find((item) => item?.type === "group" && String(item?.entryImage || item?.listImage || "").trim());
+  return mergeEntryVisuals(next, {
+    daily: daily ? normalizeEntryVisual(daily) : {},
+    group: group ? normalizeEntryVisual(group) : {},
+  });
 }
 
 
@@ -294,6 +360,7 @@ function formatCorrosionRange(items = []) {
 
 export default function InvestigationList({ onEnter, onSpectate, onEditInvestigation, activeCharacter, isAdmin = false, design, theme }) {
   const [investigations, setInvestigations] = useState(() => readCachedInvestigations());
+  const [entryVisuals, setEntryVisuals] = useState(() => readCachedEntryVisuals());
   const [view, setView] = useState("entry");
   const [dailyLeft, setDailyLeft] = useState(Number(activeCharacter?.dailyAttemptsLeft ?? 1));
   const [completedOpenId, setCompletedOpenId] = useState("");
@@ -313,6 +380,10 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
           setInvestigations(next);
           writeCachedInvestigations(next);
           writeCachedInvestigationVisuals(next);
+          setEntryVisuals((prev) => rememberEntryVisualFromRows(next, prev));
+          apiJsonCached(`/investigationCardVisuals`, { ttlMs: 2500, storageKey: "plc-cache-investigation-card-visuals-json" })
+            .then((visualData) => setEntryVisuals((prev) => mergeEntryVisuals(prev, visualData)))
+            .catch(() => {});
         })
         .catch(() => {
           if (cancelled) return;
@@ -374,11 +445,15 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const cachedVisualRows = readCachedInvestigationVisuals();
   const cachedDailyVisualRows = cachedVisualRows.filter((item) => item?.type === "daily");
   const cachedGroupVisualRows = cachedVisualRows.filter((item) => item?.type === "group");
-  const dailyEntryImage = resumableDaily?.entryImage || resumableDaily?.listImage || getRepresentativeImage(dailyPool, "entry") || getRepresentativeImage(cachedDailyVisualRows, "entry");
-  const groupEntryImage = getRepresentativeImage(groups, "entry") || getRepresentativeImage(completedGroups, "entry") || getRepresentativeImage(cachedGroupVisualRows, "entry");
+  const dailyEntryImage = resumableDaily?.entryImage || resumableDaily?.listImage || getRepresentativeImage(dailyPool, "entry") || getRepresentativeImage(cachedDailyVisualRows, "entry") || entryVisuals.daily?.entryImage || entryVisuals.daily?.listImage || "";
+  const groupEntryImage = getRepresentativeImage(groups, "entry") || getRepresentativeImage(completedGroups, "entry") || getRepresentativeImage(cachedGroupVisualRows, "entry") || entryVisuals.group?.entryImage || entryVisuals.group?.listImage || "";
   const investContent = design?.siteContent?.investigations || {};
   const editableDaily = resumableDaily || startableDailyPool[0] || dailyPool[0] || null;
   const editableGroup = groups[0] || completedGroups[0] || null;
+  const dailyEntryFrame = editableDaily?.entryImageFrame || editableDaily?.listImageFrame || entryVisuals.daily?.entryImageFrame || entryVisuals.daily?.listImageFrame;
+  const groupEntryFrame = editableGroup?.entryImageFrame || editableGroup?.listImageFrame || entryVisuals.group?.entryImageFrame || entryVisuals.group?.listImageFrame;
+  const dailyEntryVersion = editableDaily?.imageUpdatedAt || entryVisuals.daily?.imageUpdatedAt || 0;
+  const groupEntryVersion = editableGroup?.imageUpdatedAt || entryVisuals.group?.imageUpdatedAt || 0;
 
   const openCompletedDetail = async (item) => {
     try {
@@ -507,6 +582,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
         const nextRows = Array.isArray(prev) ? prev.map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item) : prev;
         writeCachedInvestigations(nextRows);
         writeCachedInvestigationVisuals(nextRows);
+        setEntryVisuals((prev) => rememberEntryVisualFromRows(nextRows, prev));
         return nextRows;
       });
       setImageEditor(null);
@@ -548,7 +624,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
                 background: theme?.panelStrong || "#fff",
               }}
             >
-              <CardImageLayer src={dailyEntryImage} alt="일일조사" frame={editableDaily?.entryImageFrame || editableDaily?.listImageFrame} version={editableDaily?.imageUpdatedAt} />
+              <CardImageLayer src={dailyEntryImage} alt="일일조사" frame={dailyEntryFrame} version={dailyEntryVersion} />
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
               {isAdmin && editableDaily ? (
                 <button type="button" style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableDaily, "entry"); }}>수정</button>
@@ -580,7 +656,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
             </div>
 
             <button type="button" onClick={() => setView("group")} style={{ ...card(theme, false, true), textAlign: "left", minHeight: 260, position: "relative", overflow: "hidden", padding: 0, background: theme?.panelStrong || "#fff" }}>
-              <CardImageLayer src={groupEntryImage} alt="단체조사" frame={editableGroup?.entryImageFrame || editableGroup?.listImageFrame} version={editableGroup?.imageUpdatedAt} />
+              <CardImageLayer src={groupEntryImage} alt="단체조사" frame={groupEntryFrame} version={groupEntryVersion} />
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.76) 28%, rgba(255,255,255,0.18) 100%)" }} />
               {isAdmin && editableGroup ? (
                 <span role="button" tabIndex={0} style={adminEditButtonStyle()} onClick={(event) => { event.stopPropagation(); openImageEditor(editableGroup, "entry"); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); openImageEditor(editableGroup, "entry"); } }}>수정</span>
