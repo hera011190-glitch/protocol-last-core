@@ -242,44 +242,29 @@ export default function AdminMapManager({ goBack }) {
     setSelectedId("");
   };
 
-  const buildMapDesignPayload = ({ apply = false } = {}) => {
+  const buildMapDesignPayload = () => {
     const nextDesign = syncEditorDraftMaps(ensureDesign(design), selectedCollectionId);
     const mapRoot = nextDesign.siteContent.maps;
-    const draftCollections = normalizeMapCollections(mapRoot.collections || [], mapRoot.presets || []);
-    const draftActiveId = selectedCollectionId || draftCollections[0]?.id || "";
+    const draftCollections = normalizeMapCollections(mapRoot.editorCollections || mapRoot.collections || [], mapRoot.presets || []);
+    const draftActiveId = selectedCollectionId || mapRoot.editorActiveCollectionId || draftCollections[0]?.id || "";
     const draftSelected = draftCollections.find((collection) => String(collection.id) === String(draftActiveId)) || draftCollections[0] || null;
 
+    mapRoot.collections = draftCollections;
+    mapRoot.activeCollectionId = draftActiveId;
+    mapRoot.presets = Array.isArray(draftSelected?.presets) ? draftSelected.presets : [];
     mapRoot.editorCollections = draftCollections;
     mapRoot.editorActiveCollectionId = draftActiveId;
 
-    if (apply) {
-      mapRoot.collections = draftCollections;
-      mapRoot.activeCollectionId = draftActiveId;
-      mapRoot.presets = Array.isArray(draftSelected?.presets) ? draftSelected.presets : [];
-      mapRoot.appliedCollections = draftCollections;
-      mapRoot.appliedCollectionId = draftActiveId;
-      mapRoot.appliedPresets = mapRoot.presets;
-    } else {
-      const appliedCollections = normalizeMapCollections(mapRoot.appliedCollections || mapRoot.collections || [], mapRoot.appliedPresets || mapRoot.presets || []);
-      const appliedCollectionId = mapRoot.appliedCollectionId || mapRoot.activeCollectionId || appliedCollections[0]?.id || "";
-      const appliedSelected = appliedCollections.find((collection) => String(collection.id) === String(appliedCollectionId)) || appliedCollections[0] || null;
-      mapRoot.collections = appliedCollections;
-      mapRoot.activeCollectionId = appliedCollectionId;
-      mapRoot.presets = Array.isArray(appliedSelected?.presets) ? appliedSelected.presets : [];
-      mapRoot.appliedCollections = appliedCollections;
-      mapRoot.appliedCollectionId = appliedCollectionId;
-      mapRoot.appliedPresets = mapRoot.presets;
-    }
     return nextDesign;
   };
 
   const save = async () => {
     try {
-      const nextDesign = buildMapDesignPayload({ apply: false });
-      const res = await fetch(buildApiUrl("/designConfig"), {
+      const nextDesign = buildMapDesignPayload();
+      const res = await fetch(buildApiUrl("/designMaps/saveDraft"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextDesign),
+        body: JSON.stringify({ maps: nextDesign.siteContent.maps }),
       });
       const data = await res.json();
       if (data?.success) {
@@ -295,12 +280,11 @@ export default function AdminMapManager({ goBack }) {
 
   const applyCollection = async () => {
     try {
-      const nextDesign = buildMapDesignPayload({ apply: true });
-      setDesign(ensureDesign(nextDesign));
-      const res = await fetch(buildApiUrl("/designConfig"), {
+      const nextDesign = buildMapDesignPayload();
+      const res = await fetch(buildApiUrl("/designMaps/applyDraft"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextDesign),
+        body: JSON.stringify({ maps: nextDesign.siteContent.maps }),
       });
       const data = await res.json();
       if (!data?.success) {
@@ -454,7 +438,7 @@ export default function AdminMapManager({ goBack }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <label>버튼 제목<input value={selectedMap.buttonTitle || ""} onChange={(e) => updateMap(selectedMap.id, { buttonTitle: e.target.value })} style={inputStyle} /></label>
                 <label>구역 이름<input value={selectedMap.name || ""} onChange={(e) => updateMap(selectedMap.id, { name: e.target.value })} style={inputStyle} /></label>
-                <ImageDropInput label="배경 이미지" value={selectedMap.backgroundImage || ""} onChange={(value) => updateMap(selectedMap.id, { backgroundImage: value })} previewHeight={180} previewFit="cover" compact style={{ gridColumn: "1 / span 2" }} />
+                <ImageDropInput label="배경 이미지" value={selectedMap.backgroundImage || ""} onChange={(value) => updateMap(selectedMap.id, { backgroundImage: value || selectedMap.backgroundImage || "" })} previewHeight={180} previewFit="cover" compact style={{ gridColumn: "1 / span 2" }} />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "start" }}>

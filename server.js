@@ -3350,8 +3350,155 @@ function hasMeaningfulDesignMaps(mapRoot) {
   if (!mapRoot || typeof mapRoot !== "object") return false;
   const presets = Array.isArray(mapRoot.presets) ? mapRoot.presets : [];
   const collections = Array.isArray(mapRoot.collections) ? mapRoot.collections : [];
-  if (presets.length > 0) return true;
-  return collections.some((collection) => Array.isArray(collection?.presets) && collection.presets.length > 0);
+  const editorCollections = Array.isArray(mapRoot.editorCollections) ? mapRoot.editorCollections : [];
+  const appliedCollections = Array.isArray(mapRoot.appliedCollections) ? mapRoot.appliedCollections : [];
+  const appliedPresets = Array.isArray(mapRoot.appliedPresets) ? mapRoot.appliedPresets : [];
+  if (presets.length > 0 || appliedPresets.length > 0) return true;
+  return [...collections, ...editorCollections, ...appliedCollections].some((collection) => Array.isArray(collection?.presets) && collection.presets.length > 0);
+}
+
+function normalizeAdminMapCollections(collections = [], fallbackPresets = []) {
+  const source = Array.isArray(collections) && collections.length > 0
+    ? collections
+    : [{ id: "default", title: "기본 맵", presets: Array.isArray(fallbackPresets) ? fallbackPresets : [] }];
+  const seen = new Set();
+  return source.filter((collection, index) => {
+    const id = String(collection?.id || `collection-${index}`);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).map((collection, index) => ({
+    ...collection,
+    id: collection?.id || `collection-${index}`,
+    title: collection?.title || `맵 탭 ${index + 1}`,
+    presets: Array.isArray(collection?.presets) ? collection.presets.map((map, mapIndex) => ({
+      ...map,
+      id: map?.id || `map-${index}-${mapIndex}`,
+      neighbors: map?.neighbors && typeof map.neighbors === "object" ? map.neighbors : {},
+    })) : [],
+  }));
+}
+
+function getSelectedAdminMapPresets(collections = [], collectionId = "") {
+  const found = (collections || []).find((collection) => String(collection.id) === String(collectionId)) || collections[0] || null;
+  return Array.isArray(found?.presets) ? found.presets : [];
+}
+
+function collectDesignMapsById(mapRoot = {}) {
+  const byId = new Map();
+  const sources = [
+    ...(Array.isArray(mapRoot.appliedCollections) ? mapRoot.appliedCollections : []),
+    ...(Array.isArray(mapRoot.collections) ? mapRoot.collections : []),
+    ...(Array.isArray(mapRoot.editorCollections) ? mapRoot.editorCollections : []),
+  ];
+  sources.forEach((collection) => {
+    (Array.isArray(collection?.presets) ? collection.presets : []).forEach((map) => {
+      if (map?.id) byId.set(String(map.id), map);
+    });
+  });
+  (Array.isArray(mapRoot.appliedPresets) ? mapRoot.appliedPresets : []).forEach((map) => { if (map?.id) byId.set(String(map.id), map); });
+  (Array.isArray(mapRoot.presets) ? mapRoot.presets : []).forEach((map) => { if (map?.id) byId.set(String(map.id), map); });
+  return byId;
+}
+
+function resolveDesignAssetProxyValue(value) {
+  const text = String(value || "");
+  if (!text) return "";
+  try {
+    const parsed = new URL(text, "http://local.invalid");
+    if (parsed.pathname !== "/asset/design") return "";
+    const pathKey = parsed.searchParams.get("path") || "";
+    const resolved = getValueByPath(designConfig, pathKey);
+    return typeof resolved === "string" ? resolved : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeIncomingMapImageValue(value, previousValue = "") {
+  const text = String(value || "").trim();
+  const previous = String(previousValue || "");
+  if (!text) return previous;
+  const resolvedProxy = resolveDesignAssetProxyValue(text);
+  if (resolvedProxy && !String(resolvedProxy || "").includes("/asset/design")) return resolvedProxy;
+  if (text.includes("/asset/design")) return previous || resolvedProxy || "";
+  return text;
+}
+
+function preserveAdminMapImages(collections = [], previousRoot = {}) {
+  const previousById = collectDesignMapsById(previousRoot);
+  return (collections || []).map((collection) => ({
+    ...collection,
+    presets: (Array.isArray(collection?.presets) ? collection.presets : []).map((map) => {
+      const previousMap = previousById.get(String(map?.id || "")) || {};
+      return {
+        ...map,
+        backgroundImage: normalizeIncomingMapImageValue(map?.backgroundImage, previousMap?.backgroundImage),
+      };
+    }),
+  }));
+}
+
+function buildDraftMapRootFromPayload(incomingRoot = {}, currentRoot = {}) {
+  const draftCollections = preserveAdminMapImages(
+    normalizeAdminMapCollections(incomingRoot.editorCollections || incomingRoot.collections || [], incomingRoot.presets || []),
+    currentRoot
+  );
+  const draftActiveId = incomingRoot.editorActiveCollectionId || incomingRoot.activeCollectionId || draftCollections[0]?.id || "";
+  const draftPresets = getSelectedAdminMapPresets(draftCollections, draftActiveId);
+
+  const existingAppliedCollections = preserveAdminMapImages(
+    normalizeAdminMapCollections(currentRoot.appliedCollections || currentRoot.collections || [], currentRoot.appliedPresets || currentRoot.presets || []),
+    currentRoot
+  );
+  const appliedCollectionId = currentRoot.appliedCollectionId || currentRoot.activeCollectionId || existingAppliedCollections[0]?.id || "";
+  const appliedPresets = getSelectedAdminMapPresets(existingAppliedCollections, appliedCollectionId);
+
+  return {
+    ...currentRoot,
+    ...incomingRoot,
+    collections: draftCollections,
+    activeCollectionId: draftActiveId,
+    presets: draftPresets,
+    editorCollections: draftCollections,
+    editorActiveCollectionId: draftActiveId,
+    appliedCollections: existingAppliedCollections,
+    appliedCollectionId,
+    appliedPresets,
+  };
+}
+
+function buildAppliedMapRootFromPayload(incomingRoot = {}, currentRoot = {}) {
+  const draftRoot = buildDraftMapRootFromPayload(incomingRoot, currentRoot);
+  const draftCollections = preserveAdminMapImages(
+    normalizeAdminMapCollections(draftRoot.editorCollections || draftRoot.collections || [], draftRoot.presets || []),
+    currentRoot
+  );
+  const activeId = draftRoot.editorActiveCollectionId || draftRoot.activeCollectionId || draftCollections[0]?.id || "";
+  const presets = getSelectedAdminMapPresets(draftCollections, activeId);
+  return {
+    ...draftRoot,
+    collections: draftCollections,
+    activeCollectionId: activeId,
+    presets,
+    editorCollections: draftCollections,
+    editorActiveCollectionId: activeId,
+    appliedCollections: draftCollections,
+    appliedCollectionId: activeId,
+    appliedPresets: presets,
+  };
+}
+
+function commitDesignConfigChange() {
+  designAssetVersion = Date.now();
+  publicDesignShellCache = null;
+  publicDesignMapsCache = null;
+  try {
+    const designConfigPath = resolveDataPath("designConfig.json");
+    fs.writeFileSync(designConfigPath, JSON.stringify(designConfig, null, 2), "utf-8");
+  } catch (error) {
+    console.error("design save failed", error);
+  }
 }
 
 app.post("/designConfig", (req, res) => {
@@ -3363,7 +3510,11 @@ app.post("/designConfig", (req, res) => {
     ...(defaultDesign.siteContent || {}),
     ...(payload.siteContent || {}),
   };
-  if (shouldPreserveMaps) nextSiteContent.maps = previousMaps;
+  if (shouldPreserveMaps) {
+    nextSiteContent.maps = previousMaps;
+  } else if (incomingMaps && typeof incomingMaps === "object") {
+    nextSiteContent.maps = buildDraftMapRootFromPayload(incomingMaps, previousMaps || {});
+  }
   designConfig = {
     ...defaultDesign,
     ...payload,
@@ -3373,17 +3524,36 @@ app.post("/designConfig", (req, res) => {
     sharedShellElements: Array.isArray(payload.sharedShellElements) ? payload.sharedShellElements : (Array.isArray(defaultDesign.sharedShellElements) ? defaultDesign.sharedShellElements : []),
     sharedShellOverrides: typeof payload.sharedShellOverrides === "object" && payload.sharedShellOverrides ? payload.sharedShellOverrides : (defaultDesign.sharedShellOverrides || {}),
   };
-  designAssetVersion = Date.now();
-  publicDesignShellCache = null;
-  publicDesignMapsCache = null;
+  commitDesignConfigChange();
 
-  try {
-    const designConfigPath = resolveDataPath("designConfig.json");
-    fs.writeFileSync(designConfigPath, JSON.stringify(designConfig, null, 2), "utf-8");
-  } catch (error) {
-    console.error("design save failed", error);
-  }
+  res.json({ success: true, designConfig });
+});
 
+app.post("/designMaps/saveDraft", (req, res) => {
+  const incomingMaps = req.body?.maps && typeof req.body.maps === "object" ? req.body.maps : {};
+  const previousMaps = designConfig?.siteContent?.maps || {};
+  designConfig = {
+    ...designConfig,
+    siteContent: {
+      ...(designConfig.siteContent || {}),
+      maps: buildDraftMapRootFromPayload(incomingMaps, previousMaps),
+    },
+  };
+  commitDesignConfigChange();
+  res.json({ success: true, designConfig });
+});
+
+app.post("/designMaps/applyDraft", (req, res) => {
+  const incomingMaps = req.body?.maps && typeof req.body.maps === "object" ? req.body.maps : {};
+  const previousMaps = designConfig?.siteContent?.maps || {};
+  designConfig = {
+    ...designConfig,
+    siteContent: {
+      ...(designConfig.siteContent || {}),
+      maps: buildAppliedMapRootFromPayload(incomingMaps, previousMaps),
+    },
+  };
+  commitDesignConfigChange();
   res.json({ success: true, designConfig });
 });
 
