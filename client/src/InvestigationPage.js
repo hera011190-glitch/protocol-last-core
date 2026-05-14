@@ -1077,8 +1077,16 @@ useEffect(() => {
     !keepEndResultOpenRef.current &&
     !endedResultOpenedRef.current
   );
+  const unrevealedDefeatEnd = !!(
+    investigation?.ended &&
+    investigation?.endedReason === "전멸" &&
+    Array.isArray(investigation?.lastBattleRound) &&
+    investigation.lastBattleRound.length > 0 &&
+    !keepEndResultOpenRef.current &&
+    !endedResultOpenedRef.current
+  );
   const delayedEventBannerActive = delayedBattleBanner && Number(delayedBattleBanner.until || 0) > nowTick;
-  const liveBattleEndBannerSuppressed = (playbackEndingVisible || defeatPlaybackPending) && isBattleEndBannerText(liveEventBanner?.text);
+  const liveBattleEndBannerSuppressed = (playbackEndingVisible || defeatPlaybackPending || unrevealedDefeatEnd) && isBattleEndBannerText(liveEventBanner?.text);
   const activeEventBanner = delayedEventBannerActive
     ? delayedBattleBanner
     : liveEventBanner && Number(liveEventBanner.until || 0) > nowTick && !liveBattleEndBannerSuppressed
@@ -1361,7 +1369,7 @@ useEffect(() => {
       setShowResult(true);
       return;
     }
-    if (battlePlaybackLocked || stagedBattleLogs.length > 0 || defeatPlaybackPending) {
+    if (battlePlaybackLocked || stagedBattleLogs.length > 0 || defeatPlaybackPending || (unrevealedDefeatEnd && !defeatResultTimerRef.current)) {
       setShowResult(false);
       return;
     }
@@ -1378,7 +1386,7 @@ useEffect(() => {
         setShowResult(true);
       }
     }
-  }, [investigation?.ended, investigation?.endedReason, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant, defeatPlaybackPending]);
+  }, [investigation?.ended, investigation?.endedReason, endedReadonly, battlePlaybackLocked, stagedBattleLogs.length, isSelfInvestigationParticipant, defeatPlaybackPending, unrevealedDefeatEnd]);
 
   if (!investigation || !currentNodeId || (!currentNode && !investigation?.ended)) {
     return (

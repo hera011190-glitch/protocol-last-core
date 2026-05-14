@@ -530,14 +530,58 @@ const FALLBACK_MAPS = [
   { id: "sector-02", name: "구역 2", background: "linear-gradient(180deg, #eaf7ff, #d8efff)", neighbors: { left: "sector-01" } },
 ];
 
+function measureSpriteVisibleBounds(img, fallbackSize = 132) {
+  const width = img?.naturalWidth || fallbackSize;
+  const height = img?.naturalHeight || fallbackSize;
+  const fallbackBounds = { left: 0, top: 0, width, height };
+  try {
+    if (!width || !height || typeof document === "undefined") return { width, height, alphaBounds: fallbackBounds };
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return { width, height, alphaBounds: fallbackBounds };
+    ctx.drawImage(img, 0, 0, width, height);
+    const data = ctx.getImageData(0, 0, width, height).data;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha > 8) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) return { width, height, alphaBounds: fallbackBounds };
+    return {
+      width,
+      height,
+      alphaBounds: {
+        left: minX,
+        top: minY,
+        width: Math.max(1, maxX - minX + 1),
+        height: Math.max(1, maxY - minY + 1),
+      },
+    };
+  } catch {
+    return { width, height, alphaBounds: fallbackBounds };
+  }
+}
+
 const CharacterSprite = memo(function CharacterSprite({ character, quote, moving, onClick }) {
   const spriteCandidates = useMemo(() => getSpriteImageCandidates(character), [character]);
   const [candidateIndex, setCandidateIndex] = useState(0);
-  const [spriteNaturalSize, setSpriteNaturalSize] = useState({ width: 0, height: 0 });
+  const [spriteNaturalSize, setSpriteNaturalSize] = useState({ width: 0, height: 0, alphaBounds: null });
 
   useEffect(() => {
     setCandidateIndex(0);
-    setSpriteNaturalSize({ width: 0, height: 0 });
+    setSpriteNaturalSize({ width: 0, height: 0, alphaBounds: null });
   }, [spriteCandidates.join("|")]);
 
   const rawSpriteCandidate = candidateIndex < spriteCandidates.length ? spriteCandidates[candidateIndex] : "";
@@ -557,6 +601,13 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   const spriteScale = naturalWidth > 0 && naturalHeight > 0 ? Math.min(boxSize / naturalWidth, boxSize / naturalHeight, 1) : 1;
   const renderedSpriteWidth = naturalWidth > 0 ? Math.max(1, Math.round(naturalWidth * spriteScale)) : boxSize;
   const renderedSpriteHeight = naturalHeight > 0 ? Math.max(1, Math.round(naturalHeight * spriteScale)) : boxSize;
+  const visibleBounds = spriteNaturalSize.alphaBounds || { left: 0, top: 0, width: naturalWidth || boxSize, height: naturalHeight || boxSize };
+  const visibleLeft = Math.max(0, Math.round(Number(visibleBounds.left || 0) * spriteScale));
+  const visibleTop = Math.max(0, Math.round(Number(visibleBounds.top || 0) * spriteScale));
+  const visibleWidth = Math.max(1, Math.round(Number(visibleBounds.width || naturalWidth || boxSize) * spriteScale));
+  const visibleHeight = Math.max(1, Math.round(Number(visibleBounds.height || naturalHeight || boxSize) * spriteScale));
+  const visibleRevealHeight = tintReveal > 0 ? Math.max(1, Math.ceil((visibleHeight * tintReveal) / 100)) : 0;
+  const visibleRevealTop = Math.max(0, visibleTop + visibleHeight - visibleRevealHeight);
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
@@ -578,7 +629,7 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
               onError={handleSpriteError}
               onLoad={(event) => {
                 const img = event.currentTarget;
-                setSpriteNaturalSize({ width: img.naturalWidth || boxSize, height: img.naturalHeight || boxSize });
+                setSpriteNaturalSize(measureSpriteVisibleBounds(img, boxSize));
               }}
               style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
             />
@@ -587,34 +638,34 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                 aria-hidden="true"
                 style={{
                   position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: `${Math.max(1, tintReveal)}%`,
+                  left: visibleLeft,
+                  top: visibleTop,
+                  width: visibleWidth,
+                  height: visibleHeight,
                   zIndex: 2,
                   pointerEvents: "none",
                   overflow: "hidden",
-                  WebkitMaskImage: "linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.98) 72%, rgba(0,0,0,0.46) 90%, rgba(0,0,0,0) 100%)",
-                  maskImage: "linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.98) 72%, rgba(0,0,0,0.46) 90%, rgba(0,0,0,0) 100%)",
-                  WebkitMaskRepeat: "no-repeat",
-                  maskRepeat: "no-repeat",
-                  mixBlendMode: "multiply",
-                  opacity: 0.92,
-                  transition: "height 0.28s ease, mask-image 0.28s ease, -webkit-mask-image 0.28s ease",
                 }}
               >
-                <img
-                  src={spriteImage}
-                  alt=""
-                  draggable={false}
+                <div
                   style={{
                     position: "absolute",
                     left: 0,
                     bottom: 0,
-                    width: renderedSpriteWidth,
-                    height: renderedSpriteHeight,
-                    objectFit: "contain",
-                    filter: "sepia(100%) saturate(430%) hue-rotate(315deg) brightness(0.72) contrast(150%)",
+                    width: visibleWidth,
+                    height: visibleRevealHeight,
+                    background: "linear-gradient(to top, rgba(80,0,0,0.98) 0%, rgba(132,0,0,0.92) 54%, rgba(95,0,0,0.72) 100%)",
+                    WebkitMaskImage: `url(${spriteImage})`,
+                    maskImage: `url(${spriteImage})`,
+                    WebkitMaskSize: `${renderedSpriteWidth}px ${renderedSpriteHeight}px`,
+                    maskSize: `${renderedSpriteWidth}px ${renderedSpriteHeight}px`,
+                    WebkitMaskPosition: `${-visibleLeft}px ${-visibleRevealTop}px`,
+                    maskPosition: `${-visibleLeft}px ${-visibleRevealTop}px`,
+                    WebkitMaskRepeat: "no-repeat",
+                    maskRepeat: "no-repeat",
+                    mixBlendMode: "multiply",
+                    opacity: 0.98,
+                    transition: "height 0.28s ease, mask-position 0.28s ease, -webkit-mask-position 0.28s ease",
                   }}
                 />
               </div>
@@ -633,7 +684,7 @@ export default function SDPage({ activeCharacter, design, theme, isActive = true
   const [activeMapId, setActiveMapId] = useState(() => readLastViewedMapId());
   const [quotes, setQuotes] = useState({});
   const [selectedCharacter, setSelectedCharacter] = useState(null);
-  const [remoteMapRoot, setRemoteMapRoot] = useState(() => readCachedMapConfig() || design?.siteContent?.maps || null);
+  const [remoteMapRoot, setRemoteMapRoot] = useState(() => design?.siteContent?.maps || readCachedMapConfig() || null);
   const lastFrameRef = useRef(0);
   const saveTickRef = useRef(0);
   const lastServerSyncRef = useRef("");
