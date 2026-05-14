@@ -4,6 +4,7 @@ import LazyImage from "./LazyImage";
 import { apiFetch, apiJsonCached, buildApiUrl } from "./api";
 
 const INVESTIGATION_LIST_CACHE_KEY = "plc-cache-investigations";
+const INVESTIGATION_VISUAL_CACHE_KEY = "plc-cache-investigation-card-visuals";
 
 const PRELOADED_INVESTIGATION_IMAGES = new Set();
 
@@ -101,7 +102,33 @@ function readCachedInvestigations() {
 
 function writeCachedInvestigations(rows) {
   try {
-    localStorage.setItem(INVESTIGATION_LIST_CACHE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []));
+    if (!Array.isArray(rows)) return;
+    if (rows.length === 0) return;
+    localStorage.setItem(INVESTIGATION_LIST_CACHE_KEY, JSON.stringify(rows));
+  } catch {}
+}
+
+function hasInvestigationVisual(row) {
+  return !!String(row?.listImage || row?.entryImage || row?.cardImage || "").trim();
+}
+
+function readCachedInvestigationVisuals() {
+  try {
+    const raw = localStorage.getItem(INVESTIGATION_VISUAL_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedInvestigationVisuals(rows) {
+  try {
+    const incoming = (Array.isArray(rows) ? rows : []).filter(hasInvestigationVisual);
+    if (!incoming.length) return;
+    const byId = new Map(readCachedInvestigationVisuals().map((item) => [String(item?.id || ""), item]));
+    incoming.forEach((item) => byId.set(String(item?.id || ""), item));
+    localStorage.setItem(INVESTIGATION_VISUAL_CACHE_KEY, JSON.stringify(Array.from(byId.values()).filter(hasInvestigationVisual)));
   } catch {}
 }
 
@@ -281,9 +308,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
       apiJsonCached(`/investigations`, { ttlMs: 2500, storageKey: "plc-cache-investigations-json" })
         .then((data) => {
           if (cancelled) return;
-          const next = mergeInvestigationRowsWithCachedImages(Array.isArray(data) ? data : [], readCachedInvestigations());
+          const cachedRows = [...readCachedInvestigations(), ...readCachedInvestigationVisuals()];
+          const next = mergeInvestigationRowsWithCachedImages(Array.isArray(data) ? data : [], cachedRows);
           setInvestigations(next);
           writeCachedInvestigations(next);
+          writeCachedInvestigationVisuals(next);
         })
         .catch(() => {
           if (cancelled) return;
@@ -342,8 +371,11 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
     return [...rows].sort((a, b) => Number(new Date(b.endedAt || b.closeAt || 0)) - Number(new Date(a.endedAt || a.closeAt || 0)));
   }, [investigations]);
 
-  const dailyEntryImage = resumableDaily?.entryImage || resumableDaily?.listImage || getRepresentativeImage(dailyPool, "entry");
-  const groupEntryImage = getRepresentativeImage(groups, "entry") || getRepresentativeImage(completedGroups, "entry");
+  const cachedVisualRows = readCachedInvestigationVisuals();
+  const cachedDailyVisualRows = cachedVisualRows.filter((item) => item?.type === "daily");
+  const cachedGroupVisualRows = cachedVisualRows.filter((item) => item?.type === "group");
+  const dailyEntryImage = resumableDaily?.entryImage || resumableDaily?.listImage || getRepresentativeImage(dailyPool, "entry") || getRepresentativeImage(cachedDailyVisualRows, "entry");
+  const groupEntryImage = getRepresentativeImage(groups, "entry") || getRepresentativeImage(completedGroups, "entry") || getRepresentativeImage(cachedGroupVisualRows, "entry");
   const investContent = design?.siteContent?.investigations || {};
   const editableDaily = resumableDaily || startableDailyPool[0] || dailyPool[0] || null;
   const editableGroup = groups[0] || completedGroups[0] || null;
@@ -474,6 +506,7 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
       setInvestigations((prev) => {
         const nextRows = Array.isArray(prev) ? prev.map((item) => item?.id === imageEditor.id ? { ...item, ...updated } : item) : prev;
         writeCachedInvestigations(nextRows);
+        writeCachedInvestigationVisuals(nextRows);
         return nextRows;
       });
       setImageEditor(null);

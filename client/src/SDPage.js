@@ -607,7 +607,13 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   const visibleWidth = Math.max(1, Math.round(Number(visibleBounds.width || naturalWidth || boxSize) * spriteScale));
   const visibleHeight = Math.max(1, Math.round(Number(visibleBounds.height || naturalHeight || boxSize) * spriteScale));
   const visibleRevealHeight = tintReveal > 0 ? Math.max(1, Math.ceil((visibleHeight * tintReveal) / 100)) : 0;
-  const visibleRevealTop = Math.max(0, visibleTop + visibleHeight - visibleRevealHeight);
+  const tintFeatherHeight = tintReveal > 0 ? Math.max(10, Math.ceil(visibleHeight * 0.16)) : 0;
+  const tintLayerHeight = tintReveal > 0 ? Math.min(visibleHeight, visibleRevealHeight + tintFeatherHeight) : 0;
+  const tintLayerTop = Math.max(0, visibleTop + visibleHeight - tintLayerHeight);
+  const tintSolidStop = tintLayerHeight > 0 ? Math.max(18, Math.min(92, Math.round((visibleRevealHeight / tintLayerHeight) * 100))) : 100;
+  const tintGradient = tintReveal >= 99.5
+    ? "linear-gradient(to top, rgba(70,0,0,0.99) 0%, rgba(118,0,0,0.98) 62%, rgba(76,0,0,0.9) 100%)"
+    : `linear-gradient(to top, rgba(70,0,0,0.99) 0%, rgba(118,0,0,0.98) ${tintSolidStop}%, rgba(92,0,0,0.62) ${Math.min(100, tintSolidStop + 4)}%, rgba(55,0,0,0) 100%)`;
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
@@ -653,19 +659,19 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                     left: 0,
                     bottom: 0,
                     width: visibleWidth,
-                    height: visibleRevealHeight,
-                    background: "linear-gradient(to top, rgba(80,0,0,0.98) 0%, rgba(132,0,0,0.92) 54%, rgba(95,0,0,0.72) 100%)",
+                    height: tintLayerHeight,
+                    background: tintGradient,
                     WebkitMaskImage: `url(${spriteImage})`,
                     maskImage: `url(${spriteImage})`,
                     WebkitMaskSize: `${renderedSpriteWidth}px ${renderedSpriteHeight}px`,
                     maskSize: `${renderedSpriteWidth}px ${renderedSpriteHeight}px`,
-                    WebkitMaskPosition: `${-visibleLeft}px ${-visibleRevealTop}px`,
-                    maskPosition: `${-visibleLeft}px ${-visibleRevealTop}px`,
+                    WebkitMaskPosition: `${-visibleLeft}px ${-tintLayerTop}px`,
+                    maskPosition: `${-visibleLeft}px ${-tintLayerTop}px`,
                     WebkitMaskRepeat: "no-repeat",
                     maskRepeat: "no-repeat",
                     mixBlendMode: "multiply",
-                    opacity: 0.98,
-                    transition: "height 0.28s ease, mask-position 0.28s ease, -webkit-mask-position 0.28s ease",
+                    opacity: 1,
+                    transition: "height 0.28s ease, background 0.28s ease, mask-position 0.28s ease, -webkit-mask-position 0.28s ease",
                   }}
                 />
               </div>

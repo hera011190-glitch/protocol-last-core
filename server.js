@@ -1963,178 +1963,8 @@ function buildInvestigation(def) {
   };
 }
 
-const investigationDefinitions = [
-  {
-    id: "investigation-1",
-    title: "대저택 조사",
-    type: "group",
-    data: {
-      start: "entrance",
-      nodes: {
-        entrance: {
-          name: "현관",
-          log: "대저택의 현관에 도착했습니다.",
-          investigations: ["현관문 조사", "바닥 조사"],
-          battle: null,
-          npc: ["관리인 메모"],
-          mapX: 20,
-          mapY: 50,
-          choices: [
-            { text: "큰 방으로 이동", target: "bigRoom" },
-            { text: "부엌으로 이동", target: "kitchen" },
-          ],
-          actionResults: {
-            "현관문 조사": { log: "문틀에 긁힌 흔적이 있습니다. 누군가 급히 안으로 들어간 것 같습니다.", points: 5, item: "문틀 파편", reward: "현관 단서 확보" },
-            "바닥 조사": { log: "바닥에서 젖은 발자국을 발견했습니다. 큰 방 쪽으로 이어집니다.", points: 4, npc: "관리인의 이동 흔적" },
-          },
-        },
-        bigRoom: {
-          name: "큰 방",
-          log: "넓은 큰 방입니다. 먼지가 가득합니다.",
-          investigations: ["책장 조사", "벽난로 조사"],
-          battle: null,
-          npc: ["초상화 속 인물"],
-          mapX: 48,
-          mapY: 36,
-          choices: [
-            { text: "현관으로 돌아간다", target: "entrance" },
-            { text: "작은 방으로 이동", target: "smallRoom" },
-          ],
-          actionResults: {
-            "책장 조사": { log: "숨겨진 기록철을 발견했습니다. 실종자 명단 일부가 찢겨 있습니다.", points: 8, item: "찢긴 기록철", reward: "실종자 단서" },
-            "벽난로 조사": { log: "벽난로 뒤쪽에서 오래된 열쇠 하나가 발견되었다.", points: 6, item: "녹슨 열쇠" },
-          },
-        },
-        kitchen: {
-          name: "부엌",
-          log: "부엌 안쪽에서 수상한 기척이 느껴집니다.",
-          investigations: ["식탁 조사", "찬장 조사"],
-          battle: { name: "오염체 잔존체", hp: 36, maxHp: 36, atk: 7, def: 3, aoe_chance: 0.25, rewardPoints: 12, rewardItem: "오염핵 파편" },
-          npc: ["부엌 종업원 기록"],
-          mapX: 48,
-          mapY: 64,
-          choices: [{ text: "현관으로 돌아간다", target: "entrance" }],
-          actionResults: {
-            "식탁 조사": { log: "식탁 밑에서 부서진 약병과 응급 붕대를 찾았습니다.", points: 4, item: "응급 붕대" },
-            "찬장 조사": { log: "찬장 속 장부에서 최근 이상 징후를 적은 메모를 발견했습니다.", points: 7, npc: "종업원의 메모" },
-          },
-        },
-        smallRoom: {
-          name: "작은 방",
-          log: "작은 방입니다. 누군가 머문 흔적이 있습니다.",
-          investigations: ["침대 조사", "창문 조사"],
-          battle: null,
-          npc: ["실종자의 흔적"],
-          mapX: 76,
-          mapY: 36,
-          choices: [{ text: "큰 방으로 돌아간다", target: "bigRoom" }],
-          actionResults: {
-            "침대 조사": { log: "침대 아래에서 사진 한 장을 발견했습니다. 대저택 주인과 관리인의 사진입니다.", points: 5, item: "낡은 사진", reward: "인물 관계 단서" },
-            "창문 조사": { log: "창문 밖으로 정원으로 향하는 흔적을 발견했습니다.", points: 3 },
-          },
-        },
-      },
-    },
-  },
-  {
-    id: "investigation-2",
-    title: "폐병원 조사",
-    type: "daily",
-    data: {
-      start: "hall",
-      nodes: {
-        hall: {
-          name: "로비",
-          log: "폐병원 로비에 들어섰습니다.",
-          investigations: ["접수대 조사", "안내판 조사"],
-          battle: null,
-          npc: ["야간근무 기록"],
-          mapX: 18,
-          mapY: 50,
-          choices: [
-            { text: "진료실로 이동", target: "ward" },
-            { text: "지하 통로로 이동", target: "basement" },
-          ],
-          actionResults: {
-            "접수대 조사": { log: "접수대 서랍에서 잠긴 약품 보관함 키를 찾았습니다.", points: 4, item: "약품 보관함 키" },
-            "안내판 조사": { log: "안내판에서 환자 이송 경로를 확인했습니다.", points: 2 },
-          },
-        },
-        ward: {
-          name: "진료실",
-          log: "낡은 진료기구와 차가운 침대가 보입니다.",
-          investigations: ["캐비닛 조사", "침대 조사"],
-          battle: null,
-          npc: ["담당 의사의 메모"],
-          mapX: 52,
-          mapY: 34,
-          choices: [{ text: "로비로 돌아간다", target: "hall" }],
-          actionResults: {
-            "캐비닛 조사": { log: "캐비닛 안에서 소독약과 사용기록을 발견했습니다.", points: 5, item: "소독약" },
-            "침대 조사": { log: "침대 밑에 숨겨진 환자 메모가 있습니다. 지하를 경계하라는 글이 적혀 있습니다.", points: 6, reward: "지하 경고 확보" },
-          },
-        },
-        basement: {
-          name: "지하 통로",
-          log: "축축한 냄새가 감도는 지하 통로입니다.",
-          investigations: ["배관 조사", "보관함 조사"],
-          battle: { name: "배회 오염체", hp: 28, maxHp: 28, atk: 6, def: 2, aoe_chance: 0.2, rewardPoints: 10, rewardItem: "손상된 출입카드" },
-          npc: ["지하 격리실 표식"],
-          mapX: 56,
-          mapY: 66,
-          choices: [{ text: "로비로 돌아간다", target: "hall" }],
-          actionResults: {
-            "배관 조사": { log: "배관 사이에서 수상한 액체 샘플을 확보했습니다.", points: 4, item: "수상한 샘플" },
-            "보관함 조사": { log: "보관함 안에서 지하 격리실의 출입 기록을 찾았습니다.", points: 6, reward: "격리실 출입 기록" },
-          },
-        },
-      },
-    },
-  },
-  {
-    id: "test-multi-enemy-battle",
-    title: "[테스트] 다중 적 전투 확인용 단체조사",
-    type: "group",
-    data: {
-      start: "testEntry",
-      nodes: {
-        testEntry: {
-          name: "테스트 진입로",
-          log: "다중 적 전투를 확인하기 위한 테스트 구역입니다.",
-          investigations: ["전투 구역 확인"],
-          battle: null,
-          npc: [],
-          mapX: 24,
-          mapY: 52,
-          choices: [{ text: "다중 적 전투 구역으로 이동", target: "testBattleRoom" }],
-          actionResults: {
-            "전투 구역 확인": { log: "앞쪽에서 여러 개의 오염 반응이 동시에 감지됩니다.", points: 1 },
-          },
-        },
-        testBattleRoom: {
-          name: "다중 적 전투 구역",
-          log: "세 개체의 오염체가 동시에 출현했습니다.",
-          investigations: [],
-          battle: {
-            name: "테스트 오염체 무리",
-            enemies: [
-              { id: "test-enemy-1", name: "테스트 오염체 A", hp: 24, maxHp: 24, atk: 6, def: 2, agi: 8, aoe_chance: 0.1, finisher_chance: 0.02, finisherType: "single", rewardPoints: 4, rewardItem: "" },
-              { id: "test-enemy-2", name: "테스트 오염체 B", hp: 30, maxHp: 30, atk: 7, def: 3, agi: 6, aoe_chance: 0.2, finisher_chance: 0.02, finisherType: "single", rewardPoints: 5, rewardItem: "" },
-              { id: "test-enemy-3", name: "테스트 오염체 C", hp: 20, maxHp: 20, atk: 5, def: 1, agi: 10, aoe_chance: 0.35, finisher_chance: 0.03, finisherType: "aoe", rewardPoints: 4, rewardItem: "" },
-            ],
-            rewardPoints: 13,
-            rewardItem: "",
-          },
-          npc: [],
-          mapX: 68,
-          mapY: 52,
-          choices: [{ text: "테스트 진입로로 돌아간다", target: "testEntry" }],
-          actionResults: {},
-        },
-      },
-    },
-  },
-];
+const investigationDefinitions = [];
+
 
 let investigationsDB = investigationDefinitions.map(buildInvestigation);
 
@@ -4743,7 +4573,29 @@ function normalizeCustomTemplate(template) {
   };
 }
 
-let customInvestigationsDB = readCustomInvestigationsFromFile();
+const DEFAULT_INVESTIGATION_IDS_TO_PRUNE = new Set([
+  "investigation-1",
+  "investigation-2",
+  "test-multi-enemy-battle",
+  "custom-group-test-01",
+  "custom-daily-test-01",
+]);
+
+function getInvestigationTemplateId(template) {
+  return String(template?.id || template?.json?.id || "").trim();
+}
+
+function pruneDefaultInvestigationTemplates(list) {
+  const rows = Array.isArray(list) ? list : [];
+  return rows.filter((template) => !DEFAULT_INVESTIGATION_IDS_TO_PRUNE.has(getInvestigationTemplateId(template)));
+}
+
+const loadedCustomInvestigations = readCustomInvestigationsFromFile();
+let customInvestigationsDB = pruneDefaultInvestigationTemplates(loadedCustomInvestigations);
+if (customInvestigationsDB.length !== (Array.isArray(loadedCustomInvestigations) ? loadedCustomInvestigations.length : 0)) {
+  writeCustomInvestigationsToFile(customInvestigationsDB);
+}
+
 
 function hasInvestigationVisualValue(def, key) {
   return typeof def?.[key] === "string" && def[key].trim()
@@ -6050,4 +5902,17 @@ if (!IS_ASSET_COMPACT_CHILD) {
     const assetCompactDelayMs = Number(process.env.PLC_ASSET_COMPACT_DELAY_MS || (process.env.RENDER ? 600000 : 3000));
     setTimeout(runAssetCompactChildProcess, assetCompactDelayMs);
   }
+}
+
+try {
+  const { startMastodonBot } = require("./mastodon-bot");
+
+  if (process.env.MASTODON_ACCESS_TOKEN && process.env.MASTODON_BASE_URL) {
+    startMastodonBot();
+    console.log("[mastodon-bot] 봇 실행을 시작했습니다.");
+  } else {
+    console.log("[mastodon-bot] 환경변수가 없어 봇을 실행하지 않았습니다.");
+  }
+} catch (error) {
+  console.error("[mastodon-bot] 봇 실행 실패:", error);
 }
