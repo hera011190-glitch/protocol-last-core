@@ -233,6 +233,16 @@ function mergeInvestigationRowsWithCachedImages(rows, cachedRows) {
   });
 }
 
+function readSessionJson(key, fallback = null) {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function getDailyResumeStorageKeys(investigationId, character) {
   if (!investigationId || !character) return [];
   const ownerKeys = [
@@ -270,14 +280,7 @@ function getDailyOwnerKeysForCharacter(character) {
 function isDailyStartableForCharacter(item, character) {
   if (!item || item.type !== "daily") return false;
   if (item.hidden || item.opened === false || item.statusLabel === "비활성화" || !(item.effectiveOpened ?? item.opened)) return false;
-  if (!item.started || item.ended) return true;
-  const ownerKeys = getDailyOwnerKeysForCharacter(character);
-  const dailyOwnerKey = String(item.dailyOwnerKey || "").trim();
-  const dailyResumeOwnerKey = String(item.dailyResumeOwnerKey || "").trim();
-  if (dailyOwnerKey && ownerKeys.includes(dailyOwnerKey)) return true;
-  if (dailyResumeOwnerKey && ownerKeys.includes(dailyResumeOwnerKey)) return true;
-  if (hasLocalDailyResume(item.id, character)) return true;
-  return Number(item.participantsCount || 0) === 0 && !dailyOwnerKey && !dailyResumeOwnerKey;
+  return true;
 }
 
 function card(theme, disabled = false, clickable = false) {
@@ -438,9 +441,24 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   );
   const dailyOwnerKeys = useMemo(() => getDailyOwnerKeysForCharacter(activeCharacter), [activeCharacter?.id, activeCharacter?.ownerId, activeCharacter?.name]);
   const dailyOwnerKey = dailyOwnerKeys[0] || "";
+  const localResumableDaily = useMemo(() => {
+    const cachedId = readSessionJson("plc-investigation-id", "");
+    if (!cachedId || !hasLocalDailyResume(cachedId, activeCharacter)) return null;
+    const cachedSeed = readSessionJson("plc-investigation-seed", null) || {};
+    return {
+      ...cachedSeed,
+      id: cachedId,
+      type: "daily",
+      title: cachedSeed?.title || "진행 중인 일일조사",
+      started: true,
+      ended: false,
+      dailyResumeOwnerKey: dailyOwnerKey,
+    };
+  }, [activeCharacter?.id, activeCharacter?.ownerId, activeCharacter?.name, dailyOwnerKey]);
+
   const resumableDaily = useMemo(
-    () => investigations.find((item) => item.type === "daily" && item.started && !item.ended && (dailyOwnerKeys.includes(String(item.dailyResumeOwnerKey || "")) || (dailyOwnerKeys.includes(String(item.dailyOwnerKey || "")) && Number(item.participantsCount || 0) === 0) || hasLocalDailyResume(item.id, activeCharacter))),
-    [investigations, dailyOwnerKeys, activeCharacter]
+    () => investigations.find((item) => item.type === "daily" && item.started && !item.ended && (dailyOwnerKeys.includes(String(item.dailyResumeOwnerKey || "")) || (dailyOwnerKeys.includes(String(item.dailyOwnerKey || "")) && Number(item.participantsCount || 0) === 0) || hasLocalDailyResume(item.id, activeCharacter))) || localResumableDaily,
+    [investigations, dailyOwnerKeys, activeCharacter, localResumableDaily]
   );
 
   const groups = useMemo(() => {
@@ -489,8 +507,8 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
   const startDaily = () => {
     if (dailyPool.length === 0) return alert("활성화된 일일조사가 없습니다.");
     if (dailyLeft <= 0) return alert("남은 일일조사 횟수가 없습니다.");
-    const candidates = startableDailyPool.length > 0 ? startableDailyPool : dailyPool.filter((item) => !item.started || item.ended);
-    if (!candidates.length) return alert("현재 시작할 수 있는 일일조사가 없습니다. 진행 중인 일일조사가 있다면 먼저 조사로 돌아가거나 잠시 후 다시 시도해주세요.");
+    const candidates = startableDailyPool.length > 0 ? startableDailyPool : dailyPool;
+    if (!candidates.length) return alert("현재 시작할 수 있는 일일조사가 없습니다.");
     const picked = candidates[Math.floor(Math.random() * candidates.length)];
     onEnter(picked, { mode: "daily" });
   };

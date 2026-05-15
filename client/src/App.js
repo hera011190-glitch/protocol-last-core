@@ -466,8 +466,9 @@ function App() {
           return;
         }
         if (data.character) applyActiveCharacter(data.character);
-        setSelectedInvestigationSeed(item || null);
-        setSelectedInvestigationId(item.id);
+        const startedInvestigationId = data.investigationId || item.id;
+        setSelectedInvestigationSeed({ ...(item || {}), id: startedInvestigationId, sourceInvestigationId: data.sourceInvestigationId || item.id });
+        setSelectedInvestigationId(startedInvestigationId);
         setSpectatorMode(false);
         setActivePage(PAGE.INVESTIGATION);
         return;

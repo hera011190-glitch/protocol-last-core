@@ -2483,6 +2483,95 @@ function getDailyOwnerKey(character) {
   return String(character.id || `${character.ownerId || "owner"}:${character.name || ""}`);
 }
 
+const DAILY_INSTANCE_SEPARATOR = "__daily__";
+
+function safeDailyOwnerSuffix(ownerKey = "") {
+  const raw = String(ownerKey || "daily");
+  try {
+    return Buffer.from(raw).toString("base64url").slice(0, 72) || "daily";
+  } catch {
+    return raw.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 72) || "daily";
+  }
+}
+
+function isDailyRuntimeInstance(item) {
+  return !!(item && item.type === "daily" && item.dailyRuntimeInstance);
+}
+
+function getDailySourceId(itemOrId) {
+  if (itemOrId && typeof itemOrId === "object") {
+    return String(itemOrId.dailySourceId || itemOrId.sourceTemplateId || itemOrId.templateId || itemOrId.id || "");
+  }
+  const text = String(itemOrId || "");
+  return text.includes(DAILY_INSTANCE_SEPARATOR) ? text.split(DAILY_INSTANCE_SEPARATOR)[0] : text;
+}
+
+function findDailyRuntimeInstance(sourceId, ownerKey) {
+  return investigationsDB.find((entry) =>
+    isDailyRuntimeInstance(entry) &&
+    String(entry.dailySourceId || "") === String(sourceId || "") &&
+    String(entry.dailyOwnerKey || "") === String(ownerKey || "")
+  );
+}
+
+function getPersistableInvestigations() {
+  return investigationsDB.filter((entry) => !isDailyRuntimeInstance(entry));
+}
+
+function getOrCreateDailyRuntimeInstance(templateItem, sourceCharacter) {
+  if (!templateItem || templateItem.type !== "daily" || !sourceCharacter) return null;
+  const sourceId = getDailySourceId(templateItem);
+  const ownerKey = getDailyOwnerKey(sourceCharacter);
+  const existing = findDailyRuntimeInstance(sourceId, ownerKey);
+  if (existing) {
+    existing.opened = templateItem.opened;
+    existing.scheduleEnabled = !!templateItem.scheduleEnabled;
+    existing.openAt = String(templateItem.openAt || "");
+    existing.closeAt = String(templateItem.closeAt || "");
+    existing.hidden = true;
+    return existing;
+  }
+
+  const templateSource = clone(templateItem.originalTemplate || getInvestigationTemplateById(sourceId) || {
+    id: sourceId,
+    title: templateItem.title,
+    type: "daily",
+    data: templateItem.data,
+  });
+  const instanceId = `${sourceId}${DAILY_INSTANCE_SEPARATOR}${safeDailyOwnerSuffix(ownerKey)}`;
+  templateSource.id = instanceId;
+  templateSource.title = templateItem.title || templateSource.title || "일일조사";
+  templateSource.type = "daily";
+  templateSource.listImage = templateItem.listImage || templateSource.listImage || templateItem.data?.listImage || "";
+  templateSource.entryImage = templateItem.entryImage || templateSource.entryImage || templateItem.listImage || templateItem.data?.entryImage || "";
+  templateSource.listImageFrame = templateItem.listImageFrame || templateSource.listImageFrame;
+  templateSource.entryImageFrame = templateItem.entryImageFrame || templateSource.entryImageFrame || templateSource.listImageFrame;
+  templateSource.imageUpdatedAt = Number(templateItem.imageUpdatedAt || templateSource.imageUpdatedAt || 0);
+  templateSource.entryCorrosion = Number(templateItem.entryCorrosion ?? templateSource.entryCorrosion ?? templateItem.data?.entryCorrosion ?? 0);
+  templateSource.endCorrosion = Number(templateItem.endCorrosion ?? templateSource.endCorrosion ?? templateItem.data?.endCorrosion ?? 0);
+  templateSource.bgmUrl = String(templateItem.bgmUrl || templateSource.bgmUrl || templateItem.data?.bgmUrl || "");
+  templateSource.bgmVolume = Number(templateItem.bgmVolume ?? templateSource.bgmVolume ?? templateItem.data?.bgmVolume ?? 1);
+  templateSource.opened = templateItem.opened;
+  templateSource.hidden = true;
+  templateSource.scheduleEnabled = !!templateItem.scheduleEnabled;
+  templateSource.openAt = String(templateItem.openAt || "");
+  templateSource.closeAt = String(templateItem.closeAt || "");
+
+  const instance = buildInvestigation(templateSource);
+  instance.dailyRuntimeInstance = true;
+  instance.dailySourceId = sourceId;
+  instance.dailyOwnerKey = ownerKey;
+  instance.dailyResumeOwnerKey = "";
+  instance.hidden = true;
+  instance.opened = templateItem.opened;
+  instance.scheduleEnabled = !!templateItem.scheduleEnabled;
+  instance.openAt = String(templateItem.openAt || "");
+  instance.closeAt = String(templateItem.closeAt || "");
+  instance.originalTemplate = clone(templateSource);
+  investigationsDB.push(instance);
+  return instance;
+}
+
 function canResumeDailyInvestigation(item, character) {
   if (!item || item.type !== "daily" || !character) return false;
   const ownerKey = getDailyOwnerKey(character);
@@ -2684,7 +2773,7 @@ function applyInvestigationEndCorrosion(item) {
 
 function saveInvestigationsRuntimeState() {
   try {
-    writeRuntimeArray("investigations.json", investigationsDB);
+    writeRuntimeArray("investigations.json", getPersistableInvestigations());
   } catch {}
 }
 
@@ -2890,21 +2979,41 @@ function applyRewardToCharacter(char, reward) {
   return changed;
 }
 
+function getInvestigationRewardItemName(value, fallback = "") {
+  const key = String(value || "").trim();
+  if (!key) return String(fallback || "아이템");
+  const found = (shopItemsDB || []).find((entry) => {
+    const candidates = [entry?.id, entry?.itemId, entry?.key, entry?.name, entry?.title].map((candidate) => String(candidate || "").trim());
+    return candidates.includes(key);
+  });
+  return String(found?.name || found?.title || fallback || key);
+}
+
+function normalizeInvestigationReward(reward) {
+  if (!reward) return reward;
+  if (reward.type !== "item") return reward;
+  const label = getInvestigationRewardItemName(reward.value || reward.label, reward.label || reward.value || "아이템");
+  return { ...reward, label };
+}
+
 function queueRewardAssignment(item, reward) {
   if (!reward) return;
-  if (reward.type === "item" && reward.value) {
+  const safeReward = normalizeInvestigationReward(reward);
+  if (safeReward.type === "item" && safeReward.value) {
     if (!Array.isArray(item.foundItems)) item.foundItems = [];
-    if (!item.foundItems.includes(reward.value)) item.foundItems.push(reward.value);
+    const displayName = safeReward.label || getInvestigationRewardItemName(safeReward.value, safeReward.value);
+    if (!item.foundItems.includes(displayName)) item.foundItems.push(displayName);
+    setEventBanner(item, `${displayName} 획득`, "success", 2400);
   }
   if (item?.type === "daily") {
     const receiver = (item.participants || [])[0];
     const char = receiver ? (charactersDB.find((c) => String(c.id) === String(receiver.id)) || charactersDB.find((c) => c.name === receiver.name)) : null;
     if (char) {
-      if (applyRewardToCharacter(char, reward)) {
+      if (applyRewardToCharacter(char, safeReward)) {
         markCharactersDirty();
         writeRuntimeArray("characters.json", charactersDB);
       }
-      addSharedLog(item, `[획득] ${receiver.name}이(가) ${reward.label}을(를) 받았습니다.`);
+      addSharedLog(item, `[획득] ${receiver.name}이(가) ${safeReward.label}을(를) 받았습니다.`);
       item.pendingReward = null;
       item.pendingRewardQueue = [];
       saveInvestigationsRuntimeState();
@@ -2915,10 +3024,10 @@ function queueRewardAssignment(item, reward) {
   }
   if (!Array.isArray(item.pendingRewardQueue)) item.pendingRewardQueue = [];
   if (!item.pendingReward) {
-    item.pendingReward = reward;
+    item.pendingReward = safeReward;
     return;
   }
-  item.pendingRewardQueue.push(reward);
+  item.pendingRewardQueue.push(safeReward);
 }
 
 function addClue(item, clue) {
@@ -2981,8 +3090,9 @@ function applyActionRewards(item, result, locationName) {
   }
 
   if (result.item) {
-    queueRewardAssignment(item, { type: "item", label: result.item, value: result.item });
-    textParts.push(item?.type === "daily" ? `${result.item}을(를) 획득했습니다!` : `${result.item}을(를) 획득했습니다. 누구에게 지급하시겠습니까?`);
+    const itemReward = normalizeInvestigationReward({ type: "item", label: result.itemName || result.itemLabel || result.item, value: result.item });
+    queueRewardAssignment(item, itemReward);
+    textParts.push(item?.type === "daily" ? `${itemReward.label}을(를) 획득했습니다!` : `${itemReward.label}을(를) 획득했습니다. 누구에게 지급하시겠습니까?`);
     changed = true;
   }
 
@@ -3472,13 +3582,16 @@ function applyBattleTurn(item, actions) {
       rewardPoints += Number(enemy.rewardPoints || 0);
     });
     if (battle.rewardItem) rewardItems.push(battle.rewardItem);
+    const rewardItemLabels = [];
     rewardItems.filter(Boolean).forEach((rewardItem) => {
-      queueRewardAssignment(item, { type: "item", label: rewardItem, value: rewardItem });
-      roundLogs.push(createBattleLogEntry(`[보상] ${rewardItem} 획득`, "allies", { effect: "item", snapshot: makeBattleSnapshot(item, battle) }));
+      const itemReward = normalizeInvestigationReward({ type: "item", label: rewardItem, value: rewardItem });
+      rewardItemLabels.push(itemReward.label);
+      queueRewardAssignment(item, itemReward);
+      roundLogs.push(createBattleLogEntry(`[보상] ${itemReward.label} 획득`, "allies", { effect: "item", snapshot: makeBattleSnapshot(item, battle) }));
     });
     item.rewards.push(`${defeatedEnemies.map((enemy) => enemy.name).join(", ")} 제압`);
     setEventBanner(item, "승리", "success", 2600);
-    const victoryText = `[${node.name}] ${defeatedEnemies.map((enemy) => enemy.name).join(", ")}를 제압했습니다.${rewardItems.length ? ` ${rewardItems.join(", ")} 획득` : ""}`;
+    const victoryText = `[${node.name}] ${defeatedEnemies.map((enemy) => enemy.name).join(", ")}를 제압했습니다.${rewardItemLabels.length ? ` ${rewardItemLabels.join(", ")} 획득` : ""}`;
     item.sharedLog = victoryText;
     item.sharedLogs.push(createLogEntry(victoryText));
     item.sharedLogs = item.sharedLogs.slice(-160);
@@ -4309,7 +4422,7 @@ app.delete("/admin/characters/:id", (req, res) => {
   writeRuntimeArray("relations.json", relationsDB);
   writeRuntimeArray("mails.json", mailsDB);
   writeRuntimeArray("customInvestigations.json", customInvestigationsDB);
-  writeRuntimeArray("investigations.json", investigationsDB);
+  saveInvestigationsRuntimeState();
 
   emitParticipantsUpdated();
   res.json({ success: true });
@@ -4354,7 +4467,7 @@ app.post("/admin/investigationSchedule", (req, res) => {
   item.scheduleEnabled = !!scheduleEnabled;
   item.openAt = openAt || "";
   item.closeAt = closeAt || "";
-  writeRuntimeArray("investigations.json", investigationsDB);
+  saveInvestigationsRuntimeState();
   emitParticipantsUpdated();
   emitInvestigationState(item.id);
 
@@ -4364,6 +4477,7 @@ app.post("/admin/investigationSchedule", (req, res) => {
 app.get("/investigations", (req, res) => {
   const includeHidden = String(req.query.includeHidden || "") === "1";
   const rows = investigationsDB
+    .filter((item) => !isDailyRuntimeInstance(item))
     .filter((item) => includeHidden || !item.hidden)
     .map(getInvestigationSummary);
   rememberAllInvestigationCardVisuals(rows);
@@ -4435,7 +4549,7 @@ app.post("/toggleInvestigation", (req, res) => {
   if (!item) return res.json({ success: false });
   if (opened !== undefined) item.opened = !!opened;
   if (hidden !== undefined) item.hidden = !!hidden;
-  writeRuntimeArray("investigations.json", investigationsDB);
+  saveInvestigationsRuntimeState();
   emitParticipantsUpdated();
   emitInvestigationState(item.id);
   res.json({ success: true, item: getInvestigationSummary(item) });
@@ -4445,10 +4559,12 @@ app.post("/toggleInvestigation", (req, res) => {
 app.post("/startDailyInvestigation", (req, res) => {
   try {
     const { id, character } = req.body || {};
-    const item = investigationsDB.find((v) => v.id === id);
-    if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
-    if (item.type !== "daily") return res.json({ success: false, message: "일일조사가 아닙니다." });
-    if (!getEffectiveOpened(item)) return res.json({ success: false, message: "현재 이 일일조사는 비활성화 상태입니다." });
+    const requestedItem = investigationsDB.find((v) => String(v.id) === String(id));
+    const sourceId = getDailySourceId(requestedItem || id);
+    const templateItem = investigationsDB.find((v) => !isDailyRuntimeInstance(v) && String(v.id) === String(sourceId)) || requestedItem;
+    if (!templateItem) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
+    if (templateItem.type !== "daily") return res.json({ success: false, message: "일일조사가 아닙니다." });
+    if (!getEffectiveOpened(templateItem)) return res.json({ success: false, message: "현재 이 일일조사는 비활성화 상태입니다." });
     if (!character?.id && !character?.name) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
 
     const sourceCharacter =
@@ -4458,36 +4574,35 @@ app.post("/startDailyInvestigation", (req, res) => {
     if (!sourceCharacter) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
     const ownerKey = getDailyOwnerKey(sourceCharacter);
 
-    if (item.started && !item.ended) {
-      if (canResumeDailyInvestigation(item, sourceCharacter)) {
-        item.dailyOwnerKey = ownerKey;
-        item.dailyResumeOwnerKey = "";
-        item.participants = [sourceCharacter];
-        item.leaders = [sourceCharacter.name];
-        ensureParticipantState(item, sourceCharacter);
-        ensureRouteHistorySeed(item);
-        emitParticipantsUpdated();
-        emitInvestigationState(id);
-        return res.json({ success: true, started: true, resumed: true, investigationId: item.id, character: sourceCharacter });
-      }
-      if (item.dailyOwnerKey && item.dailyOwnerKey !== ownerKey) {
-        const hasLiveDailyUser = Object.values(socketUsers || {}).some((user) => {
-          if (!user || user.isAdmin || String(user.id || "") === "admin" || String(user.ownerId || "") === "admin") return false;
-          return String(user.roomId || "") === String(item.id || "");
-        });
-        if (hasLiveDailyUser) return res.json({ success: false, message: "다른 캐릭터가 진행 중인 일일조사입니다." });
-      }
-      resetInvestigationProgress(item);
-      syncInvestigationRoster(item);
+    const existingInstance = findDailyRuntimeInstance(sourceId, ownerKey);
+    if (existingInstance && existingInstance.started && !existingInstance.ended) {
+      existingInstance.dailyOwnerKey = ownerKey;
+      existingInstance.dailyResumeOwnerKey = "";
+      existingInstance.participants = [sourceCharacter];
+      existingInstance.leaders = [sourceCharacter.name];
+      ensureParticipantState(existingInstance, sourceCharacter);
+      ensureRouteHistorySeed(existingInstance);
+      emitParticipantsUpdated();
+      emitInvestigationState(existingInstance.id);
+      return res.json({ success: true, started: true, resumed: true, investigationId: existingInstance.id, character: buildPublicCharacter(sourceCharacter) });
     }
 
     const remain = Number(sourceCharacter.dailyAttemptsLeft ?? 1);
     if (remain <= 0) return res.json({ success: false, message: "남은 일일조사 횟수가 없습니다." });
 
     sourceCharacter.dailyAttemptsLeft = remain - 1;
-    applyCharacterCorrosion(sourceCharacter, item.entryCorrosion || item.data?.entryCorrosion || 0);
+    applyCharacterCorrosion(sourceCharacter, templateItem.entryCorrosion || templateItem.data?.entryCorrosion || 0);
 
+    const item = getOrCreateDailyRuntimeInstance(templateItem, sourceCharacter);
+    if (!item) return res.json({ success: false, message: "일일조사 세션을 만들 수 없습니다." });
     resetInvestigationProgress(item);
+    item.dailyRuntimeInstance = true;
+    item.dailySourceId = sourceId;
+    item.hidden = true;
+    item.opened = templateItem.opened;
+    item.scheduleEnabled = !!templateItem.scheduleEnabled;
+    item.openAt = String(templateItem.openAt || "");
+    item.closeAt = String(templateItem.closeAt || "");
     ensureRuntimeState(item);
     item.started = true;
     item.ended = false;
@@ -4497,18 +4612,18 @@ app.post("/startDailyInvestigation", (req, res) => {
     item.dailyOwnerKey = ownerKey;
     item.dailyResumeOwnerKey = "";
     ensureParticipantState(item, sourceCharacter);
-    roomChats[id] = [];
+    roomChats[item.id] = [];
     ensureRouteHistorySeed(item);
     item.endConfirmations = [];
     setEventBanner(item, "조사 시작", "normal", 2400);
     addSharedLog(item, `[일일조사 시작] ${item.title}`);
 
     writeRuntimeArray("characters.json", charactersDB);
-    try { io.emit("investigationStarted", { id }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
+    try { io.emit("investigationStarted", { id: item.id, sourceId }); } catch (emitErr) { console.error("investigationStarted emit failed", emitErr); }
     try { emitParticipantsUpdated(); } catch (emitErr) { console.error("participantsUpdated emit failed", emitErr); }
-    try { emitInvestigationState(id); } catch (emitErr) { console.error("investigationState emit failed", emitErr); }
+    try { emitInvestigationState(item.id); } catch (emitErr) { console.error("investigationState emit failed", emitErr); }
 
-    return res.json({ success: true, started: true, investigationId: item.id, character: buildPublicCharacter(sourceCharacter) });
+    return res.json({ success: true, started: true, investigationId: item.id, sourceInvestigationId: sourceId, character: buildPublicCharacter(sourceCharacter) });
   } catch (err) {
     console.error("startDailyInvestigation failed", err);
     return res.status(500).json({ success: false, message: "일일조사 시작 처리 중 오류가 발생했습니다." });
@@ -4815,7 +4930,7 @@ app.post("/assignInvestigationReward", (req, res) => {
   const char = charactersDB.find((c) => String(c.id) === String(receiver.id)) || charactersDB.find((c) => c.name === receiver.name);
   if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
 
-  const reward = item.pendingReward;
+  const reward = normalizeInvestigationReward(item.pendingReward);
   if (applyRewardToCharacter(char, reward)) {
     markCharactersDirty();
     writeRuntimeArray("characters.json", charactersDB);
@@ -5335,7 +5450,7 @@ function upsertPublishedInvestigation(def) {
   } else {
     investigationsDB.push(built);
   }
-  writeRuntimeArray("investigations.json", investigationsDB);
+  saveInvestigationsRuntimeState();
   emitParticipantsUpdated();
   emitInvestigationState(publishDef.id);
   return built;
