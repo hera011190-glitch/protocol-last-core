@@ -221,7 +221,7 @@ function ItemUsePanel({ items, catalog, onUse, onDelete, style = {} }) {
   );
 }
 
-function MailDetail({ mail, onClose, onReceive }) {
+function MailDetail({ mail, onClose, onReceive, catalog = [] }) {
   if (!mail || typeof document === "undefined") return null;
   return createPortal(
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.56)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "24px" }}>
@@ -262,10 +262,13 @@ function MailDetail({ mail, onClose, onReceive }) {
   );
 }
 
-function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
+function QuoteEditor({ quotes, extraQuotes = [], hiddenQuotes = [], onSave, style = {} }) {
   const normalizedQuotes = useMemo(() => (Array.isArray(quotes) ? quotes : []).map((value) => String(value || "").trim()).filter(Boolean), [quotes]);
   const normalizedExtraQuotes = useMemo(() => (Array.isArray(extraQuotes) ? extraQuotes : []).map((value) => String(value || "").trim()).filter(Boolean), [extraQuotes]);
-  const mergedQuotes = useMemo(() => Array.from(new Set([...normalizedQuotes, ...normalizedExtraQuotes])), [normalizedQuotes, normalizedExtraQuotes]);
+  const normalizedHiddenQuotes = useMemo(() => (Array.isArray(hiddenQuotes) ? hiddenQuotes : []).map((value) => String(value || "").trim()).filter(Boolean), [hiddenQuotes]);
+  const hiddenQuoteSet = useMemo(() => new Set(normalizedHiddenQuotes), [normalizedHiddenQuotes]);
+  const visibleExtraQuotes = useMemo(() => normalizedExtraQuotes.filter((quote) => !hiddenQuoteSet.has(quote)), [normalizedExtraQuotes, hiddenQuoteSet]);
+  const mergedQuotes = useMemo(() => Array.from(new Set([...normalizedQuotes, ...visibleExtraQuotes])), [normalizedQuotes, visibleExtraQuotes]);
   const [list, setList] = useState(mergedQuotes.length ? mergedQuotes : [""]);
   const quotesKey = useMemo(() => JSON.stringify(mergedQuotes), [mergedQuotes]);
   useEffect(() => {
@@ -313,8 +316,8 @@ function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
         <button type="button" className="ghost-button" onClick={() => setList((prev) => [...prev, ""])}>추가</button>
         <button type="button" className="home-primary-button" onClick={() => {
           const next = list.map((v) => String(v || "").trim()).filter(Boolean);
-          const removedExtraQuotes = normalizedExtraQuotes.filter((quote) => !next.includes(quote));
-          onSave(next, { removedExtraQuotes });
+          const hiddenExtraQuotes = normalizedExtraQuotes.filter((quote) => !next.includes(quote));
+          onSave(next, { hiddenExtraQuotes });
         }}>저장</button>
       </div>
     </div>
@@ -1141,11 +1144,12 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
             <QuoteEditor
               quotes={Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []}
               extraQuotes={[currentUser?.oneLine || ""]}
+              hiddenQuotes={Array.isArray(currentUser?.hiddenSdQuotes) ? currentUser.hiddenSdQuotes : []}
               style={{ minHeight: 200, height: "100%" }}
               onSave={async (next, meta = {}) => {
-                const shouldClearOneLine = String(currentUser?.oneLine || "").trim() && Array.isArray(meta.removedExtraQuotes) && meta.removedExtraQuotes.includes(String(currentUser.oneLine || "").trim());
-                const data = await saveCharacterPatch({ sdQuotes: next, ...(shouldClearOneLine ? { oneLine: "", clearOneLine: true } : {}) });
-                if (data.success) setSaveNotice(shouldClearOneLine ? "SD 대사와 캐릭터 한마디 삭제 완료" : "SD 대사 저장 완료");
+                const hiddenSdQuotes = Array.isArray(meta.hiddenExtraQuotes) ? meta.hiddenExtraQuotes : [];
+                const data = await saveCharacterPatch({ sdQuotes: next, hiddenSdQuotes });
+                if (data.success) setSaveNotice("SD 대사 저장 완료");
               }}
             />
             <div style={card({ padding: "12px 14px", borderRadius: "16px", minHeight: 220, height: "100%" })}>
@@ -1176,7 +1180,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
           </div>
         </div>
       </div>
-      <MailDetail mail={selectedMail} onClose={() => setSelectedMail(null)} onReceive={receiveMail} />
+      <MailDetail mail={selectedMail} catalog={catalog} onClose={() => setSelectedMail(null)} onReceive={receiveMail} />
       {relationOpen && typeof document !== "undefined" ? createPortal(
         <div onClick={() => setRelationOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.56)", display: "grid", placeItems: "center", padding: 24, zIndex: 2100 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "min(560px, 100%)", borderRadius: 28, background: "rgba(255,255,255,0.98)", padding: 22, boxShadow: "0 26px 60px rgba(15,23,42,0.22)", display: "grid", gap: 12 }}>
