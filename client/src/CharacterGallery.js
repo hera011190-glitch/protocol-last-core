@@ -61,7 +61,7 @@ async function fetchCharactersWithFallback() {
 }
 
 async function loadCharacterDetail(characterId) {
-  const res = await fetch(buildApiUrl(`/character-public/${characterId}`));
+  const res = await fetch(buildApiUrl(`/character-public/${characterId}?t=${Date.now()}`), { cache: "no-store" });
   const data = await res.json();
   return data?.character || null;
 }

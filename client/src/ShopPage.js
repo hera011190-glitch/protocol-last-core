@@ -77,13 +77,18 @@ function Modal({ title, children, onClose, width = 860 }) {
   );
 }
 
+const MIN_GAMBLE_BET = 5;
+
 function BetModal({ title, maxBet, onClose, onConfirm }) {
-  const [bet, setBet] = useState(Math.min(10, Math.max(1, maxBet || 1)));
+  const safeMaxBet = Math.max(MIN_GAMBLE_BET, Number(maxBet || 0));
+  const clampBet = (value) => Math.max(MIN_GAMBLE_BET, Math.min(safeMaxBet, Number(value || MIN_GAMBLE_BET)));
+  const [bet, setBet] = useState(Math.min(10, safeMaxBet));
   return (
     <Modal title={`${title} 배팅`} onClose={onClose} width={420}>
       <div style={{ display: "grid", gap: 12 }}>
-        <input type="number" min="1" max={Math.max(1, maxBet || 1)} value={bet} onChange={(e) => setBet(Math.max(1, Math.min(Math.max(1, maxBet || 1), Number(e.target.value || 1))))} style={inputStyle} />
-        <button type="button" className="home-primary-button" onClick={() => onConfirm(bet)}>확인</button>
+        <input type="number" min={MIN_GAMBLE_BET} max={safeMaxBet} value={bet} onChange={(e) => setBet(clampBet(e.target.value))} style={inputStyle} />
+        <div style={{ color: "#5d7a95", fontSize: 12, fontWeight: 700 }}>최소 배팅은 {MIN_GAMBLE_BET}코인입니다.</div>
+        <button type="button" className="home-primary-button" onClick={() => onConfirm(clampBet(bet))}>확인</button>
       </div>
     </Modal>
   );
@@ -588,6 +593,7 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
 
   const visibleItems = useMemo(() => catalog.filter((item) => !item.hidden), [catalog]);
   const maxBet = Math.min(50, Number(displayCharacter?.coins || 0));
+  const canGamble = gambleLeft > 0 && maxBet >= MIN_GAMBLE_BET;
 
   return (
     <DesignPageFrame design={design} pageKey={activePageKey} handlers={{}} theme={theme} minHeight="100vh">
@@ -629,9 +635,9 @@ export default function ShopPage({ activeCharacter, onApplyCharacter, design, th
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
-            <GambleCard title="홀짝" onPlay={() => { setGameChoice("oddEven"); }} disabled={gambleLeft <= 0 || maxBet <= 0} />
-            <GambleCard title="블랙잭" onPlay={() => { setGameChoice("blackjack"); }} disabled={gambleLeft <= 0 || maxBet <= 0} />
-            <GambleCard title="E-Beast 맞추기" onPlay={() => { setGameChoice("ebeast"); }} disabled={gambleLeft <= 0 || maxBet <= 0} />
+            <GambleCard title="홀짝" onPlay={() => { setGameChoice("oddEven"); }} disabled={!canGamble} />
+            <GambleCard title="블랙잭" onPlay={() => { setGameChoice("blackjack"); }} disabled={!canGamble} />
+            <GambleCard title="E-Beast 맞추기" onPlay={() => { setGameChoice("ebeast"); }} disabled={!canGamble} />
           </div>
         )}
       </div>

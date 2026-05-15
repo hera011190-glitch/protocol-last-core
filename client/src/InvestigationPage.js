@@ -62,6 +62,26 @@ function formatRouteTime(time) {
   return formatTime(time);
 }
 
+function getProgressActionLabelsFromNode(node) {
+  if (!node || typeof node !== "object") return [];
+  const directLabels = (Array.isArray(node.investigations) ? node.investigations : [])
+    .map((action) => {
+      if (typeof action === "string") return action;
+      return action?.name || action?.text || action?.label || action?.title || action?.action || "";
+    })
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (directLabels.length > 0) return Array.from(new Set(directLabels));
+  return Object.keys(node.actionResults || {})
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function getProgressFlagKey(nodeId, actionName) {
+  return `${nodeId}:${actionName}`;
+}
+
+
 function formatCountdown(ms) {
   const totalSeconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
@@ -988,11 +1008,11 @@ useEffect(() => {
   const visitedNodeCount = Number(investigation?.visitedNodeCount ?? Array.from(new Set(routeHistory.map((entry) => entry.nodeId))).length);
   const visitProgressPercent = Number(investigation?.visitProgressPercent ?? (totalNodeCount > 0 ? Math.min(100, Math.round((visitedNodeCount / totalNodeCount) * 100)) : 0));
   const totalInvestigationActionCount = Number(investigation?.totalInvestigationActionCount ?? Object.values(investigation?.data?.nodes || {}).reduce((sum, node) => {
-    const fromList = Array.isArray(node?.investigations) ? node.investigations.filter(Boolean).length : 0;
-    const fromResults = Object.keys(node?.actionResults || {}).length;
-    return sum + Math.max(fromList, fromResults);
+    return sum + getProgressActionLabelsFromNode(node).length;
   }, 0));
-  const completedInvestigationActionCount = Number(investigation?.completedInvestigationActionCount ?? Object.keys(investigation?.discoveredFlags || {}).length);
+  const completedInvestigationActionCount = Number(investigation?.completedInvestigationActionCount ?? Object.entries(investigation?.data?.nodes || {}).reduce((sum, [nodeId, node]) => {
+    return sum + getProgressActionLabelsFromNode(node).filter((actionName) => investigation?.discoveredFlags?.[getProgressFlagKey(nodeId, actionName)]).length;
+  }, 0));
   const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
   const completedProgressCount = visitedNodeCount + completedInvestigationActionCount;
   const overallProgressPercent = Number(investigation?.overallProgressPercent ?? (totalProgressCount > 0 ? Math.min(100, Math.round((completedProgressCount / totalProgressCount) * 100)) : 0));

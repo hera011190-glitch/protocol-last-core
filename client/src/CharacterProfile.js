@@ -163,12 +163,6 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
       setHydratedCharacter(null);
       return undefined;
     }
-    const hasAnyProfileImage = !!String(character?.mainImage || character?.fullBodyImage || character?.fullImage || character?.profileImage || "").trim();
-    const needsFullProfile = !hasAnyProfileImage || character?.profile === undefined || character?.profileBgm === undefined || character?.relations === undefined;
-    if (!needsFullProfile) {
-      setHydratedCharacter(null);
-      return undefined;
-    }
     let cancelled = false;
     fetch(buildApiUrl(`/character-public/${characterId}?t=${Date.now()}`), { cache: "no-store" })
       .then((res) => res.json())

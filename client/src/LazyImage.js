@@ -46,7 +46,9 @@ export default function LazyImage({
       if (!cancelled) setReady(true);
     };
     image.onerror = () => {
-      if (!cancelled) setReady(true);
+      if (cancelled) return;
+      setIndex((currentIndex) => (currentIndex + 1 < candidates.length ? currentIndex + 1 : currentIndex));
+      setReady(index + 1 >= candidates.length);
     };
     image.src = currentSrc;
     if (image.complete || imgRef.current?.complete) setReady(true);
@@ -55,7 +57,7 @@ export default function LazyImage({
       image.onload = null;
       image.onerror = null;
     };
-  }, [currentSrc, highPriority, eager]);
+  }, [currentSrc, highPriority, eager, candidates.length, index]);
 
   if (!currentSrc) {
     return placeholder ? <div className={className} style={{ ...style, background: "linear-gradient(135deg, rgba(226,242,255,0.42), rgba(255,255,255,0.22))" }} /> : null;

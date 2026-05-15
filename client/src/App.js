@@ -32,6 +32,7 @@ startInstantImageBoot();
 const DESIGN_CACHE_KEY = "plc-design-cache";
 const AUDIO_MUTE_KEY = "plc-audio-muted";
 const AUDIO_VOLUME_KEY = "plc-audio-volume";
+const SITE_BGM_CACHE_KEY = "plc-site-bgm-cache";
 const WARM_CHARACTER_CACHE_KEY = "plc-warm-characters";
 const SD_CHARACTER_CACHE_KEY = "plc-cache-sd-characters";
 const CHARACTER_CACHE_KEY = "plc-cache-characters";
@@ -143,6 +144,27 @@ function readStoredVolume() {
   } catch {
     return 0.72;
   }
+}
+
+function readStoredSiteBgm() {
+  try {
+    const raw = localStorage.getItem(SITE_BGM_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSiteBgm(url, volume) {
+  try {
+    const nextUrl = String(url || "").trim();
+    if (!nextUrl) {
+      localStorage.removeItem(SITE_BGM_CACHE_KEY);
+      return;
+    }
+    localStorage.setItem(SITE_BGM_CACHE_KEY, JSON.stringify({ url: nextUrl, volume: clampVolume(volume), updatedAt: Date.now() }));
+  } catch {}
 }
 
 function SpeakerButton({ muted, onToggle, position = "bottom-right" }) {
@@ -530,7 +552,7 @@ function App() {
     };
 
     const fetchDesign = () => {
-      fetch(buildApiUrl(`/designConfigPublic`), { cache: "default" })
+      fetch(buildApiUrl(`/designConfigPublic?t=${Date.now()}`), { cache: "no-store" })
         .then((res) => res.json())
         .then((data) => applyDesign(data || defaultDesign, { persist: true }))
         .catch(() => {
@@ -687,6 +709,7 @@ function App() {
         scope: String(detail.scope || detail.source || "override"),
         url: String(detail.url || ""),
         placement: String(detail.placement || "global"),
+        volume: clampVolume(detail.volume ?? 1),
       });
     };
     const handleClear = (event) => {
@@ -720,13 +743,25 @@ function App() {
   }, [activePage, designConfig, activeCharacter?.id]);
 
   const theme = designConfig?.theme || defaultDesign.theme;
-  const siteBgmUrl = String(designConfig?.siteContent?.bgm?.site || designConfig?.siteContent?.bgm?.home || "");
-  const siteBgmVolume = clampVolume(designConfig?.siteContent?.bgm?.siteVolume ?? designConfig?.siteContent?.bgm?.volume ?? 1);
+  const bgmConfig = designConfig?.siteContent?.bgm && typeof designConfig.siteContent.bgm === "object" ? designConfig.siteContent.bgm : null;
+  const hasExplicitBgmConfig = !!bgmConfig && (Object.prototype.hasOwnProperty.call(bgmConfig, "site") || Object.prototype.hasOwnProperty.call(bgmConfig, "home"));
+  const storedSiteBgm = readStoredSiteBgm();
+  const rawSiteBgmUrl = String(bgmConfig?.site || bgmConfig?.home || "");
+  const siteBgmUrl = rawSiteBgmUrl || (!hasExplicitBgmConfig ? String(storedSiteBgm?.url || "") : "");
+  const siteBgmVolume = clampVolume(rawSiteBgmUrl ? (bgmConfig?.siteVolume ?? bgmConfig?.volume ?? 1) : (storedSiteBgm?.volume ?? bgmConfig?.siteVolume ?? bgmConfig?.volume ?? 1));
   const effectiveAudio = useMemo(() => {
     if (audioOverride?.url) return { url: audioOverride.url, placement: audioOverride.placement || "global", volume: clampVolume(audioOverride?.volume ?? 1) };
     if (siteBgmUrl) return { url: siteBgmUrl, placement: "global", volume: siteBgmVolume };
     return { url: "", placement: "global", volume: 1 };
   }, [audioOverride, siteBgmUrl, siteBgmVolume]);
+
+  useEffect(() => {
+    if (rawSiteBgmUrl) {
+      writeStoredSiteBgm(rawSiteBgmUrl, siteBgmVolume);
+    } else if (hasExplicitBgmConfig) {
+      writeStoredSiteBgm("", siteBgmVolume);
+    }
+  }, [rawSiteBgmUrl, siteBgmVolume, hasExplicitBgmConfig]);
 
 
   useEffect(() => {
@@ -762,16 +797,39 @@ function App() {
       }
     }
     const tryPlay = () => {
+      if (!audio.dataset.currentSrc) return;
       const result = audio.play();
       if (result && typeof result.catch === "function") result.catch(() => {});
     };
     tryPlay();
+    let retryTimer = null;
+    const retryAudio = () => {
+      if (retryTimer) window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(() => {
+        if (audio.dataset.currentSrc) {
+          try { audio.load(); } catch {}
+          tryPlay();
+        }
+      }, 900);
+    };
     const resumeOnGesture = () => tryPlay();
+    const resumeWhenVisible = () => {
+      if (document.visibilityState === "visible") tryPlay();
+    };
+    audio.addEventListener("error", retryAudio);
+    audio.addEventListener("stalled", retryAudio);
     window.addEventListener("pointerdown", resumeOnGesture);
     window.addEventListener("keydown", resumeOnGesture);
+    window.addEventListener("focus", resumeOnGesture);
+    document.addEventListener("visibilitychange", resumeWhenVisible);
     return () => {
+      if (retryTimer) window.clearTimeout(retryTimer);
+      audio.removeEventListener("error", retryAudio);
+      audio.removeEventListener("stalled", retryAudio);
       window.removeEventListener("pointerdown", resumeOnGesture);
       window.removeEventListener("keydown", resumeOnGesture);
+      window.removeEventListener("focus", resumeOnGesture);
+      document.removeEventListener("visibilitychange", resumeWhenVisible);
     };
   }, [effectiveAudio, audioMuted, audioVolume]);
 

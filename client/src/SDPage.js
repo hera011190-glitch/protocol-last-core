@@ -622,8 +622,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
   const tintLayerTop = Math.max(0, visibleTop + visibleHeight - tintLayerHeight);
   const tintSolidStop = tintLayerHeight > 0 ? Math.max(18, Math.min(92, Math.round((visibleRevealHeight / tintLayerHeight) * 100))) : 100;
   const tintGradient = tintReveal >= 99.5
-    ? "linear-gradient(to top, rgba(74,0,0,1) 0%, rgba(128,0,0,1) 64%, rgba(82,0,0,0.96) 100%)"
-    : `linear-gradient(to top, rgba(74,0,0,1) 0%, rgba(128,0,0,1) ${tintSolidStop}%, rgba(86,0,0,0.82) ${Math.min(100, tintSolidStop + 7)}%, rgba(58,0,0,0.16) 100%)`;
+    ? "linear-gradient(to top, rgba(239,68,68,0.54) 0%, rgba(248,113,113,0.46) 64%, rgba(254,202,202,0.26) 100%)"
+    : `linear-gradient(to top, rgba(239,68,68,0.54) 0%, rgba(248,113,113,0.44) ${tintSolidStop}%, rgba(252,165,165,0.28) ${Math.min(100, tintSolidStop + 7)}%, rgba(254,226,226,0.08) 100%)`;
   return (
     <div onClick={onClick} style={{ position: "absolute", left: `${character.x}%`, top: `${character.y}%`, transform: "translate3d(-50%, -50%, 0)", transition: "none", width: "148px", height: "204px", textAlign: "center", cursor: "pointer", zIndex: 4, pointerEvents: "auto", willChange: "left, top, transform", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
       {quote?.text ? (
@@ -679,8 +679,8 @@ const CharacterSprite = memo(function CharacterSprite({ character, quote, moving
                     maskPosition: `${-visibleLeft}px ${-tintLayerTop}px`,
                     WebkitMaskRepeat: "no-repeat",
                     maskRepeat: "no-repeat",
-                    mixBlendMode: "multiply",
-                    opacity: 0.78,
+                    mixBlendMode: "normal",
+                    opacity: 0.86,
                     transition: "height 0.28s ease, background 0.28s ease, opacity 0.28s ease, mask-position 0.28s ease, -webkit-mask-position 0.28s ease",
                   }}
                 />

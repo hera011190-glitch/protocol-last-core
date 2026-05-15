@@ -2259,15 +2259,35 @@ function getDisplayName(user) {
   return user?.id || user?.name || "알 수 없음";
 }
 
+function getProgressActionLabelsFromNode(node) {
+  if (!node || typeof node !== "object") return [];
+  const directLabels = (Array.isArray(node.investigations) ? node.investigations : [])
+    .map((action) => {
+      if (typeof action === "string") return action;
+      return action?.name || action?.text || action?.label || action?.title || action?.action || "";
+    })
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (directLabels.length > 0) return Array.from(new Set(directLabels));
+  return Object.keys(node.actionResults || {})
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function getProgressFlagKey(nodeId, actionName) {
+  return `${nodeId}:${actionName}`;
+}
+
 function getInvestigationProgressMeta(item) {
   const totalNodeCount = Object.keys(item?.data?.nodes || {}).length || 0;
   const visitedNodeCount = Array.from(new Set((item?.routeHistory || []).map((entry) => entry?.nodeId).filter(Boolean))).length;
-  const totalInvestigationActionCount = Object.values(item?.data?.nodes || {}).reduce((sum, node) => {
-    const fromList = Array.isArray(node?.investigations) ? node.investigations.filter(Boolean).length : 0;
-    const fromResults = Object.keys(node?.actionResults || {}).length;
-    return sum + Math.max(fromList, fromResults);
+  const nodes = item?.data?.nodes || {};
+  const totalInvestigationActionCount = Object.values(nodes).reduce((sum, node) => {
+    return sum + getProgressActionLabelsFromNode(node).length;
   }, 0);
-  const completedInvestigationActionCount = Math.min(Object.keys(item?.discoveredFlags || {}).length, totalInvestigationActionCount);
+  const completedInvestigationActionCount = Object.entries(nodes).reduce((sum, [nodeId, node]) => {
+    return sum + getProgressActionLabelsFromNode(node).filter((actionName) => item?.discoveredFlags?.[getProgressFlagKey(nodeId, actionName)]).length;
+  }, 0);
   const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
   const completedProgressCount = visitedNodeCount + completedInvestigationActionCount;
   const visitProgressPercent = totalNodeCount > 0 ? Math.min(100, Math.round((visitedNodeCount / totalNodeCount) * 100)) : 0;
