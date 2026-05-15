@@ -31,6 +31,24 @@ function box(theme, extra = {}) {
   };
 }
 
+function normalizeItemLookupValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findCatalogItem(catalog, item) {
+  const key = normalizeItemLookupValue(item);
+  if (!key) return {};
+  return (Array.isArray(catalog) ? catalog : []).find((entry) => [entry?.id, entry?.itemId, entry?.key, entry?.value, entry?.name, entry?.title]
+    .map(normalizeItemLookupValue)
+    .filter(Boolean)
+    .includes(key)) || {};
+}
+
+function getCatalogItemName(catalog, item) {
+  const meta = findCatalogItem(catalog, item);
+  return String(meta?.name || meta?.title || item || "아이템");
+}
+
 function InventoryModal({ items, catalog, onClose, onSell, onUse }) {
   if (!items) return null;
   return (
@@ -42,7 +60,7 @@ function InventoryModal({ items, catalog, onClose, onSell, onUse }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
           {items.length > 0 ? items.map((item, index) => {
-            const meta = catalog.find((v) => v.name === item || v.id === item) || {};
+            const meta = findCatalogItem(catalog, item);
             return (
               <div key={`${item}-${index}`} style={box({}, { padding: "14px", borderRadius: "18px", background: "rgba(240,248,255,0.92)" })}>
                 <div style={{ fontWeight: 800 }}>{meta.name || item}</div>

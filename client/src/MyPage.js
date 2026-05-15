@@ -58,8 +58,22 @@ function Meter({ label, value, percent, danger = false, fill, track }) {
   );
 }
 
+function normalizeItemLookupValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function findItemMeta(catalog, item) {
-  return (Array.isArray(catalog) ? catalog : []).find((value) => value?.name === item || value?.id === item) || {};
+  const key = normalizeItemLookupValue(item);
+  if (!key) return {};
+  return (Array.isArray(catalog) ? catalog : []).find((value) => [value?.id, value?.itemId, value?.key, value?.value, value?.name, value?.title]
+    .map(normalizeItemLookupValue)
+    .filter(Boolean)
+    .includes(key)) || {};
+}
+
+function getItemDisplayName(catalog, item) {
+  const meta = findItemMeta(catalog, item);
+  return String(meta?.name || meta?.title || item || "아이템");
 }
 
 function buildFallbackItemImage(label) {
@@ -90,8 +104,8 @@ function ItemUsePanel({ items, catalog, onUse, onDelete, style = {} }) {
         item,
         index,
         meta,
-        displayName: meta?.name || item,
-        image: meta?.image || buildFallbackItemImage(meta?.name || item),
+        displayName: meta?.name || meta?.title || item,
+        image: meta?.image || buildFallbackItemImage(meta?.name || meta?.title || item),
       };
     }),
     [items, catalog]
@@ -233,7 +247,7 @@ function MailDetail({ mail, onClose, onReceive }) {
           <div style={{ color: "#5d7a95", lineHeight: 1.75 }}>
             코인: {Number(mail.coins || 0)}
             <br />
-            아이템: {Array.isArray(mail.items) && mail.items.length > 0 ? mail.items.join(", ") : "없음"}
+            아이템: {Array.isArray(mail.items) && mail.items.length > 0 ? mail.items.map((item) => getItemDisplayName(catalog, item)).join(", ") : "없음"}
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: "16px" }}>
@@ -249,7 +263,9 @@ function MailDetail({ mail, onClose, onReceive }) {
 }
 
 function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
-  const mergedQuotes = useMemo(() => Array.from(new Set([...(Array.isArray(quotes) ? quotes : []), ...(Array.isArray(extraQuotes) ? extraQuotes : [])].map((value) => String(value || "").trim()).filter(Boolean))), [quotes, extraQuotes]);
+  const normalizedQuotes = useMemo(() => (Array.isArray(quotes) ? quotes : []).map((value) => String(value || "").trim()).filter(Boolean), [quotes]);
+  const normalizedExtraQuotes = useMemo(() => (Array.isArray(extraQuotes) ? extraQuotes : []).map((value) => String(value || "").trim()).filter(Boolean), [extraQuotes]);
+  const mergedQuotes = useMemo(() => Array.from(new Set([...normalizedQuotes, ...normalizedExtraQuotes])), [normalizedQuotes, normalizedExtraQuotes]);
   const [list, setList] = useState(mergedQuotes.length ? mergedQuotes : [""]);
   const quotesKey = useMemo(() => JSON.stringify(mergedQuotes), [mergedQuotes]);
   useEffect(() => {
@@ -257,6 +273,7 @@ function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
   }, [quotesKey]);
 
   const savedQuotes = list.map((value) => String(value || "").trim()).filter(Boolean);
+  const extraQuoteSet = useMemo(() => new Set(normalizedExtraQuotes), [normalizedExtraQuotes]);
 
   return (
     <div style={card(style)}>
@@ -265,6 +282,7 @@ function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
         {savedQuotes.length > 0 ? savedQuotes.map((quote, idx) => (
           <div key={`${quote}-${idx}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 999, background: "rgba(224,242,254,0.9)", border: "1px solid rgba(56,189,248,0.2)", color: "#16324a", maxWidth: "100%" }}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{quote}</span>
+            {extraQuoteSet.has(quote) ? <span style={{ fontSize: 11, fontWeight: 900, color: "#2563eb", background: "rgba(219,234,254,0.85)", borderRadius: 999, padding: "3px 7px" }}>캐릭터 한마디</span> : null}
             <button type="button" className="ghost-button" onClick={() => setList((prev) => {
               const next = prev.filter((_, i) => String(prev[i] || "").trim() !== quote || i !== prev.findIndex((value) => String(value || "").trim() === quote));
               return next.length ? next : [""];
@@ -293,7 +311,11 @@ function QuoteEditor({ quotes, extraQuotes = [], onSave, style = {} }) {
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px" }}>
         <button type="button" className="ghost-button" onClick={() => setList((prev) => [...prev, ""])}>추가</button>
-        <button type="button" className="home-primary-button" onClick={() => onSave(list.map((v) => String(v || "").trim()).filter(Boolean))}>저장</button>
+        <button type="button" className="home-primary-button" onClick={() => {
+          const next = list.map((v) => String(v || "").trim()).filter(Boolean);
+          const removedExtraQuotes = normalizedExtraQuotes.filter((quote) => !next.includes(quote));
+          onSave(next, { removedExtraQuotes });
+        }}>저장</button>
       </div>
     </div>
   );
@@ -1055,7 +1077,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                 </div>
                 <select value={itemToSend} onChange={(e) => setItemToSend(e.target.value)} style={inputStyle}>
                   <option value="">보낼 아이템 선택</option>
-                  {inventory.map((item, index) => <option key={`${item}-${index}`} value={item}>{item}</option>)}
+                  {inventory.map((item, index) => <option key={`${item}-${index}`} value={item}>{getItemDisplayName(catalog, item)}</option>)}
                 </select>
                 <input type="number" min="0" max={Number(currentUser?.coins || 0)} value={coinToSend} onChange={(e) => setCoinToSend(e.target.value)} placeholder="보낼 코인" style={inputStyle} />
                 <textarea value={letter} onChange={(e) => setLetter(e.target.value)} placeholder="편지 내용" rows={4} style={{ ...inputStyle, minHeight: 120, resize: "vertical" }} />
@@ -1120,9 +1142,10 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
               quotes={Array.isArray(currentUser?.sdQuotes) ? currentUser.sdQuotes : []}
               extraQuotes={[currentUser?.oneLine || ""]}
               style={{ minHeight: 200, height: "100%" }}
-              onSave={async (next) => {
-                const data = await saveCharacterPatch({ sdQuotes: next });
-                if (data.success) setSaveNotice("SD 대사 저장 완료");
+              onSave={async (next, meta = {}) => {
+                const shouldClearOneLine = String(currentUser?.oneLine || "").trim() && Array.isArray(meta.removedExtraQuotes) && meta.removedExtraQuotes.includes(String(currentUser.oneLine || "").trim());
+                const data = await saveCharacterPatch({ sdQuotes: next, ...(shouldClearOneLine ? { oneLine: "", clearOneLine: true } : {}) });
+                if (data.success) setSaveNotice(shouldClearOneLine ? "SD 대사와 캐릭터 한마디 삭제 완료" : "SD 대사 저장 완료");
               }}
             />
             <div style={card({ padding: "12px 14px", borderRadius: "16px", minHeight: 220, height: "100%" })}>

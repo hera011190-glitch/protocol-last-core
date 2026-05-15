@@ -93,6 +93,24 @@ function ItemChip({ children }) {
   return <div style={{ padding: "8px 12px", borderRadius: 999, background: "rgba(255,255,255,0.82)", border: "1px solid rgba(98,176,220,0.12)", color: "#21415d", fontWeight: 700, fontSize: 13 }}>{children}</div>;
 }
 
+function normalizeItemLookupValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findProfileItemMeta(catalog, item) {
+  const key = normalizeItemLookupValue(item);
+  if (!key) return {};
+  return (Array.isArray(catalog) ? catalog : []).find((entry) => [entry?.id, entry?.itemId, entry?.key, entry?.value, entry?.name, entry?.title]
+    .map(normalizeItemLookupValue)
+    .filter(Boolean)
+    .includes(key)) || {};
+}
+
+function getProfileItemDisplayName(catalog, item) {
+  const meta = findProfileItemMeta(catalog, item);
+  return String(meta?.name || meta?.title || item || "아이템");
+}
+
 function ScrollPanel({ title, children, minHeight = 280 }) {
   return (
     <div style={{ padding: "18px 20px", borderRadius: 24, background: "rgba(255,255,255,0.72)", display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", gap: 10, minHeight, height: "100%" }}>
@@ -104,6 +122,7 @@ function ScrollPanel({ title, children, minHeight = 280 }) {
 
 export default function CharacterProfile({ character, goBack, theme, design, pageKey = "profileCharacter" }) {
   const [hydratedCharacter, setHydratedCharacter] = useState(null);
+  const [itemCatalog, setItemCatalog] = useState([]);
   const viewCharacter = mergeCharacterWithoutBlankingImages(character, hydratedCharacter);
   const fullBodyImageSrc = firstNonEmpty(
     viewCharacter?.mainImage,
@@ -126,7 +145,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
   const relations = Array.isArray(viewCharacter?.relations) ? viewCharacter.relations : [];
   const skills = Array.isArray(viewCharacter?.skills) ? viewCharacter.skills : [];
   const skillNames = skills.map((skill) => (typeof skill === "string" ? skill : (skill?.name || skill?.key || ""))).filter(Boolean);
-  const itemNames = Array.isArray(viewCharacter?.items) ? viewCharacter.items : [];
+  const itemNames = Array.isArray(viewCharacter?.items) ? viewCharacter.items.map((item) => getProfileItemDisplayName(itemCatalog, item)) : [];
   const oneLine = String(viewCharacter?.oneLine || "한마디가 없습니다.").trim();
   const stats = viewCharacter?.stats || {};
   const profileAge = viewCharacter?.age || viewCharacter?.profileAge || "";
@@ -174,6 +193,20 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
       });
     return () => { cancelled = true; };
   }, [character?.id, character?.mainImage, character?.fullBodyImage, character?.fullImage, character?.profileImage, character?.profile, character?.profileBgm, character?.relations]);
+
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(buildApiUrl(`/shopItems?t=${Date.now()}`), { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setItemCatalog(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setItemCatalog([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useLayoutEffect(() => {
     applyDomOverrides(rootRef.current, pageDesign.domOverrides || {});

@@ -58,6 +58,76 @@ function formatTime(time) {
   }
 }
 
+function normalizeInvestigationItemLookupKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getInvestigationItemCandidates(item) {
+  const raw = item && typeof item === "object" ? item : { label: item, value: item };
+  return Array.from(new Set([
+    raw.id,
+    raw.itemId,
+    raw.key,
+    raw.value,
+    raw.label,
+    raw.name,
+    raw.title,
+    typeof item === "string" ? item : "",
+  ].map(normalizeInvestigationItemLookupKey).filter(Boolean)));
+}
+
+function findInvestigationItemMeta(catalog, item) {
+  const candidates = getInvestigationItemCandidates(item);
+  if (!candidates.length) return null;
+  return (Array.isArray(catalog) ? catalog : []).find((entry) => {
+    const entryCandidates = [entry?.id, entry?.itemId, entry?.key, entry?.value, entry?.name, entry?.title]
+      .map(normalizeInvestigationItemLookupKey)
+      .filter(Boolean);
+    return entryCandidates.some((candidate) => candidates.includes(candidate));
+  }) || null;
+}
+
+function getInvestigationItemImageSource(item, meta) {
+  const raw = item && typeof item === "object" ? item : {};
+  return [
+    raw.image, raw.imageUrl, raw.icon, raw.thumbnail, raw.asset, raw.assetUrl,
+    meta?.image, meta?.imageUrl, meta?.icon, meta?.thumbnail, meta?.asset, meta?.assetUrl,
+  ].map((value) => String(value || "").trim()).find(isUsableInvestigationImageSource) || "";
+}
+
+function buildInvestigationItemView(item, catalog) {
+  const raw = item && typeof item === "object" ? item : { label: item, value: item };
+  const meta = findInvestigationItemMeta(catalog, item);
+  const fallbackLabel = typeof item === "string" ? item : "";
+  const label = String(meta?.name || meta?.title || raw.label || raw.name || raw.title || raw.value || raw.id || fallbackLabel || "아이템").trim();
+  return {
+    label: label || "아이템",
+    image: getInvestigationItemImageSource(raw, meta),
+    meta,
+  };
+}
+
+function extractInvestigationItemFromBanner(text) {
+  const value = String(text || "").trim();
+  if (!value || !/획득/.test(value)) return "";
+  const match = value.match(/^(?:\[[^\]]+\]\s*)?(.+?)(?:을\(를\)|을|를)?\s*획득/);
+  return String(match?.[1] || "").trim();
+}
+
+function InvestigationItemBadge({ item, catalog, compact = false, style = {} }) {
+  const view = buildInvestigationItemView(item, catalog);
+  return (
+    <div style={{ ...overlayBadgeStyle, display: "inline-flex", alignItems: "center", gap: compact ? 6 : 8, padding: compact ? "5px 9px" : "7px 11px", ...style }}>
+      {view.image ? (
+        <span style={{ width: compact ? 22 : 30, height: compact ? 22 : 30, borderRadius: compact ? 8 : 10, overflow: "hidden", background: "rgba(255,255,255,0.16)", display: "inline-grid", placeItems: "center", flex: "0 0 auto" }}>
+          <LazyImage src={view.image} alt={view.label} placeholder={false} highPriority={false} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={(event) => { event.currentTarget.style.display = "none"; }} />
+        </span>
+      ) : null}
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{view.label}</span>
+    </div>
+  );
+}
+
 function formatRouteTime(time) {
   return formatTime(time);
 }
@@ -193,6 +263,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const [showInfo, setShowInfo] = useState(false);
   const [showClues, setShowClues] = useState(false);
   const [inventoryItems, setInventoryItems] = useState(() => Array.isArray(previewInventory) ? previewInventory : Array.isArray(previewData?.previewInventory) ? previewData.previewInventory : Array.isArray(character?.items) ? character.items : []);
+  const [shopItemCatalog, setShopItemCatalog] = useState([]);
   const [showResult, setShowResult] = useState(false);
   const [delayedBattleBanner, setDelayedBattleBanner] = useState(null);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -358,6 +429,21 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     setChat((Array.isArray(previewChat) ? previewChat : Array.isArray(source?.previewChat) ? source.previewChat : []).slice(-120));
     setInventoryItems(Array.isArray(previewInventory) ? previewInventory : Array.isArray(source?.previewInventory) ? source.previewInventory : Array.isArray(character?.items) ? character.items : []);
   }, [previewMode, previewData, previewChat, previewInventory, character?.items]);
+
+
+  useEffect(() => {
+    if (previewMode) return undefined;
+    let cancelled = false;
+    apiFetch(`/shopItems?t=${Date.now()}`)
+      .then((res) => res.json())
+      .then((items) => {
+        if (!cancelled) setShopItemCatalog(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        if (!cancelled) setShopItemCatalog([]);
+      });
+    return () => { cancelled = true; };
+  }, [previewMode]);
 
 
   useEffect(() => {
@@ -1112,6 +1198,10 @@ useEffect(() => {
     : liveEventBanner && Number(liveEventBanner.until || 0) > nowTick && !liveBattleEndBannerSuppressed
       ? liveEventBanner
       : null;
+  const activeEventBannerItem = activeEventBanner?.type === "success"
+    ? buildInvestigationItemView({ label: extractInvestigationItemFromBanner(activeEventBanner.text), value: extractInvestigationItemFromBanner(activeEventBanner.text) }, shopItemCatalog)
+    : null;
+  const showBannerItemImage = !!(activeEventBannerItem?.image && activeEventBannerItem?.label && activeEventBannerItem.label !== "아이템");
   const showBanner = !!activeEventBanner;
   const pendingActions = { ...(pendingActionsEarly || {}), ...(localPendingActions || {}) };
   const aliveParticipants = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp ?? p?.stats?.hp ?? 0) > 0);
@@ -1549,7 +1639,7 @@ useEffect(() => {
           <OverlayPanel title="조사 아이템" onClose={() => setShowItems(false)}>
             <div style={overlaySectionTitleStyle}>이 조사에서 획득한 아이템</div>
             {foundItems.length > 0 ? (
-              <div style={overlayListStyle}>{foundItems.map((item, idx) => <div key={`${item}-${idx}`} style={overlayBadgeStyle}>{item}</div>)}</div>
+              <div style={overlayListStyle}>{foundItems.map((item, idx) => <InvestigationItemBadge key={`${typeof item === "object" ? (item?.id || item?.label || item?.name || idx) : item}-${idx}`} item={item} catalog={shopItemCatalog} />)}</div>
             ) : <div style={overlayEmptyStyle}>아직 획득한 조사 아이템이 없습니다.</div>}
             <div style={overlaySectionTitleStyle}>발견 NPC</div>
             {foundNPCs.length > 0 ? (
@@ -1562,7 +1652,7 @@ useEffect(() => {
           <OverlayPanel title="인벤토리" onClose={() => setShowInventory(false)}>
             <div style={overlaySectionTitleStyle}>현재 소지 중인 아이템</div>
             {inventoryItems.length > 0 ? (
-              <div style={overlayListStyle}>{inventoryItems.map((item, idx) => <div key={`${item}-${idx}`} style={overlayBadgeStyle}>{item}</div>)}</div>
+              <div style={overlayListStyle}>{inventoryItems.map((item, idx) => <InvestigationItemBadge key={`${typeof item === "object" ? (item?.id || item?.label || item?.name || idx) : item}-${idx}`} item={item} catalog={shopItemCatalog} />)}</div>
             ) : <div style={overlayEmptyStyle}>현재 소지 중인 아이템이 없습니다.</div>}
           </OverlayPanel>
         )}
@@ -1722,12 +1812,15 @@ useEffect(() => {
         {showBanner && (
           <div style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 1400, pointerEvents: "none" }}>
             <div style={{
-              padding: "18px 28px",
+              padding: showBannerItemImage ? "14px 24px 14px 16px" : "18px 28px",
               borderRadius: "999px",
-              fontSize: "42px",
+              fontSize: showBannerItemImage ? "34px" : "42px",
               fontWeight: 900,
               letterSpacing: "0.02em",
               color: "white",
+              display: "flex",
+              alignItems: "center",
+              gap: showBannerItemImage ? 14 : 0,
               background: activeEventBanner?.type === "danger"
                 ? "rgba(127,29,29,0.88)"
                 : activeEventBanner?.type === "success"
@@ -1735,7 +1828,12 @@ useEffect(() => {
                   : "rgba(8,15,30,0.82)",
               boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
             }}>
-              {activeEventBanner?.text}
+              {showBannerItemImage ? (
+                <span style={{ width: 58, height: 58, borderRadius: 18, overflow: "hidden", background: "rgba(255,255,255,0.16)", display: "inline-grid", placeItems: "center", flex: "0 0 auto" }}>
+                  <LazyImage src={activeEventBannerItem.image} alt={activeEventBannerItem.label} placeholder={false} highPriority style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </span>
+              ) : null}
+              <span>{activeEventBanner?.text}</span>
             </div>
           </div>
         )}
@@ -1833,7 +1931,10 @@ useEffect(() => {
             <div style={{ width: "min(920px, calc(100vw - 48px))", borderRadius: 28, background: "rgba(8,15,30,0.9)", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 24px 56px rgba(0,0,0,0.34)", padding: 24, pointerEvents: "auto" }}>
               <div className="section-eyebrow">REWARD ASSIGN</div>
               <h3 style={{ marginTop: 10, marginBottom: 8 }}>누구에게 지급하시겠습니까?</h3>
-              <div style={{ color: "#fde68a", fontWeight: 800 }}>{formatPendingRewardLabel(pendingReward)} 획득 대기</div>
+              <div style={{ color: "#fde68a", fontWeight: 800, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                {buildInvestigationItemView(pendingReward, shopItemCatalog).image ? <InvestigationItemBadge item={pendingReward} catalog={shopItemCatalog} compact style={{ background: "rgba(251,191,36,0.14)", borderColor: "rgba(251,191,36,0.32)", color: "#fde68a" }} /> : null}
+                <span>{formatPendingRewardLabel(pendingReward)} 획득 대기</span>
+              </div>
               <div style={{ marginTop: 8, color: "#9fb0c7", lineHeight: 1.7 }}>
                 조사 참여 캐릭터 중 한 명을 선택해 보상을 배분해 주세요. 배분이 끝나야 다음 진행으로 넘어갈 수 있습니다.
                 {!isDaily && !isAdmin && !isLeader ? " 현재는 리더만 배분할 수 있습니다." : ""}
@@ -1906,7 +2007,7 @@ useEffect(() => {
                 {foundItems.length > 0 ? (
                   <div style={overlayRouteCardStyle}>
                     <div style={{ fontWeight: 800, marginBottom: 8 }}>획득 아이템</div>
-                    <div style={overlayListStyle}>{foundItems.map((item, idx) => <div key={`${item}-${idx}`} style={overlayBadgeStyle}>{item}</div>)}</div>
+                    <div style={overlayListStyle}>{foundItems.map((item, idx) => <InvestigationItemBadge key={`${typeof item === "object" ? (item?.id || item?.label || item?.name || idx) : item}-${idx}`} item={item} catalog={shopItemCatalog} />)}</div>
                   </div>
                 ) : null}
                 {rewards.length > 0 ? (

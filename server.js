@@ -4306,6 +4306,7 @@ app.post("/updateCharacter", (req, res) => {
     approved,
     name,
     mainImageFrame,
+    clearOneLine,
   } = req.body || {};
 
   const positionSyncKeys = new Set(["charId", "characterId", "id", "ownerId", "userId", "accountId", "characterName", "currentMap", "x", "y", "dx", "dy", "waitMs", "moveCooldownMs"]);
@@ -4351,7 +4352,8 @@ app.post("/updateCharacter", (req, res) => {
   assignCharacterStringFieldSafely(char, "age", age, { protectExisting: true });
   assignCharacterStringFieldSafely(char, "bodyInfo", bodyInfo, { protectExisting: true });
   assignCharacterStringFieldSafely(char, "rank", rank, { protectExisting: true });
-  if (oneLine !== undefined && !(isBlankIncomingString(oneLine) && String(char.oneLine || "").trim())) char.oneLine = oneLine;
+  if (clearOneLine === true) char.oneLine = "";
+  else if (oneLine !== undefined && !(isBlankIncomingString(oneLine) && String(char.oneLine || "").trim())) char.oneLine = oneLine;
   if (mainImageFrame !== undefined) {
     char.mainImageFrame = {
       x: Number(mainImageFrame?.x ?? char.mainImageFrame?.x ?? 50),
