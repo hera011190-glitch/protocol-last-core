@@ -1,39 +1,73 @@
+const DAILY_INVESTIGATION_ATTEMPTS_PER_DAY = 1;
+const DAILY_GAMBLE_COUNT_PER_DAY = 3;
+
+function getSeoulDateKey(date = new Date()) {
+  const base = date instanceof Date ? date : new Date(date);
+  const shifted = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+export function normalizeDailyUseLimits(character) {
+  if (!character || typeof character !== "object") return character;
+  const todayKey = getSeoulDateKey();
+  const next = { ...character };
+
+  if (String(next.dailyAttemptsResetDate || "") !== todayKey) {
+    next.dailyAttemptsLeft = DAILY_INVESTIGATION_ATTEMPTS_PER_DAY;
+    next.dailyAttemptsResetDate = todayKey;
+  } else if (!Number.isFinite(Number(next.dailyAttemptsLeft))) {
+    next.dailyAttemptsLeft = DAILY_INVESTIGATION_ATTEMPTS_PER_DAY;
+  }
+
+  if (String(next.gambleCountResetDate || "") !== todayKey) {
+    next.gambleCountLeft = DAILY_GAMBLE_COUNT_PER_DAY;
+    next.gambleCountResetDate = todayKey;
+  } else if (!Number.isFinite(Number(next.gambleCountLeft))) {
+    next.gambleCountLeft = DAILY_GAMBLE_COUNT_PER_DAY;
+  }
+
+  return next;
+}
+
 export function toLightCharacter(character) {
   if (!character) return null;
+  const normalizedCharacter = normalizeDailyUseLimits(character);
 
   return {
-    id: character.id,
-    ownerId: character.ownerId,
-    name: character.name,
-    approved: character.approved,
-    level: character.level || 1,
-    statPoints: character.statPoints || 0,
-    corrosion: character.corrosion || 0,
-    coins: character.coins || 0,
-    exp: character.exp || 0,
-    stats: character.stats || { atk: 0, hp: 0, def: 0, agi: 0 },
-    currentHp: character.currentHp,
-    skills: Array.isArray(character.skills) ? character.skills : [],
-    items: Array.isArray(character.items) ? character.items : [],
-    image: character.image || "",
-    profileImage: character.profileImage || character.image || "",
-    mainImage: character.mainImage || "",
-    cardImage: character.cardImage || character.mainImage || character.profileImage || character.image || "",
-    investigationImage: character.investigationImage || "",
-    spriteImage: character.spriteImage || character.investigationImage || character.mainImage || character.profileImage || character.image || "",
-    age: character.age || "",
-    bodyInfo: character.bodyInfo || "",
-    rank: character.rank || "대원",
-    oneLine: character.oneLine || "",
-    mainImageFrame: character.mainImageFrame || undefined,
-    sdQuotes: Array.isArray(character.sdQuotes) ? character.sdQuotes : [],
-    dailyAttemptsLeft: character.dailyAttemptsLeft ?? 1,
-    gambleCountLeft: character.gambleCountLeft ?? 3,
-    currentMap: character.currentMap || "sector-01",
-    x: typeof character.x === "number" ? character.x : undefined,
-    y: typeof character.y === "number" ? character.y : undefined,
-    updatedAt: character.updatedAt || character.assetVersion || 0,
-    assetVersion: character.assetVersion || character.updatedAt || 0,
+    id: normalizedCharacter.id,
+    ownerId: normalizedCharacter.ownerId,
+    name: normalizedCharacter.name,
+    approved: normalizedCharacter.approved,
+    level: normalizedCharacter.level || 1,
+    statPoints: normalizedCharacter.statPoints || 0,
+    corrosion: normalizedCharacter.corrosion || 0,
+    coins: normalizedCharacter.coins || 0,
+    exp: normalizedCharacter.exp || 0,
+    stats: normalizedCharacter.stats || { atk: 0, hp: 0, def: 0, agi: 0 },
+    currentHp: normalizedCharacter.currentHp,
+    skills: Array.isArray(normalizedCharacter.skills) ? normalizedCharacter.skills : [],
+    items: Array.isArray(normalizedCharacter.items) ? normalizedCharacter.items : [],
+    image: normalizedCharacter.image || "",
+    profileImage: normalizedCharacter.profileImage || normalizedCharacter.image || "",
+    mainImage: normalizedCharacter.mainImage || "",
+    cardImage: normalizedCharacter.cardImage || normalizedCharacter.mainImage || normalizedCharacter.profileImage || normalizedCharacter.image || "",
+    investigationImage: normalizedCharacter.investigationImage || "",
+    spriteImage: normalizedCharacter.spriteImage || normalizedCharacter.investigationImage || normalizedCharacter.mainImage || normalizedCharacter.profileImage || normalizedCharacter.image || "",
+    age: normalizedCharacter.age || "",
+    bodyInfo: normalizedCharacter.bodyInfo || "",
+    rank: normalizedCharacter.rank || "대원",
+    oneLine: normalizedCharacter.oneLine || "",
+    mainImageFrame: normalizedCharacter.mainImageFrame || undefined,
+    sdQuotes: Array.isArray(normalizedCharacter.sdQuotes) ? normalizedCharacter.sdQuotes : [],
+    dailyAttemptsLeft: normalizedCharacter.dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY,
+    dailyAttemptsResetDate: normalizedCharacter.dailyAttemptsResetDate || getSeoulDateKey(),
+    gambleCountLeft: normalizedCharacter.gambleCountLeft ?? DAILY_GAMBLE_COUNT_PER_DAY,
+    gambleCountResetDate: normalizedCharacter.gambleCountResetDate || getSeoulDateKey(),
+    currentMap: normalizedCharacter.currentMap || "sector-01",
+    x: typeof normalizedCharacter.x === "number" ? normalizedCharacter.x : undefined,
+    y: typeof normalizedCharacter.y === "number" ? normalizedCharacter.y : undefined,
+    updatedAt: normalizedCharacter.updatedAt || normalizedCharacter.assetVersion || 0,
+    assetVersion: normalizedCharacter.assetVersion || normalizedCharacter.updatedAt || 0,
   };
 }
 
@@ -63,7 +97,7 @@ export function readActiveCharacter() {
     const raw =
       sessionStorage.getItem("plc-active-character") ||
       localStorage.getItem("character");
-    return raw ? JSON.parse(raw) : null;
+    return raw ? normalizeDailyUseLimits(JSON.parse(raw)) : null;
   } catch {
     return null;
   }

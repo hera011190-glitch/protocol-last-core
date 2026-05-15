@@ -1381,6 +1381,62 @@ let charactersDB = readRuntimeArray("characters.json");
 let charactersDiskSignature = getRuntimeFileSignature("characters.json");
 let roomChats = {};
 
+const DAILY_INVESTIGATION_ATTEMPTS_PER_DAY = 1;
+const DAILY_GAMBLE_COUNT_PER_DAY = 3;
+
+function getSeoulDateKey(date = new Date()) {
+  const base = date instanceof Date ? date : new Date(date);
+  const shifted = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function normalizeDailyUseLimitsForCharacter(character, todayKey = getSeoulDateKey()) {
+  if (!character || typeof character !== "object") return false;
+  let changed = false;
+
+  if (String(character.dailyAttemptsResetDate || "") !== todayKey) {
+    character.dailyAttemptsLeft = DAILY_INVESTIGATION_ATTEMPTS_PER_DAY;
+    character.dailyAttemptsResetDate = todayKey;
+    changed = true;
+  } else if (!Number.isFinite(Number(character.dailyAttemptsLeft))) {
+    character.dailyAttemptsLeft = DAILY_INVESTIGATION_ATTEMPTS_PER_DAY;
+    changed = true;
+  }
+
+  if (String(character.gambleCountResetDate || "") !== todayKey) {
+    character.gambleCountLeft = DAILY_GAMBLE_COUNT_PER_DAY;
+    character.gambleCountResetDate = todayKey;
+    changed = true;
+  } else if (!Number.isFinite(Number(character.gambleCountLeft))) {
+    character.gambleCountLeft = DAILY_GAMBLE_COUNT_PER_DAY;
+    changed = true;
+  }
+
+  return changed;
+}
+
+function refreshDailyUseLimitsForAllCharacters({ save = true, forceDiskRefresh = false } = {}) {
+  try {
+    if (forceDiskRefresh) refreshCharactersFromDiskIfNeeded({ force: true });
+    const todayKey = getSeoulDateKey();
+    let changed = false;
+    (Array.isArray(charactersDB) ? charactersDB : []).forEach((character) => {
+      if (normalizeDailyUseLimitsForCharacter(character, todayKey)) changed = true;
+    });
+    if (changed) {
+      publicCharacterSummaryCache = null;
+      if (save) writeRuntimeArray("characters.json", charactersDB);
+      else markCharactersDirty();
+    }
+    return changed;
+  } catch (error) {
+    console.error("daily use limit refresh failed", error);
+    return false;
+  }
+}
+
+setInterval(() => refreshDailyUseLimitsForAllCharacters({ save: true }), 60 * 1000);
+
 function mergeRuntimeUsers(...lists) {
   const merged = [];
   const indexById = new Map();
@@ -4187,8 +4243,10 @@ app.post("/createCharacter", (req, res) => {
         }
       : { x: 50, y: 26, scale: 1.06 },
     sdQuotes: Array.isArray(sdQuotes) ? sdQuotes : [],
-    dailyAttemptsLeft: Number(dailyAttemptsLeft ?? 1),
-    gambleCountLeft: Number(gambleCountLeft ?? 3),
+    dailyAttemptsLeft: Number(dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY),
+    dailyAttemptsResetDate: getSeoulDateKey(),
+    gambleCountLeft: Number(gambleCountLeft ?? DAILY_GAMBLE_COUNT_PER_DAY),
+    gambleCountResetDate: getSeoulDateKey(),
     currentMap: currentMap || "sector-01",
     x: 20,
     y: 20,
@@ -4320,6 +4378,8 @@ app.post("/updateCharacter", (req, res) => {
     return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
   }
 
+  normalizeDailyUseLimitsForCharacter(char);
+
   if (name !== undefined) char.name = name;
 
   // 중요: 이미지 / 프로필 글 / BGM은 빈 값으로 기존 데이터를 덮어쓰지 않게 보호합니다.
@@ -4362,8 +4422,14 @@ app.post("/updateCharacter", (req, res) => {
     };
   }
   assignCharacterArrayFieldSafely(char, "sdQuotes", sdQuotes);
-  if (dailyAttemptsLeft !== undefined) char.dailyAttemptsLeft = Number(dailyAttemptsLeft);
-  if (gambleCountLeft !== undefined) char.gambleCountLeft = Number(gambleCountLeft);
+  if (dailyAttemptsLeft !== undefined) {
+    char.dailyAttemptsLeft = Math.max(0, Number(dailyAttemptsLeft));
+    char.dailyAttemptsResetDate = getSeoulDateKey();
+  }
+  if (gambleCountLeft !== undefined) {
+    char.gambleCountLeft = Math.max(0, Number(gambleCountLeft));
+    char.gambleCountResetDate = getSeoulDateKey();
+  }
   if (currentMap !== undefined) char.currentMap = currentMap;
   if (x !== undefined) char.x = Number(x);
   if (y !== undefined) char.y = Number(y);
@@ -4398,8 +4464,8 @@ app.post("/updateCharacter", (req, res) => {
   return res.json({ success: true, character: buildPublicCharacter(char) });
 });
 
-app.get("/characters/:ownerId", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(buildPublicCharacter)); });
-app.get("/characters", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); return res.json(charactersDB.map(buildPublicCharacter)); });
+app.get("/characters/:ownerId", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); refreshDailyUseLimitsForAllCharacters({ save: true }); return res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(buildPublicCharacter)); });
+app.get("/characters", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); refreshDailyUseLimitsForAllCharacters({ save: true }); return res.json(charactersDB.map(buildPublicCharacter)); });
 app.delete("/admin/characters/:id", (req, res) => {
   const id = String(req.params.id || "");
   const target = charactersDB.find((character) => String(character.id) === id);
@@ -4574,6 +4640,7 @@ app.post("/startDailyInvestigation", (req, res) => {
       charactersDB.find((c) => c.name === character.name && c.ownerId === character.ownerId);
 
     if (!sourceCharacter) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
+    normalizeDailyUseLimitsForCharacter(sourceCharacter);
     const ownerKey = getDailyOwnerKey(sourceCharacter);
 
     const existingInstance = findDailyRuntimeInstance(sourceId, ownerKey);
@@ -4592,7 +4659,8 @@ app.post("/startDailyInvestigation", (req, res) => {
     const remain = Number(sourceCharacter.dailyAttemptsLeft ?? 1);
     if (remain <= 0) return res.json({ success: false, message: "남은 일일조사 횟수가 없습니다." });
 
-    sourceCharacter.dailyAttemptsLeft = remain - 1;
+    sourceCharacter.dailyAttemptsLeft = Math.max(0, remain - 1);
+    sourceCharacter.dailyAttemptsResetDate = getSeoulDateKey();
     applyCharacterCorrosion(sourceCharacter, templateItem.entryCorrosion || templateItem.data?.entryCorrosion || 0);
 
     const item = getOrCreateDailyRuntimeInstance(templateItem, sourceCharacter);
@@ -5703,6 +5771,10 @@ function summarizeCharacter(character) {
     profileBgm: character.profileBgm || "",
     profileBgmVolume: Number.isFinite(Number(character.profileBgmVolume)) ? Math.max(0, Math.min(1, Number(character.profileBgmVolume))) : 1,
     mainImageFrame: character.mainImageFrame || undefined,
+    dailyAttemptsLeft: Number(character.dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY),
+    dailyAttemptsResetDate: String(character.dailyAttemptsResetDate || getSeoulDateKey()),
+    gambleCountLeft: Number(character.gambleCountLeft ?? DAILY_GAMBLE_COUNT_PER_DAY),
+    gambleCountResetDate: String(character.gambleCountResetDate || getSeoulDateKey()),
     updatedAt: Number(character.updatedAt || character.assetVersion || 0),
     assetVersion: Number(character.assetVersion || character.updatedAt || 0),
   };
@@ -5814,6 +5886,7 @@ function buildPublicCharacterSummary(character) {
 }
 
 let publicCharacterSummaryCache = null;
+refreshDailyUseLimitsForAllCharacters({ save: true });
 
 function getPublicCharacterSummarySignature(rows = []) {
   return (Array.isArray(rows) ? rows : []).map((character) => [
@@ -5829,6 +5902,10 @@ function getPublicCharacterSummarySignature(rows = []) {
     Number(character?.waitMs ?? ""),
     Number(character?.moveCooldownMs ?? ""),
     Number(character?.corrosion || 0),
+    Number(character?.dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY),
+    String(character?.dailyAttemptsResetDate || ""),
+    Number(character?.gambleCountLeft ?? DAILY_GAMBLE_COUNT_PER_DAY),
+    String(character?.gambleCountResetDate || ""),
     Number(character?.updatedAt || character?.assetVersion || 0),
     String(character?.profileImage || character?.image || "").length,
     String(character?.mainImage || character?.cardImage || "").length,
@@ -6165,12 +6242,14 @@ function buildPublicInvestigationState(item) {
 }
 
 app.get("/character/:id", (req, res) => {
+  refreshDailyUseLimitsForAllCharacters({ save: true });
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했습니다." });
   res.json({ success: true, character: buildPublicCharacter(character) });
 });
 
 app.get("/character-public/:id", (req, res) => {
+  refreshDailyUseLimitsForAllCharacters({ save: true });
   const character = charactersDB.find((item) => String(item.id) === String(req.params.id));
   if (!character) return res.status(404).json({ success: false, message: "캐릭터를 찾지 못했습니다." });
   res.json({ success: true, character: buildPublicCharacter(character) });
@@ -6183,22 +6262,26 @@ app.get("/character-items/:id", (req, res) => {
 });
 
 app.get("/characters-lite/:ownerId", (req, res) => {
+  refreshDailyUseLimitsForAllCharacters({ save: true });
   res.json(charactersDB.filter((c) => String(c.ownerId) === String(req.params.ownerId)).map(summarizeCharacter));
 });
 
 app.get("/characters-lite", (req, res) => {
   refreshCharactersFromDiskIfNeeded();
+  refreshDailyUseLimitsForAllCharacters({ save: true });
   res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
   res.json(charactersDB.map(summarizeCharacter));
 });
 
 app.get("/characters-public/:ownerId", (req, res) => {
+  refreshDailyUseLimitsForAllCharacters({ save: true });
   const rows = getPublicCharacterSummaries().filter((c) => String(c.ownerId) === String(req.params.ownerId));
   res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
   res.json(rows);
 });
 
 app.get("/characters-public", (req, res) => {
+  refreshDailyUseLimitsForAllCharacters({ save: true });
   res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=30");
   res.json(getPublicCharacterSummaries());
 });
