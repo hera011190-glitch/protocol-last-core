@@ -506,10 +506,15 @@ export default function InvestigationList({ onEnter, onSpectate, onEditInvestiga
 
   const startDaily = () => {
     if (dailyPool.length === 0) return alert("활성화된 일일조사가 없습니다.");
-    if (dailyLeft <= 0) return alert("남은 일일조사 횟수가 없습니다.");
     const candidates = startableDailyPool.length > 0 ? startableDailyPool : dailyPool;
     if (!candidates.length) return alert("현재 시작할 수 있는 일일조사가 없습니다.");
-    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+    const lastKey = dailyOwnerKey ? `plc-last-daily-source-${dailyOwnerKey}` : "plc-last-daily-source";
+    let lastSourceId = "";
+    try { lastSourceId = String(localStorage.getItem(lastKey) || ""); } catch {}
+    const variedCandidates = candidates.length > 1 ? candidates.filter((item) => String(item.dailySourceId || item.sourceInvestigationId || item.id || "") !== lastSourceId) : candidates;
+    const pool = variedCandidates.length > 0 ? variedCandidates : candidates;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    try { localStorage.setItem(lastKey, String(picked.dailySourceId || picked.sourceInvestigationId || picked.id || "")); } catch {}
     onEnter(picked, { mode: "daily" });
   };
 

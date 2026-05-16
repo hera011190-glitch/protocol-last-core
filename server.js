@@ -2012,6 +2012,8 @@ function normalizeNpcScene(scene) {
                 text: String(option?.text || ""),
                 nextIndex: option?.nextIndex === "" || option?.nextIndex === undefined || option?.nextIndex === null ? undefined : Number(option.nextIndex),
                 rewardItem: String(option?.rewardItem || ""),
+                rewardExp: Number(option?.rewardExp || 0),
+                rewardCoins: Number(option?.rewardCoins || 0),
                 rewardStatPoints: Number(option?.rewardStatPoints || 0),
                 clue: option?.clue || "",
               }))
@@ -2334,14 +2336,37 @@ function getProgressFlagKey(nodeId, actionName) {
   return `${nodeId}:${actionName}`;
 }
 
-function getInvestigationProgressMeta(item) {
-  const totalNodeCount = Object.keys(item?.data?.nodes || {}).length || 0;
-  const visitedNodeCount = Array.from(new Set((item?.routeHistory || []).map((entry) => entry?.nodeId).filter(Boolean))).length;
+function getProgressReachableNodeIds(item) {
   const nodes = item?.data?.nodes || {};
-  const totalInvestigationActionCount = Object.values(nodes).reduce((sum, node) => {
-    return sum + getProgressActionLabelsFromNode(node).length;
+  const allNodeIds = Object.keys(nodes).filter(Boolean);
+  if (allNodeIds.length === 0) return [];
+  const startNodeId = String(item?.data?.start || allNodeIds[0] || "").trim();
+  const start = nodes[startNodeId] ? startNodeId : allNodeIds[0];
+  const reachable = new Set();
+  const stack = [start];
+  while (stack.length > 0) {
+    const nodeId = stack.pop();
+    if (!nodeId || reachable.has(nodeId) || !nodes[nodeId]) continue;
+    reachable.add(nodeId);
+    (Array.isArray(nodes[nodeId]?.choices) ? nodes[nodeId].choices : []).forEach((choice) => {
+      const target = String(choice?.target || "").trim();
+      if (target && nodes[target] && !reachable.has(target)) stack.push(target);
+    });
+  }
+  return reachable.size > 0 ? Array.from(reachable) : allNodeIds;
+}
+
+function getInvestigationProgressMeta(item) {
+  const nodes = item?.data?.nodes || {};
+  const progressNodeIds = getProgressReachableNodeIds(item);
+  const progressNodeIdSet = new Set(progressNodeIds);
+  const totalNodeCount = progressNodeIds.length;
+  const visitedNodeCount = Array.from(new Set((item?.routeHistory || []).map((entry) => entry?.nodeId).filter(Boolean))).filter((nodeId) => progressNodeIdSet.has(nodeId)).length;
+  const totalInvestigationActionCount = progressNodeIds.reduce((sum, nodeId) => {
+    return sum + getProgressActionLabelsFromNode(nodes[nodeId]).length;
   }, 0);
-  const completedInvestigationActionCount = Object.entries(nodes).reduce((sum, [nodeId, node]) => {
+  const completedInvestigationActionCount = progressNodeIds.reduce((sum, nodeId) => {
+    const node = nodes[nodeId];
     return sum + getProgressActionLabelsFromNode(node).filter((actionName) => item?.discoveredFlags?.[getProgressFlagKey(nodeId, actionName)]).length;
   }, 0);
   const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
@@ -2567,6 +2592,15 @@ function findDailyRuntimeInstance(sourceId, ownerKey) {
     isDailyRuntimeInstance(entry) &&
     String(entry.dailySourceId || "") === String(sourceId || "") &&
     String(entry.dailyOwnerKey || "") === String(ownerKey || "")
+  );
+}
+
+function findActiveDailyRuntimeInstanceByOwner(ownerKey) {
+  return investigationsDB.find((entry) =>
+    isDailyRuntimeInstance(entry) &&
+    String(entry.dailyOwnerKey || "") === String(ownerKey || "") &&
+    !!entry.started &&
+    !entry.ended
   );
 }
 
@@ -4205,6 +4239,7 @@ app.post("/createCharacter", (req, res) => {
     profileBgm,
     profileBgmVolume,
     sdQuotes,
+    hiddenSdQuotes,
     dailyAttemptsLeft,
     gambleCountLeft,
     currentMap,
@@ -4243,6 +4278,7 @@ app.post("/createCharacter", (req, res) => {
         }
       : { x: 50, y: 26, scale: 1.06 },
     sdQuotes: Array.isArray(sdQuotes) ? sdQuotes : [],
+    hiddenSdQuotes: Array.isArray(hiddenSdQuotes) ? hiddenSdQuotes : [],
     dailyAttemptsLeft: Number(dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY),
     dailyAttemptsResetDate: getSeoulDateKey(),
     gambleCountLeft: Number(gambleCountLeft ?? DAILY_GAMBLE_COUNT_PER_DAY),
@@ -4350,6 +4386,7 @@ app.post("/updateCharacter", (req, res) => {
     bgmUrl,
     profileBgmVolume,
     sdQuotes,
+    hiddenSdQuotes,
     dailyAttemptsLeft,
     gambleCountLeft,
     currentMap,
@@ -4364,7 +4401,6 @@ app.post("/updateCharacter", (req, res) => {
     approved,
     name,
     mainImageFrame,
-    clearOneLine,
   } = req.body || {};
 
   const positionSyncKeys = new Set(["charId", "characterId", "id", "ownerId", "userId", "accountId", "characterName", "currentMap", "x", "y", "dx", "dy", "waitMs", "moveCooldownMs"]);
@@ -4412,8 +4448,7 @@ app.post("/updateCharacter", (req, res) => {
   assignCharacterStringFieldSafely(char, "age", age, { protectExisting: true });
   assignCharacterStringFieldSafely(char, "bodyInfo", bodyInfo, { protectExisting: true });
   assignCharacterStringFieldSafely(char, "rank", rank, { protectExisting: true });
-  if (clearOneLine === true) char.oneLine = "";
-  else if (oneLine !== undefined && !(isBlankIncomingString(oneLine) && String(char.oneLine || "").trim())) char.oneLine = oneLine;
+  if (oneLine !== undefined && !(isBlankIncomingString(oneLine) && String(char.oneLine || "").trim())) char.oneLine = oneLine;
   if (mainImageFrame !== undefined) {
     char.mainImageFrame = {
       x: Number(mainImageFrame?.x ?? char.mainImageFrame?.x ?? 50),
@@ -4422,6 +4457,7 @@ app.post("/updateCharacter", (req, res) => {
     };
   }
   assignCharacterArrayFieldSafely(char, "sdQuotes", sdQuotes);
+  assignCharacterArrayFieldSafely(char, "hiddenSdQuotes", hiddenSdQuotes);
   if (dailyAttemptsLeft !== undefined) {
     char.dailyAttemptsLeft = Math.max(0, Number(dailyAttemptsLeft));
     char.dailyAttemptsResetDate = getSeoulDateKey();
@@ -4447,6 +4483,7 @@ app.post("/updateCharacter", (req, res) => {
   if (!Array.isArray(char.skills)) char.skills = [];
   if (!Array.isArray(char.items)) char.items = [];
   if (!Array.isArray(char.sdQuotes)) char.sdQuotes = [];
+  if (!Array.isArray(char.hiddenSdQuotes)) char.hiddenSdQuotes = [];
   if (!char.mainImageFrame || typeof char.mainImageFrame !== "object") {
     char.mainImageFrame = { x: 50, y: 26, scale: 1.06 };
   }
@@ -4644,16 +4681,19 @@ app.post("/startDailyInvestigation", (req, res) => {
     const ownerKey = getDailyOwnerKey(sourceCharacter);
 
     const existingInstance = findDailyRuntimeInstance(sourceId, ownerKey);
-    if (existingInstance && existingInstance.started && !existingInstance.ended) {
-      existingInstance.dailyOwnerKey = ownerKey;
-      existingInstance.dailyResumeOwnerKey = "";
-      existingInstance.participants = [sourceCharacter];
-      existingInstance.leaders = [sourceCharacter.name];
-      ensureParticipantState(existingInstance, sourceCharacter);
-      ensureRouteHistorySeed(existingInstance);
+    const activeOwnedInstance = (existingInstance && existingInstance.started && !existingInstance.ended)
+      ? existingInstance
+      : findActiveDailyRuntimeInstanceByOwner(ownerKey);
+    if (activeOwnedInstance && activeOwnedInstance.started && !activeOwnedInstance.ended) {
+      activeOwnedInstance.dailyOwnerKey = ownerKey;
+      activeOwnedInstance.dailyResumeOwnerKey = "";
+      activeOwnedInstance.participants = [sourceCharacter];
+      activeOwnedInstance.leaders = [sourceCharacter.name];
+      ensureParticipantState(activeOwnedInstance, sourceCharacter);
+      ensureRouteHistorySeed(activeOwnedInstance);
       emitParticipantsUpdated();
-      emitInvestigationState(existingInstance.id);
-      return res.json({ success: true, started: true, resumed: true, investigationId: existingInstance.id, character: buildPublicCharacter(sourceCharacter) });
+      emitInvestigationState(activeOwnedInstance.id);
+      return res.json({ success: true, started: true, resumed: true, investigationId: activeOwnedInstance.id, sourceInvestigationId: getDailySourceId(activeOwnedInstance), character: buildPublicCharacter(sourceCharacter) });
     }
 
     const remain = Number(sourceCharacter.dailyAttemptsLeft ?? 1);
@@ -5768,6 +5808,7 @@ function summarizeCharacter(character) {
     waitMs: typeof character.waitMs === "number" ? character.waitMs : undefined,
     moveCooldownMs: typeof character.moveCooldownMs === "number" ? character.moveCooldownMs : undefined,
     sdQuotes: Array.isArray(character.sdQuotes) ? character.sdQuotes : [],
+    hiddenSdQuotes: Array.isArray(character.hiddenSdQuotes) ? character.hiddenSdQuotes : [],
     profileBgm: character.profileBgm || "",
     profileBgmVolume: Number.isFinite(Number(character.profileBgmVolume)) ? Math.max(0, Math.min(1, Number(character.profileBgmVolume))) : 1,
     mainImageFrame: character.mainImageFrame || undefined,
@@ -5901,6 +5942,7 @@ function getPublicCharacterSummarySignature(rows = []) {
     Number(character?.dy ?? ""),
     Number(character?.waitMs ?? ""),
     Number(character?.moveCooldownMs ?? ""),
+    JSON.stringify(character?.hiddenSdQuotes || []),
     Number(character?.corrosion || 0),
     Number(character?.dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY),
     String(character?.dailyAttemptsResetDate || ""),
@@ -6772,7 +6814,7 @@ app.post("/shop/use", (req, res) => {
   const normalized = normalizeShopItem(item);
   const useType = String(normalized.useType || "none").toLowerCase();
   const useValue = Number(normalized.useValue || 0);
-  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "coin", "coins", "stat", "statboost", "skill"]);
+  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "corrosionheal", "coin", "coins", "stat", "statboost", "statpoint", "skill"]);
   if (!usableTypes.has(useType)) {
     return res.json({ success: false, message: "사용 효과가 설정되지 않은 아이템입니다." });
   }
@@ -6784,7 +6826,7 @@ app.post("/shop/use", (req, res) => {
     char.currentHp = Math.max(0, Math.min(maxHp, currentHp + Math.max(0, useValue || 10)));
   }
 
-  if (useType === "corrosion" || useType === "corrosiondown" || useType === "reducecorrosion") {
+  if (useType === "corrosion" || useType === "corrosiondown" || useType === "reducecorrosion" || useType === "corrosionheal") {
     char.corrosion = Math.max(0, Number(char.corrosion || 0) - Math.max(0, useValue || 5));
   }
 
@@ -6798,6 +6840,10 @@ app.post("/shop/use", (req, res) => {
       char.stats = normalizeCharacterStats(char.stats || {});
       char.stats[statTarget] = Number(char.stats?.[statTarget] || 0) + useValue;
     }
+  }
+
+  if (useType === "statpoint") {
+    char.statPoints = Math.max(0, Number(char.statPoints || 0) + useValue);
   }
 
   if (useType === "skill") {

@@ -199,6 +199,57 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
   const selectedNode = useMemo(() => builder.nodes.find((node) => node.id === selectedNodeId) || builder.nodes[0], [builder, selectedNodeId]);
 
+  const makeUniqueInvestigationLabel = (node, baseLabel = "새 조사") => {
+    const base = String(baseLabel || "새 조사").trim() || "새 조사";
+    const used = new Set((Array.isArray(node?.investigations) ? node.investigations : []).map((value) => String(value || "").trim()).filter(Boolean));
+    if (!used.has(base)) return base;
+    let index = used.size + 1;
+    let next = `${base} ${index}`;
+    while (used.has(next)) {
+      index += 1;
+      next = `${base} ${index}`;
+    }
+    return next;
+  };
+
+  const renameInvestigationAction = (nodeId, index, nextRawLabel) => {
+    updateNode(nodeId, (node) => {
+      const investigations = Array.isArray(node.investigations) ? node.investigations : [];
+      const oldLabel = String(investigations[index] || "").trim();
+      const nextLabel = String(nextRawLabel || "").trim();
+      const nextInvestigations = investigations.map((value, i) => (i === index ? nextRawLabel : value));
+      const actionResults = { ...(node.actionResults || {}) };
+      if (oldLabel && nextLabel && oldLabel !== nextLabel) {
+        actionResults[nextLabel] = actionResults[oldLabel] || emptyAction();
+        delete actionResults[oldLabel];
+      } else if (nextLabel && !actionResults[nextLabel]) {
+        actionResults[nextLabel] = emptyAction();
+      }
+      return { ...node, investigations: nextInvestigations, actionResults };
+    });
+  };
+
+  const removeInvestigationAction = (nodeId, index) => {
+    updateNode(nodeId, (node) => {
+      const investigations = Array.isArray(node.investigations) ? node.investigations : [];
+      const oldLabel = String(investigations[index] || "").trim();
+      const actionResults = { ...(node.actionResults || {}) };
+      if (oldLabel) delete actionResults[oldLabel];
+      return { ...node, investigations: investigations.filter((_, i) => i !== index), actionResults };
+    });
+  };
+
+  const addInvestigationAction = (nodeId) => {
+    updateNode(nodeId, (node) => {
+      const label = makeUniqueInvestigationLabel(node, "새 조사");
+      return {
+        ...node,
+        investigations: [...(Array.isArray(node.investigations) ? node.investigations : []), label],
+        actionResults: { ...(node.actionResults || {}), [label]: emptyAction() },
+      };
+    });
+  };
+
   const loadSaved = async () => {
     const res = await apiFetch(`/admin/customInvestigations?t=${Date.now()}`);
     setSavedList(await res.json());
@@ -388,7 +439,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
   const loadTemplate = (template) => {
     const json = template?.json || template || {};
-    const rawNodes = json?.data?.nodes || template?.data?.nodes || {};
+    const editSource = json?.originalTemplate?.data?.nodes ? json.originalTemplate : (template?.originalTemplate?.data?.nodes ? template.originalTemplate : json);
+    const rawNodes = editSource?.data?.nodes || json?.data?.nodes || template?.data?.nodes || {};
     const nodes = Object.entries(rawNodes).map(([id, node]) => ({
       id,
       name: node.name || id,
@@ -405,16 +457,16 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       onEnterDamage: Number(node.onEnterDamage || 0),
       onEnterMuteMinutes: Number(node.onEnterMuteMinutes || 0),
     }));
-    const startNodeId = json?.data?.start || template?.data?.start || nodes[0]?.id || "start";
-    const backgroundImage = json?.backgroundImage || json?.data?.backgroundImage || template?.backgroundImage || template?.data?.backgroundImage || "";
-    const listImage = json?.listImage || json?.data?.listImage || template?.listImage || template?.data?.listImage || "";
-    const listImageFrame = normalizeImageFrame(json?.listImageFrame || json?.data?.listImageFrame || template?.listImageFrame || template?.data?.listImageFrame);
-    const entryImageFrame = normalizeImageFrame(json?.entryImageFrame || json?.data?.entryImageFrame || template?.entryImageFrame || template?.data?.entryImageFrame || listImageFrame);
-    const imageUpdatedAt = Number(json?.imageUpdatedAt ?? json?.data?.imageUpdatedAt ?? template?.imageUpdatedAt ?? template?.data?.imageUpdatedAt ?? 0);
-    const bgmUrl = json?.bgmUrl || json?.data?.bgmUrl || template?.bgmUrl || template?.data?.bgmUrl || "";
-    const bgmVolume = Math.max(0, Math.min(1, Number(json?.bgmVolume ?? json?.data?.bgmVolume ?? template?.bgmVolume ?? template?.data?.bgmVolume ?? 1) || 1));
-    const entryCorrosion = Number(json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0);
-    const endCorrosion = Number(json?.endCorrosion ?? json?.data?.endCorrosion ?? template?.endCorrosion ?? template?.data?.endCorrosion ?? 0);
+    const startNodeId = editSource?.data?.start || json?.data?.start || template?.data?.start || nodes[0]?.id || "start";
+    const backgroundImage = editSource?.backgroundImage || editSource?.data?.backgroundImage || json?.backgroundImage || json?.data?.backgroundImage || template?.backgroundImage || template?.data?.backgroundImage || "";
+    const listImage = editSource?.listImage || editSource?.data?.listImage || json?.listImage || json?.data?.listImage || template?.listImage || template?.data?.listImage || "";
+    const listImageFrame = normalizeImageFrame(editSource?.listImageFrame || editSource?.data?.listImageFrame || json?.listImageFrame || json?.data?.listImageFrame || template?.listImageFrame || template?.data?.listImageFrame);
+    const entryImageFrame = normalizeImageFrame(editSource?.entryImageFrame || editSource?.data?.entryImageFrame || json?.entryImageFrame || json?.data?.entryImageFrame || template?.entryImageFrame || template?.data?.entryImageFrame || listImageFrame);
+    const imageUpdatedAt = Number(editSource?.imageUpdatedAt ?? editSource?.data?.imageUpdatedAt ?? json?.imageUpdatedAt ?? json?.data?.imageUpdatedAt ?? template?.imageUpdatedAt ?? template?.data?.imageUpdatedAt ?? 0);
+    const bgmUrl = editSource?.bgmUrl || editSource?.data?.bgmUrl || json?.bgmUrl || json?.data?.bgmUrl || template?.bgmUrl || template?.data?.bgmUrl || "";
+    const bgmVolume = Math.max(0, Math.min(1, Number(editSource?.bgmVolume ?? editSource?.data?.bgmVolume ?? json?.bgmVolume ?? json?.data?.bgmVolume ?? template?.bgmVolume ?? template?.data?.bgmVolume ?? 1) || 1));
+    const entryCorrosion = Number(editSource?.entryCorrosion ?? editSource?.data?.entryCorrosion ?? json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0);
+    const endCorrosion = Number(editSource?.endCorrosion ?? editSource?.data?.endCorrosion ?? json?.endCorrosion ?? json?.data?.endCorrosion ?? template?.endCorrosion ?? template?.data?.endCorrosion ?? 0);
     setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, listImage, listImageFrame, entryImageFrame, imageUpdatedAt, bgmUrl, bgmVolume, entryCorrosion, endCorrosion, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
     setSelectedNodeId(startNodeId);
     setMessage(`${template.title} 불러오기 완료`);
@@ -751,11 +803,11 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           {(selectedNode.investigations || []).map((label, idx) => <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 8, alignItems: "end" }}>
             <div style={{ display: "grid", gap: 6 }}>
               <div style={fieldLabelStyle}>조사 버튼 이름</div>
-              <input value={label} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, investigations: node.investigations.map((v, i) => i === idx ? e.target.value : v), actionResults: node.actionResults || {} }))} placeholder="조사 버튼 이름" style={inputStyle} />
+              <input value={label} onChange={(e) => renameInvestigationAction(selectedNode.id, idx, e.target.value)} placeholder="조사 버튼 이름" style={inputStyle} />
             </div>
-            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, investigations: node.investigations.filter((_, i) => i !== idx) }))}>삭제</button>
+            <button type="button" className="ghost-button" onClick={() => removeInvestigationAction(selectedNode.id, idx)}>삭제</button>
           </div>)}
-          <button type="button" className="ghost-button" style={{ marginTop: 8 }} onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, investigations: [...(node.investigations || []), "새 조사"], actionResults: { ...(node.actionResults || {}), "새 조사": emptyAction() } }))}>조사 버튼 추가</button>
+          <button type="button" className="ghost-button" style={{ marginTop: 8 }} onClick={() => addInvestigationAction(selectedNode.id)}>조사 버튼 추가</button>
           {(selectedNode.investigations || []).map((label, idx) => {
             const result = selectedNode.actionResults?.[label] || emptyAction();
             return (

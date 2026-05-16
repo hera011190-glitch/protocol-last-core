@@ -151,6 +151,26 @@ function getProgressFlagKey(nodeId, actionName) {
   return `${nodeId}:${actionName}`;
 }
 
+function getProgressReachableNodeIds(investigation) {
+  const nodes = investigation?.data?.nodes || {};
+  const allNodeIds = Object.keys(nodes).filter(Boolean);
+  if (allNodeIds.length === 0) return [];
+  const startNodeId = String(investigation?.data?.start || allNodeIds[0] || "").trim();
+  const start = nodes[startNodeId] ? startNodeId : allNodeIds[0];
+  const reachable = new Set();
+  const stack = [start];
+  while (stack.length > 0) {
+    const nodeId = stack.pop();
+    if (!nodeId || reachable.has(nodeId) || !nodes[nodeId]) continue;
+    reachable.add(nodeId);
+    (Array.isArray(nodes[nodeId]?.choices) ? nodes[nodeId].choices : []).forEach((choice) => {
+      const target = String(choice?.target || "").trim();
+      if (target && nodes[target] && !reachable.has(target)) stack.push(target);
+    });
+  }
+  return reachable.size > 0 ? Array.from(reachable) : allNodeIds;
+}
+
 
 function formatCountdown(ms) {
   const totalSeconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
@@ -1090,13 +1110,16 @@ useEffect(() => {
   const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
   const endConfirmations = Array.isArray(investigation?.endConfirmations) ? investigation.endConfirmations : [];
   const hasConfirmedExit = character?.name ? endConfirmations.includes(character.name) : false;
-  const totalNodeCount = Number(investigation?.totalNodeCount ?? (Object.keys(investigation?.data?.nodes || {}).length || 0));
-  const visitedNodeCount = Number(investigation?.visitedNodeCount ?? Array.from(new Set(routeHistory.map((entry) => entry.nodeId))).length);
+  const progressNodeIds = getProgressReachableNodeIds(investigation);
+  const progressNodeIdSet = new Set(progressNodeIds);
+  const totalNodeCount = Number(investigation?.totalNodeCount ?? progressNodeIds.length);
+  const visitedNodeCount = Number(investigation?.visitedNodeCount ?? Array.from(new Set(routeHistory.map((entry) => entry.nodeId))).filter((nodeId) => progressNodeIdSet.has(nodeId)).length);
   const visitProgressPercent = Number(investigation?.visitProgressPercent ?? (totalNodeCount > 0 ? Math.min(100, Math.round((visitedNodeCount / totalNodeCount) * 100)) : 0));
-  const totalInvestigationActionCount = Number(investigation?.totalInvestigationActionCount ?? Object.values(investigation?.data?.nodes || {}).reduce((sum, node) => {
-    return sum + getProgressActionLabelsFromNode(node).length;
+  const totalInvestigationActionCount = Number(investigation?.totalInvestigationActionCount ?? progressNodeIds.reduce((sum, nodeId) => {
+    return sum + getProgressActionLabelsFromNode(investigation?.data?.nodes?.[nodeId]).length;
   }, 0));
-  const completedInvestigationActionCount = Number(investigation?.completedInvestigationActionCount ?? Object.entries(investigation?.data?.nodes || {}).reduce((sum, [nodeId, node]) => {
+  const completedInvestigationActionCount = Number(investigation?.completedInvestigationActionCount ?? progressNodeIds.reduce((sum, nodeId) => {
+    const node = investigation?.data?.nodes?.[nodeId];
     return sum + getProgressActionLabelsFromNode(node).filter((actionName) => investigation?.discoveredFlags?.[getProgressFlagKey(nodeId, actionName)]).length;
   }, 0));
   const totalProgressCount = totalNodeCount + totalInvestigationActionCount;
