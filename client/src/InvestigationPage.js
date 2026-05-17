@@ -107,6 +107,33 @@ function buildInvestigationItemView(item, catalog) {
   };
 }
 
+
+function getInvestigationItemDisplayKey(item, meta) {
+  const raw = item && typeof item === "object" ? item : { label: item, value: item };
+  return String(meta?.id || meta?.itemId || meta?.key || meta?.name || raw.id || raw.itemId || raw.key || raw.value || raw.label || raw.name || item || "").trim();
+}
+
+function isBattleHealItem(item, catalog) {
+  const view = buildInvestigationItemView(item, catalog);
+  const useType = String(view.meta?.useType || "").toLowerCase();
+  if (useType === "heal" || useType === "hp") return true;
+  return ["응급 붕대", "소독약"].some((name) => getInvestigationItemCandidates(item).includes(normalizeInvestigationItemLookupKey(name)) || normalizeInvestigationItemLookupKey(view.label) === normalizeInvestigationItemLookupKey(name));
+}
+
+function buildBattleItemOption(item, catalog, source, index) {
+  if (!isBattleHealItem(item, catalog)) return null;
+  const view = buildInvestigationItemView(item, catalog);
+  const key = getInvestigationItemDisplayKey(item, view.meta) || view.label;
+  const payload = encodeURIComponent(JSON.stringify({ source, index, key }));
+  return {
+    key: `${source}-${index}-${key || view.label}`,
+    payload,
+    item,
+    label: view.label || "회복 아이템",
+    source,
+  };
+}
+
 function extractInvestigationItemFromBanner(text) {
   const value = String(text || "").trim();
   if (!value || !/획득/.test(value)) return "";
@@ -942,6 +969,8 @@ useEffect(() => {
     }
     if (data.investigation) applyInvestigation(data.investigation);
     else loadInvestigation();
+    loadCharacterInventory();
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { force: true } }));
   };
 
   const saveMyBattleAction = async (actionOverride = "") => {
@@ -989,6 +1018,10 @@ useEffect(() => {
         }) : prev);
       }
       if (data.currentNodeId) setCurrentNodeId(data.currentNodeId);
+      if (data.autoSubmitted && nextAction.startsWith("아이템")) {
+        loadCharacterInventory();
+        window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { force: true } }));
+      }
       setActionPicker("");
       if (data.autoSubmitted) {
         setMyBattleAction("");
@@ -1036,6 +1069,8 @@ useEffect(() => {
     }
     if (data.investigation) applyInvestigation(data.investigation);
     else loadInvestigation();
+    loadCharacterInventory();
+    window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { force: true } }));
   };
 
   const endInvestigationNow = async () => {
@@ -1231,7 +1266,10 @@ useEffect(() => {
   const spectators = participants.filter((p) => !p?.isAdmin && String(p?.id || "") !== "admin" && String(p?.ownerId || "") !== "admin" && p?.name !== "운영자").filter((p) => Number(displayParticipantStates[p.name]?.hp ?? p?.stats?.hp ?? 0) <= 0);
   const leaderDown = leaders.some((name) => Number(participantStates[name]?.hp || 0) <= 0);
   const aliveNames = aliveParticipants.map((p) => p.name);
-  const battleItemOptions = foundItems.filter((item) => item === "응급 붕대" || item === "소독약");
+  const battleItemOptions = [
+    ...foundItems.map((item, index) => buildBattleItemOption(item, shopItemCatalog, "found", index)),
+    ...inventoryItems.map((item, index) => buildBattleItemOption(item, shopItemCatalog, "inventory", index)),
+  ].filter(Boolean);
   const battleTurnRemainingMs = battleActive && battleTurnStartedAt
     ? Math.max(0, (battleTurnStartedAt + BATTLE_TURN_LIMIT_MS) - nowTick)
     : BATTLE_TURN_LIMIT_MS;
@@ -1703,9 +1741,10 @@ useEffect(() => {
           <OverlayPanel title="전투 아이템" onClose={() => setActionPicker("")}>
             {battleItemOptions.length > 0 ? (
               <div style={{ display: "grid", gap: "10px" }}>
-                {battleItemOptions.map((item, idx) => (
-                  <button key={`${item}-${idx}`} type="button" className="ghost-button" onClick={() => { chooseBattleAction(`아이템::${item}`); }}>
-                    {item}
+                {battleItemOptions.map((option, idx) => (
+                  <button key={`${option.key}-${idx}`} type="button" className="ghost-button" onClick={() => { chooseBattleAction(`아이템::${option.payload}`); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <InvestigationItemBadge item={option.item} catalog={shopItemCatalog} compact style={{ background: "transparent", borderColor: "transparent", boxShadow: "none", padding: 0 }} />
+                    <span style={{ color: "#9fb0c7", fontSize: 12 }}>{option.source === "inventory" ? "인벤토리" : "조사 획득"}</span>
                   </button>
                 ))}
               </div>
@@ -1966,12 +2005,15 @@ useEffect(() => {
                 {participants.map((participant) => {
                   const state = participantStates[participant.name] || {};
                   const dead = Number(state.hp || 0) <= 0;
+                  const blockedByRole = !isDaily && !isAdmin && !isLeader;
+                  const blockedByFaint = !isDaily && dead;
+                  const rewardDisabled = blockedByRole || blockedByFaint;
                   return (
                     <button
                       key={participant.name}
                       type="button"
-                      onClick={() => assignReward(participant.name)}
-                      disabled={!isDaily && !isAdmin && !isLeader}
+                      onClick={() => { if (!rewardDisabled) assignReward(participant.name); }}
+                      disabled={rewardDisabled}
                       className="ghost-button"
                       style={{
                         minHeight: 150,
@@ -1981,8 +2023,8 @@ useEffect(() => {
                         display: "grid",
                         placeItems: "center",
                         textAlign: "center",
-                        opacity: !isDaily && !isAdmin && !isLeader ? 0.55 : 1,
-                        cursor: !isDaily && !isAdmin && !isLeader ? "not-allowed" : "pointer",
+                        opacity: rewardDisabled ? 0.55 : 1,
+                        cursor: rewardDisabled ? "not-allowed" : "pointer",
                       }}
                     >
                       <div>
@@ -1992,7 +2034,7 @@ useEffect(() => {
                           ) : null}
                         </div>
                         <div style={{ marginTop: 10, fontWeight: 900, color: "#e2e8f0" }}>{participant.name}</div>
-                        <div style={{ marginTop: 6, fontSize: 12, color: dead ? "#fecaca" : "#9fb0c7" }}>{dead ? "HP 0 / 관전 중" : "배분 가능합니다"}</div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: dead ? "#fecaca" : "#9fb0c7" }}>{dead ? "HP 0 / 보상 제외" : "배분 가능합니다"}</div>
                       </div>
                     </button>
                   );

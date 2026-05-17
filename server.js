@@ -3026,11 +3026,27 @@ function applyProgressRewardToCharacter(char, expReward = 0, coinReward = 0) {
   return changed;
 }
 
+function getParticipantStateByName(item, participant) {
+  if (!item || !participant) return null;
+  const name = String(participant?.name || "").trim();
+  if (!name) return null;
+  return item.participantStates?.[name] || null;
+}
+
+function isInvestigationRewardEligibleParticipant(item, participant) {
+  if (!isInvestigationPlayableParticipant(participant)) return false;
+  if (String(item?.type || "group") !== "group") return true;
+  const state = getParticipantStateByName(item, participant);
+  if (state && Number(state.hp || 0) <= 0) return false;
+  return true;
+}
+
 function grantProgressRewardsToInvestigationParticipants(item, expReward = 0, coinReward = 0) {
   const exp = normalizeProgressRewardValue(expReward);
   const coins = normalizeProgressRewardValue(coinReward);
   if (!item || (exp <= 0 && coins <= 0)) return 0;
-  const receivers = (Array.isArray(item.participants) ? item.participants : []).filter(isInvestigationPlayableParticipant);
+  ensureRuntimeState(item);
+  const receivers = (Array.isArray(item.participants) ? item.participants : []).filter((participant) => isInvestigationRewardEligibleParticipant(item, participant));
   let changedCount = 0;
   receivers.forEach((participant) => {
     const char = charactersDB.find((c) => String(c.id) === String(participant.id)) || charactersDB.find((c) => String(c.name) === String(participant.name));
@@ -3332,19 +3348,117 @@ function getPreviousRouteNodeId(item) {
   return item.data.start;
 }
 
-function getUsableHealItem(item) {
-  const healItems = ["응급 붕대", "소독약"];
-  return item.foundItems.find((v) => healItems.includes(v));
+const PRESET_BATTLE_HEAL_ITEMS = {
+  "응급 붕대": 18,
+  "소독약": 24,
+};
+
+function parseBattleItemPayload(payload) {
+  const text = String(payload || "").trim();
+  if (!text) return { source: "", index: -1, key: "" };
+  try {
+    const parsed = JSON.parse(decodeURIComponent(text));
+    return {
+      source: String(parsed?.source || "").trim(),
+      index: Number.isInteger(Number(parsed?.index)) ? Number(parsed.index) : -1,
+      key: String(parsed?.key || parsed?.name || parsed?.label || "").trim(),
+    };
+  } catch {
+    return { source: "", index: -1, key: text };
+  }
 }
 
-function consumeBattleItem(item, state) {
-  const usable = getUsableHealItem(item);
-  if (!usable) return { text: `${state.name}은(는) 사용할 수 있는 전투용 아이템이 없었습니다.`, changed: false };
-  const heal = usable === "응급 붕대" ? 18 : 24;
-  state.hp = Math.min(state.maxHp, state.hp + heal);
-  const idx = item.foundItems.indexOf(usable);
-  if (idx >= 0) item.foundItems.splice(idx, 1);
-  return { text: `${state.name}은(는) ${usable}를 사용해 HP ${heal} 회복했습니다.`, changed: true };
+function getBattleHealItemMeta(value) {
+  const key = getInventoryItemKey(value);
+  const label = String(key || value || "").trim();
+  if (Object.prototype.hasOwnProperty.call(PRESET_BATTLE_HEAL_ITEMS, label)) {
+    return { key: label, label, heal: PRESET_BATTLE_HEAL_ITEMS[label], preset: true };
+  }
+  const shopItem = findShopItemByLooseId(label);
+  if (!shopItem) return null;
+  const normalized = normalizeShopItem(shopItem);
+  const useType = String(normalized.useType || "").toLowerCase();
+  if (!(useType === "heal" || useType === "hp")) return null;
+  return {
+    key: String(normalized.id || normalized.name || label).trim(),
+    label: String(normalized.name || label || "회복 아이템").trim(),
+    heal: Math.max(1, Number(normalized.useValue || 10)),
+    preset: false,
+  };
+}
+
+function battleItemMatchesRequested(value, requestedKey) {
+  const meta = getBattleHealItemMeta(value);
+  if (!meta) return false;
+  const key = String(requestedKey || "").trim();
+  if (!key) return true;
+  return inventoryItemMatches(value, key) || inventoryItemMatches(meta.key, key) || inventoryItemMatches(meta.label, key);
+}
+
+function findCharacterForBattleState(item, state) {
+  const participant = (Array.isArray(item?.participants) ? item.participants : []).find((entry) => String(entry?.name || "") === String(state?.name || ""));
+  return charactersDB.find((character) => participant?.id && String(character?.id || "") === String(participant.id))
+    || charactersDB.find((character) => String(character?.name || "") === String(state?.name || ""));
+}
+
+function consumeFoundBattleItem(item, request) {
+  item.foundItems = Array.isArray(item.foundItems) ? item.foundItems : [];
+  const requestedKey = String(request?.key || "").trim();
+  const requestedIndex = Number(request?.index);
+  let index = request?.source === "found" && Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < item.foundItems.length
+    ? requestedIndex
+    : -1;
+  if (index >= 0 && !battleItemMatchesRequested(item.foundItems[index], requestedKey)) index = -1;
+  if (index < 0) index = item.foundItems.findIndex((value) => battleItemMatchesRequested(value, requestedKey));
+  if (index < 0) return null;
+  const value = item.foundItems[index];
+  const meta = getBattleHealItemMeta(value);
+  if (!meta) return null;
+  item.foundItems.splice(index, 1);
+  return { ...meta, source: "found" };
+}
+
+function consumeInventoryBattleItem(item, state, request) {
+  const char = findCharacterForBattleState(item, state);
+  if (!char) return null;
+  char.items = Array.isArray(char.items) ? char.items : [];
+  const requestedKey = String(request?.key || "").trim();
+  const requestedIndex = Number(request?.index);
+  let index = request?.source === "inventory" && Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < char.items.length
+    ? requestedIndex
+    : -1;
+  if (index >= 0 && !battleItemMatchesRequested(char.items[index], requestedKey)) index = -1;
+  if (index < 0) index = char.items.findIndex((value) => battleItemMatchesRequested(value, requestedKey));
+  if (index < 0) return null;
+  const value = char.items[index];
+  const meta = getBattleHealItemMeta(value);
+  if (!meta) return null;
+  char.items.splice(index, 1);
+  char.updatedAt = Date.now();
+  char.assetVersion = char.updatedAt;
+  return { ...meta, source: "inventory", character: char };
+}
+
+function consumeBattleItem(item, state, payload) {
+  const request = parseBattleItemPayload(payload);
+  let consumed = null;
+  if (request.source === "inventory") {
+    consumed = consumeInventoryBattleItem(item, state, request) || consumeFoundBattleItem(item, request);
+  } else if (request.source === "found") {
+    consumed = consumeFoundBattleItem(item, request) || consumeInventoryBattleItem(item, state, request);
+  } else {
+    consumed = consumeFoundBattleItem(item, request) || consumeInventoryBattleItem(item, state, request);
+  }
+
+  if (!consumed) return { text: `${state.name}은(는) 사용할 수 있는 전투용 회복 아이템이 없었습니다.`, changed: false };
+  const heal = Math.max(1, Number(consumed.heal || 0));
+  state.hp = Math.min(state.maxHp, Number(state.hp || 0) + heal);
+  if (consumed.character) {
+    consumed.character.currentHp = Math.max(0, Math.min(getCharacterMaxHp(consumed.character?.stats?.hp), Number(state.hp || 0)));
+    markCharactersDirty();
+    writeRuntimeArray("characters.json", charactersDB);
+  }
+  return { text: `${state.name}은(는) ${consumed.label}을(를) 사용해 HP ${heal} 회복했습니다.`, changed: true };
 }
 
 function addBuff(state, type, duration, value) {
@@ -5036,6 +5150,9 @@ app.post("/assignInvestigationReward", (req, res) => {
   if (!receiverName && item.type === "daily" && item.participants?.[0]?.name) receiverName = item.participants[0].name;
   const receiver = (item.participants || []).find((p) => p.name === receiverName);
   if (!receiver) return res.json({ success: false, message: "지급 대상을 찾을 수 없습니다." });
+  if (String(item.type || "group") === "group" && !isInvestigationRewardEligibleParticipant(item, receiver)) {
+    return res.json({ success: false, message: "기절한 참여자는 조사 보상을 받을 수 없습니다." });
+  }
 
   const char = charactersDB.find((c) => String(c.id) === String(receiver.id)) || charactersDB.find((c) => c.name === receiver.name);
   if (!char) return res.json({ success: false, message: "캐릭터를 찾을 수 없습니다." });
@@ -5545,6 +5662,26 @@ function mergeInvestigationVisualFieldsForPublish(def, existing) {
   return next;
 }
 
+function makeUniquePublishedInvestigationId(rawId, rawTitle = "") {
+  const fallbackBase = String(rawTitle || "investigation").trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^가-힣a-zA-Z0-9_-]/g, "")
+    .slice(0, 48) || "investigation";
+  const base = String(rawId || fallbackBase).trim() || fallbackBase;
+  const usedIds = new Set([
+    ...investigationsDB.map((item) => String(item?.id || "")),
+    ...customInvestigationsDB.map((item) => String(item?.id || item?.json?.id || "")),
+  ].filter(Boolean));
+  if (!usedIds.has(base)) return base;
+  let index = 1;
+  let next = `${base}-copy-${Date.now()}`;
+  while (usedIds.has(next)) {
+    index += 1;
+    next = `${base}-copy-${Date.now()}-${index}`;
+  }
+  return next;
+}
+
 function upsertPublishedInvestigation(def) {
   const existingIndex = investigationsDB.findIndex((item) => item.id === def.id);
   const existing = existingIndex >= 0 ? investigationsDB[existingIndex] : null;
@@ -5603,7 +5740,11 @@ app.delete("/admin/customInvestigations/:id", (req, res) => {
 });
 
 app.post("/admin/publishInvestigation", (req, res) => {
-  const def = req.body || {};
+  const def = clone(req.body || {});
+  const forceCreateDuplicate = !!(def.forceCreateDuplicate || def.createDuplicate || def.forceNew);
+  delete def.forceCreateDuplicate;
+  delete def.createDuplicate;
+  delete def.forceNew;
   if (!def.id || !def.title || !def.data?.nodes || Object.keys(def.data.nodes || {}).length === 0) {
     return res.json({ success: false, message: "조사 JSON 형식이 올바르지 않습니다." });
   }
@@ -5611,6 +5752,9 @@ app.post("/admin/publishInvestigation", (req, res) => {
   try {
     const nodeIds = Object.keys(def.data.nodes || {});
     if (!def.data.start || !def.data.nodes[def.data.start]) def.data.start = nodeIds[0];
+    if (forceCreateDuplicate) {
+      def.id = makeUniquePublishedInvestigationId(def.id, def.title);
+    }
     const publishedItem = upsertPublishedInvestigation(def);
     const persistedDef = serializeInvestigationForPersistence(publishedItem);
 
@@ -5627,7 +5771,7 @@ app.post("/admin/publishInvestigation", (req, res) => {
     ];
     writeCustomInvestigationsToFile(customInvestigationsDB);
 
-    res.json({ success: true, investigationId: def.id });
+    res.json({ success: true, investigationId: persistedDef.id, template });
   } catch (err) {
     console.error("publishInvestigation error", err);
     res.json({ success: false, message: "실제 조사 반영에 실패했습니다." });

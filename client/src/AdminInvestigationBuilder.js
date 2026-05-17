@@ -427,13 +427,16 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
 
   const publishTemplate = async () => {
     const payload = serialize();
-    const res = await apiFetch("/admin/publishInvestigation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const requestPayload = isEditingInvestigation ? payload : { ...payload, forceCreateDuplicate: true };
+    const res = await apiFetch("/admin/publishInvestigation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestPayload) });
     const data = await readJsonResponseSafely(res, "조사 저장 응답을 읽지 못했습니다.");
     if (!data.success || !res.ok) return alert(data.message || (isEditingInvestigation ? "조사 저장 실패" : "조사 등록 실패"));
-    setBuilder((prev) => ({ ...prev, start: payload.data?.start || prev.start, imageUpdatedAt: payload.imageUpdatedAt || prev.imageUpdatedAt }));
-    setSelectedNodeId((prevSelectedNodeId) => builder.nodes.some((node) => node.id === prevSelectedNodeId) ? prevSelectedNodeId : (payload.data?.start || prevSelectedNodeId));
-    setSavedList((prev) => [{ id: payload.id, title: payload.title, type: payload.type, json: payload }, ...prev.filter((item) => item.id !== payload.id)]);
-    setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 반영됐습니다.");
+    const publishedId = data.investigationId || payload.id;
+    const publishedPayload = { ...payload, id: publishedId };
+    setBuilder((prev) => ({ ...prev, id: publishedId, start: publishedPayload.data?.start || prev.start, imageUpdatedAt: publishedPayload.imageUpdatedAt || prev.imageUpdatedAt }));
+    setSelectedNodeId((prevSelectedNodeId) => builder.nodes.some((node) => node.id === prevSelectedNodeId) ? prevSelectedNodeId : (publishedPayload.data?.start || prevSelectedNodeId));
+    setSavedList((prev) => [{ id: publishedId, title: publishedPayload.title, type: publishedPayload.type, json: publishedPayload }, ...prev.filter((item) => item.id !== publishedId)]);
+    setMessage(isEditingInvestigation ? "조사 저장 완료" : "조사에 새로 추가됐습니다.");
     loadSaved();
   };
 
