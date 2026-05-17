@@ -491,10 +491,35 @@ function App() {
       }
     }
 
-    setSelectedInvestigationSeed(item || null);
+    const directGroupEntry = options.mode === "group" && !!item?.started && !item?.ended;
+    let nextInvestigationSeed = item || null;
+    if (directGroupEntry && runtimeCharacter?.name && !isAdmin) {
+      const knownParticipants = Array.isArray(item?.participants) ? item.participants : [];
+      const alreadyParticipating = knownParticipants.some((participant) => String(participant?.name || "") === String(runtimeCharacter.name));
+      if (!alreadyParticipating) {
+        try {
+          const joinRes = await fetch(buildApiUrl("/participateInvestigation"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: item.id, character: runtimeCharacter }),
+          });
+          const joinData = await joinRes.json();
+          if (!joinData.success) {
+            alert(joinData.message || "단체조사에 참여할 수 없습니다.");
+            return;
+          }
+          if (joinData.investigation) nextInvestigationSeed = joinData.investigation;
+        } catch (err) {
+          console.error("direct group participate error", err);
+          alert("단체조사 참여 처리 중 문제가 생겼습니다.");
+          return;
+        }
+      }
+    }
+
+    setSelectedInvestigationSeed(nextInvestigationSeed);
     setSelectedInvestigationId(item.id);
     setSpectatorMode(options.mode === "spectate");
-    const directGroupEntry = options.mode === "group" && !!item?.started && !item?.ended;
     setActivePage(options.mode === "spectate" || directGroupEntry ? PAGE.INVESTIGATION : PAGE.LOBBY);
   };
 

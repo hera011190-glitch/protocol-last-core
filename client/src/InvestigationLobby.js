@@ -339,6 +339,22 @@ function InvestigationLobby({
     loadInvestigation();
   };
 
+  const participateAndEnter = async () => {
+    if (!character) return;
+    const res = await apiFetch("/participateInvestigation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: investigationId, character }),
+    });
+    const data = await res.json();
+    if (!data.success) return alert(data.message || "조사 참여에 실패했습니다.");
+    if (data.investigation) {
+      setInvestigation(data.investigation);
+      if (Array.isArray(data.investigation?.leaders)) setSelectedLeaders(data.investigation.leaders);
+    }
+    reenterGame();
+  };
+
   const leave = async () => {
     if (!character) return;
     const res = await apiFetch("/leaveInvestigation", {
@@ -417,6 +433,9 @@ function InvestigationLobby({
                   {isAdmin && !investigation.started && (
                     <button type="button" onClick={saveLeaders} className="ghost-button">리더 저장</button>
                   )}
+                  {investigation.started && !isParticipating && character && !isAdmin ? (
+                    <button type="button" onClick={participateAndEnter} className="home-primary-button">참여하고 들어가기</button>
+                  ) : null}
                   {((investigation.started && (isAdmin || isParticipating)) || (isAdmin && !investigation.started && canStartLobby)) ? (
                     <button type="button" onClick={enterOrStartInvestigation} className="home-primary-button">조사로 들어가기</button>
                   ) : null}

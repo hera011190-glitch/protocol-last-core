@@ -300,9 +300,49 @@ function runAssetCompactChildProcess() {
   }
 }
 
+function getSafeRuntimeBackupName(filename) {
+  return String(filename || "runtime").replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
+
+function findLatestRuntimeBackupFile(filename) {
+  try {
+    const backupDir = path.join(DATA_DIR, "_backups");
+    if (!filename || !fs.existsSync(backupDir)) return "";
+    const safeName = getSafeRuntimeBackupName(filename);
+    const candidates = fs.readdirSync(backupDir)
+      .filter((name) => name.startsWith(`${safeName}.`) && name.endsWith(".bak.json"))
+      .map((name) => {
+        const fullPath = path.join(backupDir, name);
+        try {
+          const stat = fs.statSync(fullPath);
+          return { name, fullPath, mtimeMs: Number(stat.mtimeMs || 0), size: Number(stat.size || 0) };
+        } catch {
+          return null;
+        }
+      })
+      .filter((item) => item && item.size > 0)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs || String(b.name).localeCompare(String(a.name)));
+    return candidates[0]?.fullPath || "";
+  } catch {
+    return "";
+  }
+}
+
 function resolveDataPath(filename) {
   const nextPath = path.join(DATA_DIR, filename);
   const legacyPath = path.join(LEGACY_DATA_DIR, filename);
+  if (!fs.existsSync(nextPath)) {
+    const backupPath = findLatestRuntimeBackupFile(filename);
+    if (backupPath && fs.existsSync(backupPath)) {
+      try {
+        fs.copyFileSync(backupPath, nextPath);
+        console.log(`[data-restore] ${filename} 파일이 없어 최신 백업에서 복원했습니다.`);
+        return nextPath;
+      } catch (error) {
+        console.error(`[data-restore] ${filename} 백업 복원 실패`, error.message);
+      }
+    }
+  }
   if (!fs.existsSync(nextPath) && fs.existsSync(legacyPath)) {
     try {
       fs.copyFileSync(legacyPath, nextPath);
@@ -427,6 +467,52 @@ app.use((req, res, next) => {
 const io = new Server(server, { cors: corsOptions });
 
 const pendingJsonWrites = new Map();
+const RUNTIME_JSON_BACKUP_TARGETS = new Set([
+  "designConfig.json",
+  "designMaps.json",
+  "customInvestigations.json",
+  "shopItems.json",
+  "shopConfig.json",
+  "investigations.json",
+  "mails.json",
+  "relations.json",
+  "relationRequests.json",
+]);
+const LAST_RUNTIME_FILE_BACKUP_AT = new Map();
+
+function shouldMakeRuntimeFileBackupNow(filename) {
+  const key = String(filename || "runtime");
+  const now = Date.now();
+  const lastAt = Number(LAST_RUNTIME_FILE_BACKUP_AT.get(key) || 0);
+  if (now - lastAt < 60 * 1000) return false;
+  LAST_RUNTIME_FILE_BACKUP_AT.set(key, now);
+  return true;
+}
+
+function backupRuntimeFileBeforeWrite(filePath) {
+  try {
+    const filename = path.basename(String(filePath || ""));
+    if (!RUNTIME_JSON_BACKUP_TARGETS.has(filename)) return;
+    if (!fs.existsSync(filePath)) return;
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= 0) return;
+    if (!shouldMakeRuntimeFileBackupNow(filename)) return;
+    const backupDir = path.join(DATA_DIR, "_backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    const safeName = getSafeRuntimeBackupName(filename);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    fs.copyFileSync(filePath, path.join(backupDir, `${safeName}.${stamp}.bak.json`));
+    const backups = fs.readdirSync(backupDir)
+      .filter((name) => name.startsWith(`${safeName}.`) && name.endsWith(".bak.json"))
+      .sort();
+    while (backups.length > 30) {
+      const removeName = backups.shift();
+      try { fs.unlinkSync(path.join(backupDir, removeName)); } catch {}
+    }
+  } catch (error) {
+    console.error("runtime file backup failed", filePath, error.message);
+  }
+}
 
 function stringifyRuntimeJsonPayload(filePath, value) {
   const namespace = path.basename(String(filePath || "assets"), ".json");
@@ -438,6 +524,7 @@ function writeJsonAtomicSync(filePath, value) {
   const payload = stringifyRuntimeJsonPayload(filePath, value);
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
+  backupRuntimeFileBeforeWrite(filePath);
   const tempPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tempPath, payload, "utf-8");
   fs.renameSync(tempPath, filePath);
@@ -450,6 +537,7 @@ function scheduleJsonWrite(filePath, value, { delay = 12 } = {}) {
   const timer = setTimeout(async () => {
     try {
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      backupRuntimeFileBeforeWrite(filePath);
       const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
       await fs.promises.writeFile(tempPath, payload, "utf-8");
       await fs.promises.rename(tempPath, filePath);
@@ -488,7 +576,7 @@ function ensureRuntimeBackupDir() {
 function makeRuntimeBackup(filename, currentValue) {
   try {
     ensureRuntimeBackupDir();
-    const safeName = String(filename || "runtime").replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const safeName = getSafeRuntimeBackupName(filename);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const backupPath = path.join(RUNTIME_BACKUP_DIR, `${safeName}.${stamp}.bak.json`);
     fs.writeFileSync(backupPath, JSON.stringify(Array.isArray(currentValue) ? currentValue : [], null, 2), "utf-8");
@@ -3980,13 +4068,38 @@ function writeDedicatedDesignMapsStore(mapRoot) {
   }
 }
 
+function getRuntimeFileMtimeMs(filename) {
+  try {
+    const filePath = resolveDataPath(filename);
+    if (!filePath || !fs.existsSync(filePath)) return 0;
+    return Number(fs.statSync(filePath).mtimeMs || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function pickFreshestDesignMaps(dedicatedMaps, savedMaps) {
+  const dedicatedOk = hasMeaningfulDesignMaps(dedicatedMaps);
+  const savedOk = hasMeaningfulDesignMaps(savedMaps);
+  if (dedicatedOk && savedOk) {
+    const dedicatedMtime = getRuntimeFileMtimeMs(DESIGN_MAPS_STORE_FILE);
+    const designMtime = getRuntimeFileMtimeMs("designConfig.json");
+    return designMtime > dedicatedMtime + 1000 ? savedMaps : dedicatedMaps;
+  }
+  if (dedicatedOk) return dedicatedMaps;
+  if (savedOk) return savedMaps;
+  return null;
+}
+
 function getProtectedDesignMaps(previousMaps = null) {
-  const dedicatedMaps = readDedicatedDesignMapsStore();
-  if (hasMeaningfulDesignMaps(dedicatedMaps)) return dedicatedMaps;
+  // 서버가 이미 들고 있는 최신 맵을 우선합니다. 예전 designMaps.json이 현재 메모리 맵을 덮지 못하게 막습니다.
   if (hasMeaningfulDesignMaps(previousMaps)) return previousMaps;
   const currentMaps = designConfig?.siteContent?.maps;
   if (hasMeaningfulDesignMaps(currentMaps)) return currentMaps;
-  return null;
+  const dedicatedMaps = readDedicatedDesignMapsStore();
+  const savedDesign = readJsonFromPath(resolveDataPath("designConfig.json"), null);
+  const savedMaps = savedDesign?.siteContent?.maps;
+  return pickFreshestDesignMaps(dedicatedMaps, savedMaps);
 }
 
 function protectDesignMapsOnStartup(config) {
@@ -3994,11 +4107,9 @@ function protectDesignMapsOnStartup(config) {
   const siteContent = source.siteContent && typeof source.siteContent === "object" ? source.siteContent : {};
   const dedicatedMaps = readDedicatedDesignMapsStore();
   const savedMaps = siteContent.maps;
-  const protectedMaps = hasMeaningfulDesignMaps(dedicatedMaps)
-    ? dedicatedMaps
-    : (hasMeaningfulDesignMaps(savedMaps) ? savedMaps : null);
+  const protectedMaps = pickFreshestDesignMaps(dedicatedMaps, savedMaps);
   if (!protectedMaps) return source;
-  if (!hasMeaningfulDesignMaps(dedicatedMaps)) writeDedicatedDesignMapsStore(protectedMaps);
+  if (protectedMaps === savedMaps) writeDedicatedDesignMapsStore(protectedMaps);
   return {
     ...source,
     siteContent: {
@@ -4172,7 +4283,7 @@ function commitDesignConfigChange(options = {}) {
   publicDesignMapsCache = null;
   try {
     const designConfigPath = resolveDataPath("designConfig.json");
-    fs.writeFileSync(designConfigPath, JSON.stringify(designConfig, null, 2), "utf-8");
+    writeJsonAtomicSync(designConfigPath, designConfig);
   } catch (error) {
     console.error("design save failed", error);
   }
@@ -4728,11 +4839,26 @@ app.get("/investigationLobby/:id", (req, res) => {
   res.json(buildInvestigationLobbyState(item));
 });
 
+function buildRoomChatMessage(roomId, message) {
+  const roomKey = String(roomId || "");
+  const createdAt = message?.createdAt || new Date().toISOString();
+  const existingId = String(message?.id || message?.messageId || "").trim();
+  const id = existingId || `${roomKey}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    ...message,
+    id,
+    createdAt,
+    isAdminNotice: !!message?.isAdminNotice,
+    _roomId: roomKey,
+  };
+}
+
 app.get("/investigationChats/:id", (req, res) => {
   const id = req.params.id;
   const item = investigationsDB.find((v) => String(v.id) === String(id));
-  if (!roomChats[id] && Array.isArray(item?.roomChats)) roomChats[id] = item.roomChats.slice(-160);
-  res.json(roomChats[id] || []);
+  if (!roomChats[id] && Array.isArray(item?.roomChats)) roomChats[id] = item.roomChats.slice(-160).map((message) => buildRoomChatMessage(id, message));
+  if (!roomChats[id]) roomChats[id] = [];
+  res.json({ roomId: id, messages: roomChats[id] });
 });
 app.post("/investigationChat", (req, res) => {
   const { investigationId, message } = req.body;
@@ -4743,11 +4869,7 @@ app.post("/investigationChat", (req, res) => {
   if (!message?.isAdminNotice && state?.mutedUntil && Number(state.mutedUntil) > Date.now()) {
     return res.json({ success: false, message: "현재 채팅할 수 없는 상태입니다." });
   }
-  const safeMessage = {
-    ...message,
-    createdAt: message?.createdAt || new Date().toISOString(),
-    isAdminNotice: !!message?.isAdminNotice,
-  };
+  const safeMessage = buildRoomChatMessage(investigationId, message);
   if (!roomChats[investigationId]) roomChats[investigationId] = [];
   roomChats[investigationId].push(safeMessage);
   if (roomChats[investigationId].length > 160) {
@@ -4758,8 +4880,8 @@ app.post("/investigationChat", (req, res) => {
     chatItem.roomChats = roomChats[investigationId];
     saveInvestigationsRuntimeState();
   }
-  io.to(investigationId).emit("chat", safeMessage);
-  res.json({ success: true });
+  io.to(String(investigationId)).emit("chat", safeMessage);
+  res.json({ success: true, message: safeMessage });
 });
 
 app.post("/toggleInvestigation", (req, res) => {
@@ -5060,6 +5182,8 @@ app.post("/setBattleAction", (req, res) => {
   const { investigationId, characterName, actionName } = req.body;
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
+  ensureRuntimeState(item);
+  if (!item.pendingBattleActions || typeof item.pendingBattleActions !== "object") item.pendingBattleActions = {};
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
   const node = item.data?.nodes?.[item.currentNodeId];
@@ -5101,6 +5225,8 @@ app.post("/submitBattleTurn", (req, res) => {
   const { investigationId } = req.body;
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
+  ensureRuntimeState(item);
+  if (!item.pendingBattleActions || typeof item.pendingBattleActions !== "object") item.pendingBattleActions = {};
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
   announceNodeBattleStartIfReady(item);
@@ -5316,41 +5442,51 @@ io.on("connection", (socket) => {
   });
 
   socket.on("joinRoom", (roomId) => {
-    socket.join(roomId);
+    const roomKey = String(roomId || "");
+    if (!roomKey) return;
+    for (const joinedRoom of socket.rooms) {
+      if (joinedRoom !== socket.id && joinedRoom !== roomKey) socket.leave(joinedRoom);
+    }
+    socket.join(roomKey);
     if (socketUsers[socket.id]) {
-      socketUsers[socket.id].roomId = roomId;
+      socketUsers[socket.id].roomId = roomKey;
       socketUsers[socket.id].role = "viewer";
     }
-    const chatItem = investigationsDB.find((v) => String(v.id) === String(roomId));
-    if (!roomChats[roomId] && Array.isArray(chatItem?.roomChats)) roomChats[roomId] = chatItem.roomChats.slice(-160);
-    if (!roomChats[roomId]) roomChats[roomId] = [];
-    socket.emit("init", roomChats[roomId]);
-    emitInvestigationState(roomId);
+    const chatItem = investigationsDB.find((v) => String(v.id) === roomKey);
+    if (!roomChats[roomKey] && Array.isArray(chatItem?.roomChats)) roomChats[roomKey] = chatItem.roomChats.slice(-160).map((message) => buildRoomChatMessage(roomKey, message));
+    if (!roomChats[roomKey]) roomChats[roomKey] = [];
+    socket.emit("init", { roomId: roomKey, messages: roomChats[roomKey] });
+    emitInvestigationState(roomKey);
     emitUsers();
     emitOnlineAccounts();
   });
 
-  socket.on("leaveRoom", () => {
+  socket.on("leaveRoom", (roomId) => {
+    const roomKey = String(roomId || socketUsers[socket.id]?.roomId || "");
+    if (roomKey) socket.leave(roomKey);
     if (socketUsers[socket.id]) {
-      socketUsers[socket.id].roomId = null;
+      if (!roomKey || String(socketUsers[socket.id].roomId || "") === roomKey) socketUsers[socket.id].roomId = null;
       socketUsers[socket.id].role = "viewer";
     }
     emitUsers();
     emitOnlineAccounts();
   });
 
-  socket.on("chat", ({ roomId, message }) => {
-    if (!roomChats[roomId]) roomChats[roomId] = [];
-    roomChats[roomId].push(message);
-    if (roomChats[roomId].length > 160) {
-      roomChats[roomId] = roomChats[roomId].slice(-160);
+  socket.on("chat", ({ roomId, message } = {}) => {
+    const roomKey = String(roomId || "");
+    if (!roomKey || !message) return;
+    const safeMessage = buildRoomChatMessage(roomKey, message);
+    if (!roomChats[roomKey]) roomChats[roomKey] = [];
+    roomChats[roomKey].push(safeMessage);
+    if (roomChats[roomKey].length > 160) {
+      roomChats[roomKey] = roomChats[roomKey].slice(-160);
     }
-    const chatItem = investigationsDB.find((v) => String(v.id) === String(roomId));
+    const chatItem = investigationsDB.find((v) => String(v.id) === roomKey);
     if (chatItem) {
-      chatItem.roomChats = roomChats[roomId];
+      chatItem.roomChats = roomChats[roomKey];
       saveInvestigationsRuntimeState();
     }
-    io.to(roomId).emit("chat", message);
+    io.to(roomKey).emit("chat", safeMessage);
   });
 
   socket.on("disconnect", () => {

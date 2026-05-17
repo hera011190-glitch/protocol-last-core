@@ -239,12 +239,12 @@ const PRESET_BATTLE_SKILLS = {
 };
 function normalizeBattleSkillOption(skill) { const raw = typeof skill === "string" ? { key: skill, name: skill } : (skill || {}); const key = String(raw.key || raw.skillKey || raw.name || "").trim(); const preset = PRESET_BATTLE_SKILLS[key] || PRESET_BATTLE_SKILLS[String(raw.name || "").trim()] || null; return preset ? { ...raw, ...preset, key: preset.key, name: preset.name } : { ...raw, key, name: raw.name || key, target: raw.target || "enemy", desc: raw.desc || "" }; }
 function getNodeBattleEnemies(node) { const battle = node?.battle || null; if (!battle) return []; const raw = Array.isArray(battle.enemies) ? battle.enemies : [battle]; return raw.map((enemy, index) => { const maxHp = Number(enemy?.maxHp ?? enemy?.hp ?? 1); const hp = Number(enemy?.hp ?? maxHp); return { ...enemy, id: String(enemy?.id || `enemy-${index + 1}`), name: enemy?.name || `E-Beast ${index + 1}`, hp, maxHp, index }; }).filter((enemy) => Number(enemy?.hp || 0) > 0); }
-const BATTLE_TURN_LIMIT_MS = 5 * 60 * 1000;
-const CHAT_PANEL_WIDTH = 320;
-const RIGHT_PANEL_WIDTH = 278;
-const LEFT_SIDE_PANEL_TOP = 152;
-const LEFT_CHAT_PANEL_HEIGHT = "calc(100% - 404px)";
-const CENTER_TOP_CHIP_RESERVED_WIDTH = "688px";
+const BATTLE_TURN_LIMIT_MS = 2 * 60 * 1000;
+const CHAT_PANEL_WIDTH = 360;
+const RIGHT_PANEL_WIDTH = 340;
+const LEFT_SIDE_PANEL_TOP = 142;
+const LEFT_CHAT_PANEL_HEIGHT = "calc(100% - 332px)";
+const CENTER_TOP_CHIP_RESERVED_WIDTH = "776px";
 
 function buildFallbackParticipants(investigation) {
   const roster = new Map();
@@ -282,6 +282,44 @@ function buildFallbackParticipants(investigation) {
     });
   });
   return Array.from(roster.values());
+}
+
+function getChatMessageKey(message, fallbackIndex = 0) {
+  const direct = String(message?.id || message?.messageId || "").trim();
+  if (direct) return direct;
+  return [
+    message?.createdAt || "",
+    message?.name || "",
+    message?.text || "",
+    fallbackIndex,
+  ].map((value) => String(value ?? "")).join("::");
+}
+
+function normalizeRoomChatPayload(payload, fallbackRoomId = "") {
+  if (Array.isArray(payload)) return { roomId: fallbackRoomId, messages: payload };
+  if (payload && typeof payload === "object") {
+    return {
+      roomId: String(payload.roomId || payload.investigationId || fallbackRoomId || ""),
+      messages: Array.isArray(payload.messages) ? payload.messages : (Array.isArray(payload.chat) ? payload.chat : []),
+    };
+  }
+  return { roomId: fallbackRoomId, messages: [] };
+}
+
+function mergeChatMessages(previous, incoming) {
+  const map = new Map();
+  (Array.isArray(previous) ? previous : []).forEach((message, index) => {
+    map.set(getChatMessageKey(message, index), message);
+  });
+  (Array.isArray(incoming) ? incoming : []).forEach((message, index) => {
+    map.set(getChatMessageKey(message, index), message);
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const at = new Date(a?.createdAt || 0).getTime();
+    const bt = new Date(b?.createdAt || 0).getTime();
+    if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+    return 0;
+  });
 }
 
 function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectator = false, goBack, design, theme, pageKey = "investigationOverlay", previewData = null, previewChat = null, previewInventory = null }) {
@@ -524,10 +562,11 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     try {
       const res = await apiFetch(`/investigationChats/${investigationId}`);
       const data = await res.json();
-      setChat((Array.isArray(data) ? data : []).slice(-120));
+      const { roomId, messages } = normalizeRoomChatPayload(data, investigationId);
+      if (String(roomId || investigationId) !== String(investigationId)) return;
+      setChat((prev) => mergeChatMessages(prev, messages).slice(-120));
     } catch (err) {
       console.error("loadChats error", err);
-      setChat([]);
     }
   };
 
@@ -602,13 +641,16 @@ useEffect(() => {
   if (previewMode) return undefined;
   if (!character || !investigationId) return;
 
-  const handleInit = (data) => {
-    setChat(Array.isArray(data) ? data : []);
+  const handleInit = (payload) => {
+    const { roomId, messages } = normalizeRoomChatPayload(payload, investigationId);
+    if (String(roomId || investigationId) !== String(investigationId)) return;
+    setChat((prev) => mergeChatMessages(prev, messages).slice(-120));
   };
 
   const handleChat = (message) => {
     if (!message) return;
-    setChat((prev) => [...prev, message].slice(-120));
+    if (message._roomId && String(message._roomId) !== String(investigationId)) return;
+    setChat((prev) => mergeChatMessages(prev, [message]).slice(-120));
   };
 
   const handleStateUpdated = (payload) => {
@@ -758,7 +800,7 @@ useEffect(() => {
   }, 3000);
 
   return () => {
-    socket.emit("leaveRoom");
+    socket.emit("leaveRoom", investigationId);
     socket.off("init", handleInit);
     socket.off("chat", handleChat);
     socket.off("investigationStateUpdated", handleStateUpdated);
@@ -767,7 +809,7 @@ useEffect(() => {
     socket.off("participantsUpdated", handleParticipantsUpdated);
     clearInterval(onlineTrimTimer);
   };
-}, [character, investigationId]);
+}, [character?.id, character?.name, investigationId, previewMode]);
 
   useEffect(() => {
     if (!chatScrollRef.current) return;
@@ -871,8 +913,8 @@ useEffect(() => {
       alert(data.message || "공지 전송에 실패했습니다.");
       return;
     }
+    if (data.message) setChat((prev) => mergeChatMessages(prev, [data.message]).slice(-120));
     setStickToBottom(true);
-    loadChats();
   };
 
   const sendChat = async () => {
@@ -896,8 +938,8 @@ useEffect(() => {
       alert(data.message || "채팅 전송에 실패했습니다.");
       return;
     }
+    if (data.message) setChat((prev) => mergeChatMessages(prev, [data.message]).slice(-120));
     setStickToBottom(true);
-    loadChats();
   };
 
   const leaveInvestigationView = async () => {
@@ -1321,9 +1363,26 @@ useEffect(() => {
     if (battleTimeoutHandlingRef.current === turnKey) return;
 
     const aliveMissingParticipants = aliveParticipants.filter((participant) => !livePendingBattleActions?.[participant.name]);
-    if (!aliveMissingParticipants.length) return;
-
     const canAutoResolveAll = !!(isAdmin || canControl);
+    if (!aliveMissingParticipants.length) {
+      if (!canAutoResolveAll) return;
+      battleTimeoutHandlingRef.current = turnKey;
+      apiFetch("/submitBattleTurn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ investigationId }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            if (data.investigation) applyInvestigation(data.investigation);
+            else loadInvestigation();
+          }
+        })
+        .catch((err) => console.error("battle timeout submit ready turn error", err));
+      return;
+    }
+
     const selfMissing = !!(character?.name && aliveMissingParticipants.some((participant) => participant.name === character.name));
     if (!canAutoResolveAll && !selfMissing) return;
 
@@ -2198,7 +2257,7 @@ useEffect(() => {
                         <div style={{ ...dangerMessageStyle, textAlign: "center" }}>현재 관전 상태라 전투 행동을 선택할 수 없습니다.</div>
                       )}
                       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-                        {battleActive ? <div style={readyBadgeStyle}>미선택 인원은 5분 후 자동으로 방어 처리됩니다.</div> : null}
+                        {battleActive ? <div style={readyBadgeStyle}>미선택 인원은 2분 후 자동으로 방어 처리됩니다.</div> : null}
                         {endedReadonly ? <div style={readyBadgeStyle}>종료된 조사 기록 열람 중</div> : null}
                       </div>
                     </div>
@@ -2206,7 +2265,7 @@ useEffect(() => {
                 )}
               </div>
 
-              <div style={{ ...sidePanelStyle, position: "absolute", right: 14, top: 152, width: RIGHT_PANEL_WIDTH, height: "calc(100% - 418px)", zIndex: 1042, display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden", background: "linear-gradient(180deg, rgba(18,15,20,0.44), rgba(12,10,16,0.76))", border: "1px solid rgba(245,158,11,0.08)" }}>
+              <div style={{ ...sidePanelStyle, position: "absolute", right: 14, top: 142, width: RIGHT_PANEL_WIDTH, height: "calc(100% - 336px)", zIndex: 1042, display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden", background: "linear-gradient(180deg, rgba(18,15,20,0.44), rgba(12,10,16,0.76))", border: "1px solid rgba(245,158,11,0.08)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "center", marginBottom: "14px" }}>
                   <div>
                     <div className="section-eyebrow">LOG</div>
@@ -2275,7 +2334,7 @@ useEffect(() => {
                     <div ref={chatScrollRef} onScroll={onChatScroll} style={chatBoxStyle}>
                     {chat.length > 0 ? (
                       chat.map((msg, idx) => (
-                        <div key={`${msg.name}-${msg.text}-${idx}`} style={msg.isAdminNotice ? noticeMessageStyle : chatMessageStyle}>
+                        <div key={getChatMessageKey(msg, idx)} style={msg.isAdminNotice ? noticeMessageStyle : chatMessageStyle}>
                           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                             {msg.isAdminNotice ? (
                               <div style={{ width: 36, height: 36, borderRadius: 999, background: "rgba(255,255,255,0.14)", display: "grid", placeItems: "center", fontWeight: 900, flexShrink: 0 }}>운</div>
@@ -2329,7 +2388,7 @@ useEffect(() => {
               )}
 
               {isDaily && (
-                  <div style={{ position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: "calc(100% - 348px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
+                  <div style={{ position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: "calc(100% - 332px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
               )}
 
               <div style={{ position: "absolute", right: 14, top: "calc(100% - 248px)", zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, width: 278 }}>
@@ -3625,7 +3684,7 @@ function BattleMonsterStats({ node }) {
 function BattlePartyStrip({ participants, participantStates, pendingActions, rounds, nowTick, compact = false, battlePlaybackLocked = false }) {
   if (!participants?.length) return null;
   return (
-    <div style={{ marginTop: "14px", display: "flex", gap: compact ? "18px" : "24px", overflowX: "auto", paddingBottom: 6, justifyContent: "center" }}>
+    <div style={{ marginTop: "14px", display: "flex", gap: compact ? "18px" : "24px", overflowX: "auto", padding: "0 12px 8px", justifyContent: participants.length > (compact ? 5 : 4) ? "flex-start" : "center", scrollPaddingLeft: 12, scrollPaddingRight: 12, overscrollBehaviorX: "contain" }}>
       {participants.map((participant) => {
         const state = participantStates?.[participant.name] || {};
         const maxHp = Number(state.maxHp ?? participant.stats?.hp ?? 0);

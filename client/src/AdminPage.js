@@ -322,6 +322,25 @@ function preserveEditableImageValue(value, fallback = "") {
   return isGeneratedCharacterAssetUrl(text) ? (fallback || "") : value;
 }
 
+
+function getAdminShopItemKey(item) {
+  if (!item || typeof item !== "object") return "";
+  return String(item.id || item.key || item.name || item.label || "").trim();
+}
+
+function getAdminItemDisplayName(catalog, value) {
+  if (value && typeof value === "object") {
+    return value.name || value.label || value.key || value.id || "이름 없는 아이템";
+  }
+  const key = String(value || "").trim();
+  if (!key) return "이름 없는 아이템";
+  const found = (Array.isArray(catalog) ? catalog : []).find((item) => {
+    const candidates = [item?.id, item?.key, item?.name, item?.label].map((candidate) => String(candidate || "").trim()).filter(Boolean);
+    return candidates.includes(key);
+  });
+  return found?.name || found?.label || key;
+}
+
 function normalizeSavedCharacterPayload(character) {
   if (!character || typeof character !== "object") return character;
   const version = Number(character.assetVersion || character.updatedAt || Date.now());
@@ -456,6 +475,7 @@ export default function AdminPage({
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [characters, setCharacters] = useState([]);
+  const [shopItems, setShopItems] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [userSelectOpen, setUserSelectOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
@@ -717,8 +737,19 @@ export default function AdminPage({
     }
   };
 
+  const loadShopItems = async () => {
+    try {
+      const res = await fetch(adminApi(`/shopItems?t=${Date.now()}`), { cache: "no-store" });
+      const data = await res.json();
+      setShopItems(Array.isArray(data) ? data : []);
+    } catch {
+      setShopItems([]);
+    }
+  };
+
   useEffect(() => {
     loadAll().catch(() => {});
+    loadShopItems().catch(() => {});
     loadSiteBgm().catch(() => {});
   }, []);
 
@@ -732,6 +763,13 @@ export default function AdminPage({
     () => users.find((user) => normalizeUserIdText(user?.id).toLowerCase() === normalizeUserIdText(selectedUserId).toLowerCase()),
     [users, selectedUserId]
   );
+
+  const selectableShopItems = useMemo(() => {
+    return (Array.isArray(shopItems) ? shopItems : [])
+      .filter((item) => getAdminShopItemKey(item))
+      .slice()
+      .sort((a, b) => String(a?.name || a?.id || "").localeCompare(String(b?.name || b?.id || ""), "ko"));
+  }, [shopItems]);
   const selectAdminUser = (userId) => {
     const nextId = normalizeUserIdText(userId);
     if (!nextId) return;
@@ -938,7 +976,7 @@ export default function AdminPage({
 
   const addAdminItemToSelectedCharacter = () => {
     const value = String(edit.itemInput || "").trim();
-    if (!value) return setMessage("추가할 아이템 이름을 입력해주세요.");
+    if (!value) return setMessage("추가할 아이템을 선택하거나 이름을 입력해주세요.");
     setEdit((prev) => ({
       ...prev,
       items: [...(Array.isArray(prev.items) ? prev.items : []), value],
@@ -1167,19 +1205,32 @@ export default function AdminPage({
             <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
               <div style={{ fontWeight: 900 }}>보유 아이템 수정</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <select
+                  value={edit.itemInput || ""}
+                  onChange={(e) => setEdit({ ...edit, itemInput: e.target.value })}
+                  style={{ ...inputStyle, flex: "1 1 260px", marginTop: 0 }}
+                >
+                  <option value="">상점 아이템 선택</option>
+                  {selectableShopItems.map((item) => {
+                    const key = getAdminShopItemKey(item);
+                    const label = item?.name || item?.label || item?.id || key;
+                    return <option key={key} value={key}>{label}{item?.hidden ? " (숨김)" : ""}</option>;
+                  })}
+                </select>
                 <input
                   value={edit.itemInput || ""}
                   onChange={(e) => setEdit({ ...edit, itemInput: e.target.value })}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAdminItemToSelectedCharacter(); } }}
-                  placeholder="추가할 아이템 이름"
-                  style={{ ...inputStyle, flex: "1 1 220px" }}
+                  placeholder="직접 입력도 가능"
+                  style={{ ...inputStyle, flex: "1 1 220px", marginTop: 0 }}
                 />
+                <button type="button" className="ghost-button" onClick={() => loadShopItems().catch(() => {})}>목록 새로고침</button>
                 <button type="button" className="home-primary-button" onClick={addAdminItemToSelectedCharacter}>아이템 추가</button>
               </div>
               <div style={{ display: "grid", gap: 8, maxHeight: 180, overflowY: "auto", paddingRight: 4 }}>
                 {(Array.isArray(edit.items) && edit.items.length > 0) ? edit.items.map((item, index) => (
                   <div key={`${item}-${index}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 12, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(98,176,220,0.16)" }}>
-                    <span style={{ fontWeight: 800, color: "#16324a" }}>{typeof item === "string" ? item : (item?.name || item?.key || "이름 없는 아이템")}</span>
+                    <span style={{ fontWeight: 800, color: "#16324a" }}>{getAdminItemDisplayName(shopItems, item)}</span>
                     <button type="button" className="ghost-button" onClick={() => removeAdminItemFromSelectedCharacter(index)}>삭제</button>
                   </div>
                 )) : (
