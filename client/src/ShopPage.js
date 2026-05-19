@@ -339,7 +339,7 @@ function EBeastGame({ bet, onClose, onResolve, beastImages = [] }) {
           setRacing(false);
           const winner = E_BEASTS.slice().sort((a, b) => next[E_BEASTS.findIndex((v) => v.key === b.key)] - next[E_BEASTS.findIndex((v) => v.key === a.key)])[0].key;
           const win = winner === selected;
-          const payload = { delta: win ? bet * 3 : -bet, text: win ? `${winner} 우승 · 3배 획득` : `${winner} 우승 · 예측 실패` };
+          const payload = { delta: win ? bet * 5 : -bet, text: win ? `${winner} 우승 · 5배 획득` : `${winner} 우승 · 예측 실패` };
           setResult(payload);
           onResolve(payload.delta, payload.text, false);
         }

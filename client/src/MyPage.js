@@ -223,20 +223,25 @@ function ItemUsePanel({ items, catalog, onUse, onDelete, style = {} }) {
 
 function MailDetail({ mail, onClose, onReceive, catalog = [] }) {
   if (!mail || typeof document === "undefined") return null;
+  const isSentMail = mail.mailbox === "sent";
+  const partyName = isSentMail ? (mail.toName || "알 수 없음") : (mail.fromName || "알 수 없음");
+  const partyImage = isSentMail ? mail.toImage : mail.fromImage;
+  const titleText = mail.title || `${isSentMail ? partyName : mail.fromName}의 우편`;
   return createPortal(
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.56)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "24px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "720px", maxWidth: "100%", maxHeight: "84vh", overflowY: "auto", ...card({ background: "#fff" }) }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "14px" }}>
-          <h3 style={{ margin: 0 }}>{mail.title || `${mail.fromName}의 우편`}{mail.received ? " · 수령완료" : ""}</h3>
+          <h3 style={{ margin: 0 }}>{titleText}{mail.received ? " · 수령완료" : ""}</h3>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "84px 1fr", gap: "14px", alignItems: "center", marginBottom: "16px" }}>
           <div style={{ width: "84px", height: "84px", borderRadius: "20px", overflow: "hidden", background: "rgba(255,255,255,0.7)" }}>
-            {mail.fromImage ? <img src={mail.fromImage} alt={mail.fromName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
+            {partyImage ? <img src={partyImage} alt={partyName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#88a0b8" }}>IMG</div>}
           </div>
           <div>
-            <div style={{ fontSize: "20px", fontWeight: 900 }}>{mail.fromName}</div>
-            <div style={{ color: "#5d7a95", marginTop: "4px" }}>{mail.title || `${mail.fromName}의 우편`}{mail.received ? " · 수령완료" : ""}</div>
+            <div style={{ color: "#5d7a95", fontSize: 12, fontWeight: 800, marginBottom: 4 }}>{isSentMail ? "받는 사람" : "보낸 사람"}</div>
+            <div style={{ fontSize: "20px", fontWeight: 900 }}>{partyName}</div>
+            <div style={{ color: "#5d7a95", marginTop: "4px" }}>{titleText}{mail.received ? " · 수령완료" : ""}</div>
           </div>
         </div>
         <div style={card({ background: "rgba(240,248,255,0.88)", marginBottom: "16px" })}>
@@ -252,9 +257,9 @@ function MailDetail({ mail, onClose, onReceive, catalog = [] }) {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: "16px" }}>
           <div style={{ color: mail.received ? "#2563eb" : "#6a87a3", fontWeight: 800 }}>
-            {mail.received ? "이미 받은 우편입니다." : "받지 않은 우편입니다."}
+            {isSentMail ? (mail.received ? "상대가 수령한 우편입니다." : "보낸 우편입니다.") : (mail.received ? "이미 받은 우편입니다." : "받지 않은 우편입니다.")}
           </div>
-          {!mail.received ? <button type="button" className="home-primary-button" onClick={() => onReceive(mail)}>우편 받기</button> : null}
+          {!isSentMail && !mail.received ? <button type="button" className="home-primary-button" onClick={() => onReceive(mail)}>우편 받기</button> : null}
         </div>
       </div>
     </div>,
@@ -447,6 +452,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const [allMyCharacters, setAllMyCharacters] = useState([]);
   const [allCharacters, setAllCharacters] = useState([]);
   const [mailList, setMailList] = useState([]);
+  const [sentMailList, setSentMailList] = useState([]);
   const [selectedMail, setSelectedMail] = useState(null);
   const [catalog, setCatalog] = useState([]);
   const [receiverId, setReceiverId] = useState("");
@@ -562,6 +568,13 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     localStorage.setItem(`plc-mail-seen-${currentUser.id}`, "1");
   };
 
+  const loadSentMail = async () => {
+    if (!currentUser?.id) return;
+    const res = await fetch(buildApiUrl(`/mails/sent/${currentUser.id}?t=${Date.now()}`));
+    const data = await res.json();
+    setSentMailList(Array.isArray(data) ? data : []);
+  };
+
   useEffect(() => {
     loadMine();
   }, [ownerUser?.id]);
@@ -579,6 +592,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
 
   useEffect(() => {
     loadMail();
+    loadSentMail();
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -886,6 +900,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
     setItemToSend("");
     setCoinToSend(0);
     setLetter("");
+    await loadSentMail();
     alert(`${receiver.name || "상대"}에게 우편을 보냈습니다.`);
   };
 
@@ -1065,6 +1080,27 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                   </button>
                 ))}
                 {mailList.length === 0 ? <div style={{ color: "#6a87a3" }}>도착한 우편이 없습니다.</div> : null}
+              </div>
+            </div>
+
+            <div style={card({ position: "relative" })}>
+              <h3 style={{ marginTop: 0 }}>보낸 우편함</h3>
+              <div style={{ display: "grid", gap: "10px", marginTop: "10px" }}>
+                {sentMailList.map((mail) => (
+                  <button
+                    key={mail.id}
+                    type="button"
+                    onClick={() => setSelectedMail(mail)}
+                    style={{
+                      textAlign: "left",
+                      ...card({ padding: "12px 14px", borderRadius: "16px", background: "rgba(229,239,248,0.62)", opacity: 0.86 }),
+                    }}
+                  >
+                    <span style={{ color: "#5d7a95", fontWeight: 800, marginRight: 8 }}>받는 사람: {mail.toName || "알 수 없음"}</span>
+                    {mail.title || `${mail.fromName}의 우편`}{mail.received ? " · 상대 수령완료" : ""}
+                  </button>
+                ))}
+                {sentMailList.length === 0 ? <div style={{ color: "#6a87a3" }}>보낸 우편이 없습니다.</div> : null}
               </div>
             </div>
 

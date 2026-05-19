@@ -531,15 +531,31 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   }, [previewMode]);
 
 
+  const investigationBgmUrl = useMemo(() => String(investigation?.bgmUrl || investigation?.data?.bgmUrl || ""), [investigation?.bgmUrl, investigation?.data?.bgmUrl]);
+  const investigationBgmVolume = useMemo(() => Math.max(0, Math.min(1, Number(investigation?.bgmVolume ?? investigation?.data?.bgmVolume ?? 1) || 1)), [investigation?.bgmVolume, investigation?.data?.bgmVolume]);
+
   useEffect(() => {
-    const bgmUrl = String(investigation?.bgmUrl || investigation?.data?.bgmUrl || "");
-    const bgmVolume = Math.max(0, Math.min(1, Number(investigation?.bgmVolume ?? investigation?.data?.bgmVolume ?? 1) || 1));
-    if (!bgmUrl) return undefined;
-    window.dispatchEvent(new CustomEvent("plc-audio-override", { detail: { scope: "investigation", url: bgmUrl, placement: "global", volume: bgmVolume } }));
+    if (!investigationBgmUrl) {
+      window.dispatchEvent(new CustomEvent("plc-audio-clear", { detail: { scope: "investigation" } }));
+      return undefined;
+    }
+    const applyInvestigationBgm = () => {
+      window.dispatchEvent(new CustomEvent("plc-audio-override", { detail: { scope: "investigation", url: investigationBgmUrl, placement: "global", volume: investigationBgmVolume } }));
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState !== "hidden") applyInvestigationBgm();
+    };
+    applyInvestigationBgm();
+    const retryTimer = window.setTimeout(applyInvestigationBgm, 160);
+    window.addEventListener("focus", applyInvestigationBgm);
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
+      window.clearTimeout(retryTimer);
+      window.removeEventListener("focus", applyInvestigationBgm);
+      document.removeEventListener("visibilitychange", handleVisibility);
       window.dispatchEvent(new CustomEvent("plc-audio-clear", { detail: { scope: "investigation" } }));
     };
-  }, [investigation?.id, investigation?.bgmUrl, investigation?.data?.bgmUrl, investigation?.bgmVolume, investigation?.data?.bgmVolume]);
+  }, [investigation?.id, investigationBgmUrl, investigationBgmVolume]);
 
   const loadInvestigation = async () => {
     if (previewMode) return;
@@ -2391,11 +2407,11 @@ useEffect(() => {
                   <div style={{ position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: "calc(100% - 332px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
               )}
 
-              <div style={{ position: "absolute", right: 14, top: "calc(100% - 248px)", zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, width: 278 }}>
-                <button type="button" className="ghost-button" onClick={() => setShowMap(true)} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>지도</button>
-                <button type="button" className="ghost-button" onClick={() => setShowItems(true)} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
-                <button type="button" className="ghost-button" onClick={() => setShowInventory(true)} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>인벤토리</button>
-                <button type="button" className="ghost-button" onClick={() => setShowClues(true)} style={{ color: "#f8fbff", fontWeight: 900, background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>단서</button>
+              <div style={{ position: "absolute", right: 14, top: 82, zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, width: RIGHT_PANEL_WIDTH }}>
+                <button type="button" className="ghost-button" onClick={() => setShowMap(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>지도</button>
+                <button type="button" className="ghost-button" onClick={() => setShowItems(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
+                <button type="button" className="ghost-button" onClick={() => setShowInventory(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>인벤토리</button>
+                <button type="button" className="ghost-button" onClick={() => setShowClues(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>단서</button>
               </div>
             </div>
           </div>

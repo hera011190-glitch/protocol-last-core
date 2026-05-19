@@ -7150,12 +7150,43 @@ app.post("/shop/use", (req, res) => {
   return res.json({ success: true, character: buildPublicCharacter(char), item: normalized });
 });
 
+function getMailCharacterSummary(characterId) {
+  const char = charactersDB.find((item) => String(item?.id) === String(characterId));
+  if (!char) return { name: "", image: "" };
+  return {
+    name: String(char.name || char.id || ""),
+    image: String(char.image || char.profileImage || char.mainImage || char.investigationImage || ""),
+  };
+}
+
+function enrichMailForBox(mail, mailbox = "inbox") {
+  const from = getMailCharacterSummary(mail?.fromCharacterId);
+  const to = getMailCharacterSummary(mail?.toCharacterId);
+  return {
+    ...mail,
+    mailbox,
+    fromName: String(mail?.fromName || from.name || "알 수 없음"),
+    fromImage: String(mail?.fromImage || from.image || ""),
+    toName: String(mail?.toName || to.name || "알 수 없음"),
+    toImage: String(mail?.toImage || to.image || ""),
+  };
+}
+
 app.get("/mails/unreadCount/:characterId", (req, res) => {
   const count = mailsDB.filter((mail) => String(mail.toCharacterId) === String(req.params.characterId) && !mail.read).length;
   res.json({ count });
 });
+app.get("/mails/sent/:characterId", (req, res) => {
+  res.json(mailsDB
+    .filter((mail) => String(mail.fromCharacterId) === String(req.params.characterId))
+    .map((mail) => enrichMailForBox(mail, "sent"))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+});
 app.get("/mails/:characterId", (req, res) => {
-  res.json(mailsDB.filter((mail) => String(mail.toCharacterId) === String(req.params.characterId)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+  res.json(mailsDB
+    .filter((mail) => String(mail.toCharacterId) === String(req.params.characterId))
+    .map((mail) => enrichMailForBox(mail, "inbox"))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
 });
 app.post("/mails/send", (req, res) => {
   const { fromCharacterId, toCharacterId, title, body, coins, items } = req.body || {};
