@@ -2407,7 +2407,7 @@ useEffect(() => {
                   <div style={{ position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: "calc(100% - 332px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
               )}
 
-              <div style={{ position: "absolute", right: 14, top: 82, zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, width: RIGHT_PANEL_WIDTH }}>
+              <div style={{ position: "absolute", right: 14, bottom: 142, zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, width: RIGHT_PANEL_WIDTH }}>
                 <button type="button" className="ghost-button" onClick={() => setShowMap(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>지도</button>
                 <button type="button" className="ghost-button" onClick={() => setShowItems(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
                 <button type="button" className="ghost-button" onClick={() => setShowInventory(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>인벤토리</button>
