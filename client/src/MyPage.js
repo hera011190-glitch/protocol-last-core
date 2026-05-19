@@ -1059,7 +1059,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
             <div style={card({ position: "relative" })}>
               <h3 style={{ marginTop: 0 }}>우편함</h3>
               {unreadCount > 0 ? <div style={{ position: "absolute", top: "14px", right: "14px", width: "12px", height: "12px", borderRadius: "50%", background: "#ef4444" }} /> : null}
-              <div style={{ display: "grid", gap: "10px", marginTop: "10px" }}>
+              <div style={{ display: "grid", gap: "10px", marginTop: "10px", maxHeight: "280px", overflowY: "auto", overscrollBehavior: "contain", paddingRight: "6px" }}>
                 {mailList.map((mail) => (
                   <button
                     key={mail.id}
@@ -1085,7 +1085,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
 
             <div style={card({ position: "relative" })}>
               <h3 style={{ marginTop: 0 }}>보낸 우편함</h3>
-              <div style={{ display: "grid", gap: "10px", marginTop: "10px" }}>
+              <div style={{ display: "grid", gap: "10px", marginTop: "10px", maxHeight: "280px", overflowY: "auto", overscrollBehavior: "contain", paddingRight: "6px" }}>
                 {sentMailList.map((mail) => (
                   <button
                     key={mail.id}
