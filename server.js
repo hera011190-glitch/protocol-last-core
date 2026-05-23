@@ -2387,12 +2387,35 @@ function mergePersistedInvestigationState(baseItem, persistedItem) {
   return merged;
 }
 
-function rehydrateInvestigationsFromRuntime() {
-  const persisted = readRuntimeArray("investigations.json");
+function hasInvestigationRuntimeHistory(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  if (isDailyRuntimeInstance(entry)) return false;
+  if (entry.started || entry.ended) return true;
+  if (Array.isArray(entry.sharedLogs) && entry.sharedLogs.length > 1) return true;
+  if (Array.isArray(entry.routeHistory) && entry.routeHistory.length > 1) return true;
+  if (Array.isArray(entry.participants) && entry.participants.length > 0) return true;
+  if (Array.isArray(entry.foundItems) && entry.foundItems.length > 0) return true;
+  if (Array.isArray(entry.foundNPCs) && entry.foundNPCs.length > 0) return true;
+  if (Array.isArray(entry.rewards) && entry.rewards.length > 0) return true;
+  if (entry.discoveredFlags && typeof entry.discoveredFlags === "object" && Object.keys(entry.discoveredFlags).length > 0) return true;
+  if (entry.participantStates && typeof entry.participantStates === "object" && Object.keys(entry.participantStates).length > 0) return true;
+  return false;
+}
+
+function rehydrateInvestigationsFromRuntime(persistedOverride = null) {
+  const persisted = Array.isArray(persistedOverride) ? persistedOverride : readRuntimeArray("investigations.json");
   if (!Array.isArray(persisted) || !persisted.length) return;
+  const existingIds = new Set(investigationsDB.map((item) => String(item?.id || "")));
   investigationsDB = investigationsDB.map((item) => {
     const saved = persisted.find((entry) => String(entry?.id) === String(item?.id));
     return saved ? mergePersistedInvestigationState(item, saved) : item;
+  });
+  persisted.forEach((saved) => {
+    const savedId = String(saved?.id || "");
+    if (!savedId || existingIds.has(savedId)) return;
+    if (!hasInvestigationRuntimeHistory(saved)) return;
+    investigationsDB.push(saved);
+    existingIds.add(savedId);
   });
 }
 
@@ -2602,8 +2625,14 @@ function emitParticipantsUpdated() {
 function emitInvestigationState(investigationId) {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return;
-  syncInvestigationRoster(item);
-  io.to(investigationId).emit("investigationStateUpdated", buildPublicInvestigationState(item));
+  try {
+    syncInvestigationRoster(item);
+    const payload = buildPublicInvestigationState(item);
+    if (!payload) return;
+    io.to(String(investigationId)).emit("investigationStateUpdated", payload);
+  } catch (err) {
+    console.error("emitInvestigationState failed", err);
+  }
 }
 
 function ensureParticipantState(item, character) {
@@ -3467,10 +3496,12 @@ function getBattleHealItemMeta(value) {
   const normalized = normalizeShopItem(shopItem);
   const useType = String(normalized.useType || "").toLowerCase();
   if (!(useType === "heal" || useType === "hp")) return null;
+  const rawUseValue = Number(normalized.useValue);
+  const healValue = Number.isFinite(rawUseValue) && rawUseValue !== 0 ? rawUseValue : 10;
   return {
     key: String(normalized.id || normalized.name || label).trim(),
     label: String(normalized.name || label || "회복 아이템").trim(),
-    heal: Math.max(1, Number(normalized.useValue || 10)),
+    heal: healValue,
     preset: false,
   };
 }
@@ -3539,14 +3570,17 @@ function consumeBattleItem(item, state, payload) {
   }
 
   if (!consumed) return { text: `${state.name}은(는) 사용할 수 있는 전투용 회복 아이템이 없었습니다.`, changed: false };
-  const heal = Math.max(1, Number(consumed.heal || 0));
-  state.hp = Math.min(state.maxHp, Number(state.hp || 0) + heal);
+  const heal = Number(consumed.heal || 0);
+  const nextHp = Math.max(0, Math.min(Number(state.maxHp || 0), Number(state.hp || 0) + heal));
+  state.hp = nextHp;
   if (consumed.character) {
     consumed.character.currentHp = Math.max(0, Math.min(getCharacterMaxHp(consumed.character?.stats?.hp), Number(state.hp || 0)));
     markCharactersDirty();
     writeRuntimeArray("characters.json", charactersDB);
   }
-  return { text: `${state.name}은(는) ${consumed.label}을(를) 사용해 HP ${heal} 회복했습니다.`, changed: true };
+  const amount = Math.abs(heal);
+  const effectText = heal < 0 ? `HP ${amount} 감소했습니다.` : `HP ${amount} 회복했습니다.`;
+  return { text: `${state.name}은(는) ${consumed.label}을(를) 사용해 ${effectText}`, changed: true };
 }
 
 function addBuff(state, type, duration, value) {
@@ -3579,12 +3613,67 @@ const PRESET_SKILLS = {
 };
 function normalizeSkillKey(skillKey) { const key = String(skillKey || "").trim(); if (PRESET_SKILLS[key]) return key; return Object.keys(PRESET_SKILLS).find((name) => name.toLowerCase() === key.toLowerCase()) || key; }
 function getPresetSkillList() { return Object.values(PRESET_SKILLS).map((skill) => ({ ...skill })); }
-function getSkillSpec(skillKey) {
-  const key = normalizeSkillKey(skillKey);
-  if (PRESET_SKILLS[key]) return { ...PRESET_SKILLS[key], cooldownTurns: 0 };
-  const byCatalog = (shopItemsDB || []).find((item) => item?.useType === "skill" && [item.skillKey, item.useValue, item.skillName, item.name].map((v) => String(v || "").trim()).includes(String(skillKey || "").trim()));
-  if (byCatalog) { const catalogKey = normalizeSkillKey(byCatalog.skillKey || byCatalog.useValue || byCatalog.skillName || byCatalog.name); if (PRESET_SKILLS[catalogKey]) return { ...PRESET_SKILLS[catalogKey], cooldownTurns: Number(byCatalog.cooldownTurns || 0) }; }
-  return { key: key || "일격", label: key || "일격", mode: "singleDamage", target: "enemy", multiplier: 1, cooldownTurns: 0 };
+function findCharacterForBattleActor(actorName) {
+  const name = String(actorName || "").trim();
+  if (!name) return null;
+  return (charactersDB || []).find((character) => String(character?.name || "").trim() === name) || null;
+}
+function findLearnedBattleSkill(actorName, skillKey) {
+  const character = findCharacterForBattleActor(actorName);
+  const key = String(skillKey || "").trim();
+  if (!character || !key || !Array.isArray(character.skills)) return null;
+  const normalizedKey = normalizeSkillKey(key);
+  return character.skills.find((skill) => {
+    const values = typeof skill === "string" ? [skill] : [skill?.key, skill?.skillKey, skill?.name, skill?.label, skill?.useValue];
+    return values.map((value) => String(value || "").trim()).some((value) => value && (value === key || value === normalizedKey || value.toLowerCase() === key.toLowerCase()));
+  }) || null;
+}
+function getSkillSpec(skillKey, actorName = "") {
+  const requestedKey = String(skillKey || "").trim();
+  const key = normalizeSkillKey(requestedKey);
+  const learned = findLearnedBattleSkill(actorName, requestedKey);
+  const learnedKey = typeof learned === "string" ? learned : String(learned?.key || learned?.skillKey || learned?.name || learned?.label || learned?.useValue || "").trim();
+  const catalog = (shopItemsDB || []).find((item) => item?.useType === "skill" && [item.skillKey, item.useValue, item.skillName, item.name].map((v) => String(v || "").trim()).includes(requestedKey));
+  const catalogKey = catalog ? normalizeSkillKey(catalog.skillKey || catalog.useValue || catalog.skillName || catalog.name) : "";
+  const baseKey = PRESET_SKILLS[key] ? key : (PRESET_SKILLS[normalizeSkillKey(learnedKey)] ? normalizeSkillKey(learnedKey) : (PRESET_SKILLS[catalogKey] ? catalogKey : key));
+  const base = PRESET_SKILLS[baseKey] ? { ...PRESET_SKILLS[baseKey] } : { key: baseKey || requestedKey || "일격", label: baseKey || requestedKey || "일격", mode: "singleDamage", target: "enemy", multiplier: 1 };
+  const learnedCooldown = typeof learned === "object" && learned ? Number(learned.cooldownTurns ?? learned.cooldown ?? learned.cooldownRound ?? 0) : 0;
+  const catalogCooldown = catalog ? Number(catalog.cooldownTurns ?? catalog.cooldown ?? 0) : 0;
+  const cooldownTurns = Math.max(0, Number.isFinite(learnedCooldown) && learnedCooldown > 0 ? learnedCooldown : (Number.isFinite(catalogCooldown) ? catalogCooldown : 0));
+  return {
+    ...base,
+    key: base.key || baseKey || requestedKey,
+    label: base.label || (typeof learned === "object" ? learned.name : "") || requestedKey || base.key || "스킬",
+    cooldownTurns,
+  };
+}
+function getBattleSkillCooldown(state, skillKey) {
+  if (!state?.skillCooldowns || typeof state.skillCooldowns !== "object") return 0;
+  const rawKey = String(skillKey || "").trim();
+  const normalizedKey = normalizeSkillKey(rawKey);
+  return Math.max(Number(state.skillCooldowns[rawKey] || 0), Number(state.skillCooldowns[normalizedKey] || 0));
+}
+function setBattleSkillCooldown(state, skillKey, turns) {
+  if (!state) return;
+  if (!state.skillCooldowns || typeof state.skillCooldowns !== "object") state.skillCooldowns = {};
+  const key = normalizeSkillKey(skillKey) || String(skillKey || "").trim();
+  const safeTurns = Math.max(0, Math.round(Number(turns || 0)));
+  if (safeTurns > 0) state.skillCooldowns[key] = safeTurns;
+}
+function resetBattleScopedCooldowns(item) {
+  Object.values(item?.participantStates || {}).forEach((state) => {
+    if (!state) return;
+    state.skillCooldowns = {};
+  });
+}
+function clearTransientBattleStatuses(item) {
+  Object.values(item?.participantStates || {}).forEach((state) => {
+    if (!state) return;
+    if (Number(state.hp || 0) > 0) state.status = "정상";
+    state.defending = false;
+  });
+  const node = item?.data?.nodes?.[item.currentNodeId];
+  getBattleEnemies(node?.battle).forEach((enemy) => { if (enemy) enemy.status = ""; });
 }
 function findTargetEnemy(battle, targetKey) { const alive = getAliveBattleEnemies(battle); if (!alive.length) return null; const key = String(targetKey || "").trim(); if (!key) return alive[0]; return alive.find((enemy, index) => String(enemy?.id || "") === key || String(enemy?.name || "") === key || String(index) === key || String(index + 1) === key) || alive[0]; }
 function findTargetAllyState(item, targetKey, fallbackName = "") { const states = item.participantStates || {}; const key = String(targetKey || "").trim(); if (key && states[key]) return states[key]; const byName = Object.values(states).find((state) => String(state?.name || "") === key); if (byName) return byName; if (fallbackName && states[fallbackName]) return states[fallbackName]; return Object.values(states).find((state) => Number(state?.hp || 0) > 0) || null; }
@@ -3681,6 +3770,8 @@ function resolveFlee(item) {
     item.sharedLogs.push(createLogEntry(item.sharedLog));
     item.routeHistory.push({ nodeId: backNodeId, name: backNode?.name || "이전 구역", time: new Date().toISOString() });
     item.pendingBattleActions = {};
+    resetBattleScopedCooldowns(item);
+    clearTransientBattleStatuses(item);
     item.lastBattleRound = [{ text: "파티가 도주에 성공했습니다." }];
     saveInvestigationsRuntimeState();
     emitInvestigationState(item.id);
@@ -3722,6 +3813,11 @@ function applyBattleTurn(item, actions) {
     if (!enemy.id) enemy.id = `enemy-${index + 1}`;
   });
   syncBattleEnemyTotals(battle);
+  if (!battle.__cooldownsInitialized) {
+    resetBattleScopedCooldowns(item);
+    battle.__cooldownsInitialized = true;
+  }
+  clearTransientBattleStatuses(item);
 
   const aliveNames = (item.participants || [])
     .filter((participant) => !participant?.isAdmin && String(participant?.id || "") !== "admin" && String(participant?.ownerId || "") !== "admin" && participant?.name !== "운영자")
@@ -3756,7 +3852,6 @@ function applyBattleTurn(item, actions) {
       if (!entry?.text) return;
       item.sharedLogs.push(createLogEntry(entry.text));
     });
-    item.sharedLogs = item.sharedLogs.slice(-160);
   };
   const firstAliveEnemy = () => getAliveBattleEnemies(battle)[0] || null;
   const markEnemyHit = (enemy, damage) => {
@@ -3790,14 +3885,14 @@ function applyBattleTurn(item, actions) {
       return;
     }
     if (parsed.type === "스킬") {
-      const spec = getSkillSpec(parsed.payload);
+      const spec = getSkillSpec(parsed.payload, actor.name);
       if (!state.skillCooldowns || typeof state.skillCooldowns !== "object") state.skillCooldowns = {};
-      const cooldownLeft = Number(state.skillCooldowns[parsed.payload] || 0);
+      const cooldownLeft = getBattleSkillCooldown(state, spec.key || parsed.payload);
       if (cooldownLeft > 0) {
         roundLogs.push(createBattleLogEntry(`${actor.name}은(는) ${spec.label}을 아직 사용할 수 없습니다. (${cooldownLeft}턴 남음)`, "allies", { actor: actor.name, effect: "wait", snapshot: makeBattleSnapshot(item, battle) }));
         return;
       }
-      if (Number(spec.cooldownTurns || 0) > 0) state.skillCooldowns[parsed.payload] = Number(spec.cooldownTurns || 0) + 1;
+      if (Number(spec.cooldownTurns || 0) > 0) setBattleSkillCooldown(state, spec.key || parsed.payload, Number(spec.cooldownTurns || 0) + 1);
       const actorAtk = getEffectiveAttack(state);
       if (spec.mode === "allyAtkBuff") { const ally = findTargetAllyState(item, parsed.target, actor.name); if (!ally) return; addBuff(ally, "atkRateUp", Number(spec.duration || 2), Number(spec.rate || 0.5)); ally.status = "축복"; state.status = "지원"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${ally.name}의 공격력이 증가했습니다.`, "allies", { actor: actor.name, target: ally.name, effect: "buff", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) })); return; }
       if (spec.mode === "enemyDamageTakenDebuff") { const enemyTarget = findTargetEnemy(battle, parsed.target); if (!enemyTarget) return; addBuff(enemyTarget, "damageTakenRateUp", Number(spec.duration || 2), Number(spec.rate || 0.5)); state.status = "저주"; roundLogs.push(createBattleLogEntry(`${actor.name}의 ${spec.label}! ${enemyTarget.name}이(가) 받는 피해가 증가했습니다.`, "allies", withBattleEnemyTarget(battle, enemyTarget, { actor: actor.name, effect: "debuff", skillKey: spec.key, skillName: spec.label, skillMode: spec.mode, snapshot: makeBattleSnapshot(item, battle) }))); return; }
@@ -3863,6 +3958,8 @@ function applyBattleTurn(item, actions) {
     Object.values(item.participantStates || {}).forEach((state) => {
       if (!state) return;
       state.defending = false;
+      state.skillCooldowns = {};
+      if (Number(state.hp || 0) > 0) state.status = "정상";
       if (Array.isArray(state.buffs)) state.buffs = state.buffs.filter((buff) => buff?.type !== "guardUp");
     });
     const defeatedEnemies = getBattleEnemies(battle);
@@ -3886,7 +3983,6 @@ function applyBattleTurn(item, actions) {
     const victoryText = `[${node.name}] ${defeatedEnemies.map((enemy) => enemy.name).join(", ")}를 제압했습니다.${rewardItemLabels.length ? ` ${rewardItemLabels.join(", ")} 획득` : ""}`;
     item.sharedLog = victoryText;
     item.sharedLogs.push(createLogEntry(victoryText));
-    item.sharedLogs = item.sharedLogs.slice(-160);
     item.lastBattleRound = roundLogs;
     item.pendingBattleActions = {};
     item.battleTurn += 1;
@@ -3909,7 +4005,6 @@ function applyBattleTurn(item, actions) {
     }
     persistRoundLogsToShared(roundLogs);
     item.lastBattleRound = roundLogs;
-    item.sharedLogs = item.sharedLogs.slice(-160);
     saveInvestigationsRuntimeState();
     emitInvestigationState(item.id);
     return { success: true };
@@ -3966,6 +4061,7 @@ function applyBattleTurn(item, actions) {
   Object.values(item.participantStates || {}).forEach((state) => {
     if (!state) return;
     state.defending = false;
+    if (Number(state.hp || 0) > 0) state.status = "정상";
     if (Array.isArray(state.buffs)) state.buffs = state.buffs.filter((buff) => buff?.type !== "guardUp");
   });
   const endTurnChanges = [];
@@ -5192,6 +5288,12 @@ app.post("/setBattleAction", (req, res) => {
   const state = item.participantStates?.[characterName];
   if (!state) return res.json({ success: false, message: "참가자 상태를 찾을 수 없습니다." });
   if (Number(state.hp || 0) <= 0) return res.json({ success: false, message: "행동 불가능한 상태입니다." });
+  const parsedAction = parseBattleAction(actionName || "공격");
+  if (parsedAction.type === "스킬") {
+    const spec = getSkillSpec(parsedAction.payload, characterName);
+    const cooldownLeft = getBattleSkillCooldown(state, spec.key || parsedAction.payload);
+    if (cooldownLeft > 0) return res.json({ success: false, message: `${spec.label || "스킬"}은(는) 아직 사용할 수 없습니다. (${cooldownLeft}턴 남음)` });
+  }
   item.pendingBattleActions[characterName] = actionName || "공격";
 
   const aliveNames = Array.from(new Set((item.participants || [])
@@ -5202,7 +5304,18 @@ app.post("/setBattleAction", (req, res) => {
   const allReady = aliveNames.length > 0 && aliveNames.every((name) => !!item.pendingBattleActions?.[name]);
 
   if (allReady) {
-    const outcome = applyBattleTurn(item, item.pendingBattleActions || {});
+    if (item.__battleResolving) return res.json({ success: true, pendingBattleActions: item.pendingBattleActions, investigation: buildPublicInvestigationState(item) });
+    item.__battleResolving = true;
+    let outcome;
+    try {
+      outcome = applyBattleTurn(item, item.pendingBattleActions || {});
+    } catch (err) {
+      console.error("setBattleAction applyBattleTurn error", err);
+      outcome = { success: false, message: "전투 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." };
+      emitInvestigationState(investigationId);
+    } finally {
+      item.__battleResolving = false;
+    }
     if (!outcome.success) return res.json(outcome);
     return res.json({
       success: true,
@@ -5230,7 +5343,18 @@ app.post("/submitBattleTurn", (req, res) => {
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
   announceNodeBattleStartIfReady(item);
-  const outcome = applyBattleTurn(item, item.pendingBattleActions || {});
+  if (item.__battleResolving) return res.json({ success: true, pendingBattleActions: item.pendingBattleActions, investigation: buildPublicInvestigationState(item) });
+  item.__battleResolving = true;
+  let outcome;
+  try {
+    outcome = applyBattleTurn(item, item.pendingBattleActions || {});
+  } catch (err) {
+    console.error("submitBattleTurn applyBattleTurn error", err);
+    outcome = { success: false, message: "전투 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." };
+    emitInvestigationState(investigationId);
+  } finally {
+    item.__battleResolving = false;
+  }
   if (!outcome.success) return res.json(outcome);
   return res.json({
     success: true,
@@ -5818,31 +5942,36 @@ function makeUniquePublishedInvestigationId(rawId, rawTitle = "") {
   return next;
 }
 
-function upsertPublishedInvestigation(def) {
+function upsertPublishedInvestigation(def, options = {}) {
   const existingIndex = investigationsDB.findIndex((item) => item.id === def.id);
   const existing = existingIndex >= 0 ? investigationsDB[existingIndex] : null;
   const publishDef = mergeInvestigationVisualFieldsForPublish(def, existing);
   const built = buildInvestigation(publishDef);
+  let published = built;
   if (existing) {
-    built.opened = publishDef?.opened !== undefined ? !!publishDef.opened : !!existing.opened;
-    built.hidden = publishDef?.hidden !== undefined ? !!publishDef.hidden : !!existing.hidden;
-    built.scheduleEnabled = publishDef?.scheduleEnabled !== undefined ? !!publishDef.scheduleEnabled : !!existing.scheduleEnabled;
-    built.openAt = String(publishDef?.openAt || existing.openAt || "");
-    built.closeAt = String(publishDef?.closeAt || existing.closeAt || "");
-    investigationsDB[existingIndex] = built;
+    published = mergePersistedInvestigationState(built, existing);
+    published.opened = publishDef?.opened !== undefined ? !!publishDef.opened : !!existing.opened;
+    published.hidden = publishDef?.hidden !== undefined ? !!publishDef.hidden : !!existing.hidden;
+    published.scheduleEnabled = publishDef?.scheduleEnabled !== undefined ? !!publishDef.scheduleEnabled : !!existing.scheduleEnabled;
+    published.openAt = String(publishDef?.openAt || existing.openAt || "");
+    published.closeAt = String(publishDef?.closeAt || existing.closeAt || "");
+    investigationsDB[existingIndex] = published;
   } else {
-    investigationsDB.push(built);
+    investigationsDB.push(published);
   }
-  saveInvestigationsRuntimeState();
-  emitParticipantsUpdated();
-  emitInvestigationState(publishDef.id);
-  return built;
+  if (options.save !== false) saveInvestigationsRuntimeState();
+  if (options.emit !== false) {
+    emitParticipantsUpdated();
+    emitInvestigationState(publishDef.id);
+  }
+  return published;
 }
 
+const persistedInvestigationsAtStartup = readRuntimeArray("investigations.json");
 customInvestigationsDB.forEach((template) => {
   if (template?.json?.data?.nodes) {
     try {
-      upsertPublishedInvestigation(template.json);
+      upsertPublishedInvestigation(template.json, { save: false, emit: false });
     } catch (err) {
       console.error("custom investigation bootstrap failed", template?.id, err);
     }
@@ -5850,8 +5979,9 @@ customInvestigationsDB.forEach((template) => {
 });
 rememberAllInvestigationCardVisuals(investigationsDB);
 
-rehydrateInvestigationsFromRuntime();
+rehydrateInvestigationsFromRuntime(persistedInvestigationsAtStartup);
 rememberAllInvestigationCardVisuals(investigationsDB);
+saveInvestigationsRuntimeState();
 
 app.get("/admin/customInvestigations", (req, res) => {
   res.json(customInvestigationsDB);
@@ -7103,7 +7233,8 @@ app.post("/shop/use", (req, res) => {
   if (useType === "heal" || useType === "hp") {
     const maxHp = getCharacterMaxHp(char?.stats?.hp);
     const currentHp = Number.isFinite(Number(char.currentHp)) ? Number(char.currentHp) : maxHp;
-    char.currentHp = Math.max(0, Math.min(maxHp, currentHp + Math.max(0, useValue || 10)));
+    const hpDelta = Number.isFinite(useValue) && useValue !== 0 ? useValue : 10;
+    char.currentHp = Math.max(0, Math.min(maxHp, currentHp + hpDelta));
   }
 
   if (useType === "corrosion" || useType === "corrosiondown" || useType === "reducecorrosion" || useType === "corrosionheal") {

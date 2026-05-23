@@ -207,9 +207,20 @@ function formatCountdown(ms) {
 }
 
 function getSkillCooldown(state, skill) {
-  const key = String(skill?.key || skill?.name || "");
   const cooldowns = state?.skillCooldowns || {};
-  return Number(cooldowns?.[key] || 0);
+  if (!cooldowns || typeof cooldowns !== "object") return 0;
+  const candidates = [skill?.key, skill?.skillKey, skill?.name, skill?.label, skill?.useValue]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  for (const key of candidates) {
+    const direct = Number(cooldowns?.[key] || 0);
+    if (direct > 0) return direct;
+  }
+  const lowerCandidates = new Set(candidates.map((value) => value.toLowerCase()));
+  for (const [key, value] of Object.entries(cooldowns)) {
+    if (lowerCandidates.has(String(key || "").trim().toLowerCase())) return Number(value || 0);
+  }
+  return 0;
 }
 
 function OverlayPanel({ title, onClose, children }) {
@@ -337,7 +348,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   const cachedInvestigation = readCachedInvestigation();
   const [investigation, setInvestigation] = useState(() => previewData || cachedInvestigation || null);
   const [currentNodeId, setCurrentNodeId] = useState(() => previewData?.currentNodeId || cachedInvestigation?.currentNodeId || previewData?.data?.start || cachedInvestigation?.data?.start || Object.keys(previewData?.data?.nodes || {})[0] || Object.keys(cachedInvestigation?.data?.nodes || {})[0] || null);
-  const [logs, setLogs] = useState(() => ((Array.isArray(previewData?.sharedLogs) && previewData.sharedLogs.length > 0 ? previewData.sharedLogs : Array.isArray(cachedInvestigation?.sharedLogs) ? cachedInvestigation.sharedLogs : []).slice(-160)));
+  const [logs, setLogs] = useState(() => (Array.isArray(previewData?.sharedLogs) && previewData.sharedLogs.length > 0 ? previewData.sharedLogs : Array.isArray(cachedInvestigation?.sharedLogs) ? cachedInvestigation.sharedLogs : []));
   const [chat, setChat] = useState(() => ((Array.isArray(previewChat) ? previewChat : Array.isArray(previewData?.previewChat) ? previewData.previewChat : []).slice(-120)));
   const [input, setInput] = useState("");
   const [onlineAccounts, setOnlineAccounts] = useState([]);
@@ -495,7 +506,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     setLogs(
       (Array.isArray(data.sharedLogs) && data.sharedLogs.length > 0
         ? data.sharedLogs
-        : [{ id: "fallback", text: data.sharedLog || data.data?.nodes?.[nodeId]?.log || "", time: "" }]).slice(-160)
+        : [{ id: "fallback", text: data.sharedLog || data.data?.nodes?.[nodeId]?.log || "", time: "" }])
     );
     if (data.type === "daily") {
       markDailyAttempt(data);
@@ -510,7 +521,7 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
     const source = previewData || null;
     setInvestigation(source);
     setCurrentNodeId(source?.currentNodeId || source?.data?.start || null);
-    setLogs((Array.isArray(source?.sharedLogs) && source.sharedLogs.length > 0 ? source.sharedLogs : []).slice(-160));
+    setLogs(Array.isArray(source?.sharedLogs) && source.sharedLogs.length > 0 ? source.sharedLogs : []);
     setChat((Array.isArray(previewChat) ? previewChat : Array.isArray(source?.previewChat) ? source.previewChat : []).slice(-120));
     setInventoryItems(Array.isArray(previewInventory) ? previewInventory : Array.isArray(source?.previewInventory) ? source.previewInventory : Array.isArray(character?.items) ? character.items : []);
   }, [previewMode, previewData, previewChat, previewInventory, character?.items]);
@@ -634,13 +645,15 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
       setNowTick(Date.now());
     };
     tick();
-    const timer = window.setInterval(tick, battleActive ? 24 : 140);
+    const needsAnimationTick = battlePlaybackLocked || stagedBattleLogs.length > 0;
+    const tickMs = needsAnimationTick ? 40 : battleActive ? 180 : 220;
+    const timer = window.setInterval(tick, tickMs);
     document.addEventListener("visibilitychange", tick);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [battleActive]);
+  }, [battleActive, battlePlaybackLocked, stagedBattleLogs.length]);
 
   const pendingActionsEarly = investigation?.pendingBattleActions || {};
 
@@ -694,7 +707,7 @@ useEffect(() => {
     if (!battlePlaybackLocked) setCurrentNodeId(payload.currentNodeId);
 
     if (Array.isArray(payload.sharedLogs) && payload.sharedLogs.length > 0) {
-      setLogs(payload.sharedLogs.slice(-160));
+      setLogs(payload.sharedLogs);
     } else if (payload.sharedLog && !hasRoundPlayback && !battlePlaybackLocked) {
       setLogs((prev) => [
         ...prev,
@@ -1533,7 +1546,7 @@ useEffect(() => {
         postPlaybackRefreshRef.current = false;
         loadInvestigation();
       } else {
-        setLogs((Array.isArray(investigation?.sharedLogs) ? investigation.sharedLogs : []).slice(-160));
+        setLogs(Array.isArray(investigation?.sharedLogs) ? investigation.sharedLogs : []);
       }
     }, playbackDuration);
     return () => {
@@ -2407,7 +2420,7 @@ useEffect(() => {
                   <div style={{ position: "absolute", left: 14, top: LEFT_SIDE_PANEL_TOP, width: CHAT_PANEL_WIDTH, height: "calc(100% - 332px)", zIndex: 1041, borderRadius: 28, background: "transparent", border: "1px solid rgba(255,255,255,0.03)", pointerEvents: "none" }} />
               )}
 
-              <div style={{ position: "absolute", right: 14, bottom: 142, zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, width: RIGHT_PANEL_WIDTH }}>
+              <div style={{ position: "absolute", right: 14, top: "calc(100% - 184px)", zIndex: 1050, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, width: RIGHT_PANEL_WIDTH }}>
                 <button type="button" className="ghost-button" onClick={() => setShowMap(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>지도</button>
                 <button type="button" className="ghost-button" onClick={() => setShowItems(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>아이템</button>
                 <button type="button" className="ghost-button" onClick={() => setShowInventory(true)} style={{ color: "#f8fbff", fontWeight: 900, fontSize: 12, padding: "9px 8px", background: "rgba(59,130,246,0.34)", border: "1px solid rgba(191,219,254,0.26)", boxShadow: "0 12px 22px rgba(2,6,23,0.18)", backdropFilter: "blur(14px)" }}>인벤토리</button>
@@ -2509,8 +2522,12 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
   const visitOrder = Object.fromEntries(uniqueSteps.map((entry, index) => [entry.nodeId, index + 1]));
   const visited = new Set(uniqueSteps.map((entry) => entry.nodeId));
   const currentId = investigation.currentNodeId;
-  const width = 1200;
-  const height = 760;
+  const nodeCount = entries.length;
+  const width = nodeCount > 28 ? 1800 : nodeCount > 18 ? 1540 : 1200;
+  const height = nodeCount > 28 ? 1180 : nodeCount > 18 ? 980 : 760;
+  const nodeRadius = nodeCount > 28 ? 22 : nodeCount > 18 ? 24 : 26;
+  const currentNodeRadius = nodeRadius + 4;
+  const labelFontSize = nodeCount > 28 ? 13 : nodeCount > 18 ? 14 : 16;
   const centerX = width / 2;
   const centerY = height / 2;
 
@@ -2529,7 +2546,9 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
       if (Number.isFinite(px) && Number.isFinite(py)) return { x: Math.max(90, Math.min(width - 90, px)), y: Math.max(90, Math.min(height - 90, py)) };
     }
     const angle = (-Math.PI / 2) + (index / Math.max(entries.length, 1)) * Math.PI * 2;
-    return { x: centerX + Math.cos(angle) * Math.min(width, height) * 0.28, y: centerY + Math.sin(angle) * Math.min(width, height) * 0.24 };
+    const radiusX = Math.min(width, height) * (nodeCount > 18 ? 0.36 : 0.28);
+    const radiusY = Math.min(width, height) * (nodeCount > 18 ? 0.31 : 0.24);
+    return { x: centerX + Math.cos(angle) * radiusX, y: centerY + Math.sin(angle) * radiusY };
   };
 
   entries.forEach(([nodeId, node], index) => {
@@ -2552,7 +2571,7 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
-        const minDistance = 200;
+        const minDistance = nodeCount > 28 ? 158 : nodeCount > 18 ? 176 : 200;
         if (distance < minDistance) {
           const force = (minDistance - distance) * 0.18;
           const ux = dx / distance;
@@ -2570,7 +2589,7 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
       const dx = to.x - from.x;
       const dy = to.y - from.y;
       const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
-      const targetLength = 210;
+      const targetLength = nodeCount > 28 ? 190 : nodeCount > 18 ? 205 : 210;
       const diff = (distance - targetLength) * 0.018;
       const ux = dx / distance;
       const uy = dy / distance;
@@ -2592,30 +2611,72 @@ function InvestigationMapCanvas({ investigation, participants = [], leaders = []
   const visibleNodeIds = new Set([...visited, currentId].filter(Boolean));
   const visibleEntries = entries.filter(([nodeId]) => visibleNodeIds.has(nodeId));
   const visibleEdges = edges.filter(([fromId, toId]) => visibleNodeIds.has(fromId) && visibleNodeIds.has(toId));
+  const edgeGroups = new Map();
+  visibleEdges.forEach(([fromId, toId], idx) => {
+    const key = [String(fromId), String(toId)].sort().join("::");
+    if (!edgeGroups.has(key)) edgeGroups.set(key, []);
+    edgeGroups.get(key).push(idx);
+  });
+  const getEdgeBend = (fromId, toId, idx) => {
+    const key = [String(fromId), String(toId)].sort().join("::");
+    const group = edgeGroups.get(key) || [];
+    if (group.length > 1) {
+      const groupIndex = group.indexOf(idx);
+      return (groupIndex - (group.length - 1) / 2) * 36;
+    }
+    const seed = `${fromId}->${toId}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) % 997;
+    const bend = ((hash % 5) - 2) * 8;
+    return bend === 0 ? 10 : bend;
+  };
+  const buildEdgePath = (from, to, bend) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+    const normalX = -dy / distance;
+    const normalY = dx / distance;
+    const midX = (from.x + to.x) / 2 + normalX * bend;
+    const midY = (from.y + to.y) / 2 + normalY * bend;
+    return `M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`;
+  };
+  const visibleEdgesWithPath = visibleEdges.map(([fromId, toId], idx) => {
+    const from = positions[fromId];
+    const to = positions[toId];
+    return { fromId, toId, idx, from, to, path: buildEdgePath(from, to, getEdgeBend(fromId, toId, idx)) };
+  });
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", borderRadius: 24, background: investigation.mapBackgroundImage ? `linear-gradient(rgba(2,6,23,0.36), rgba(2,6,23,0.62)), url(${investigation.mapBackgroundImage}) center/cover no-repeat` : "radial-gradient(circle at 50% 40%, rgba(30,41,59,0.88), rgba(2,6,23,0.98))" }}>
-        {visibleEdges.map(([fromId, toId], idx) => {
-          const from = positions[fromId];
-          const to = positions[toId];
-          return <line key={`${fromId}-${toId}-${idx}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={visited.has(fromId) && visited.has(toId) ? "rgba(96,165,250,0.92)" : "rgba(148,163,184,0.26)"} strokeWidth="6" strokeLinecap="round" />;
-        })}
-        {visibleEntries.map(([nodeId, node]) => {
-          const p = positions[nodeId];
-          const isCurrent = nodeId === currentId;
-          const isVisited = visited.has(nodeId);
-          return (
-            <g key={nodeId}>
-              <circle cx={p.x} cy={p.y} r={isCurrent ? 30 : 26} fill={isCurrent ? "rgba(37,99,235,0.98)" : isVisited ? "rgba(56,189,248,0.86)" : "rgba(71,85,105,0.88)"} stroke="rgba(255,255,255,0.22)" strokeWidth="3" />
-              {visitOrder[nodeId] ? <text x={p.x} y={p.y + 5} textAnchor="middle" fill="white" fontSize="13" fontWeight="900">{visitOrder[nodeId]}</text> : null}
-              <text x={p.x} y={p.y + 54} textAnchor="middle" fill="#dbeafe" fontSize="16" fontWeight="800">{node.name}</text>
+      <div style={{ overflow: "auto", borderRadius: 24 }}>
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", minWidth: nodeCount > 28 ? 1180 : nodeCount > 18 ? 1080 : 0, borderRadius: 24, background: investigation.mapBackgroundImage ? `linear-gradient(rgba(2,6,23,0.36), rgba(2,6,23,0.62)), url(${investigation.mapBackgroundImage}) center/cover no-repeat` : "radial-gradient(circle at 50% 40%, rgba(30,41,59,0.88), rgba(2,6,23,0.98))" }}>
+          {visibleEdgesWithPath.map(({ fromId, toId, idx, path }) => (
+            <g key={`${fromId}-${toId}-${idx}`}>
+              <path d={path} fill="none" stroke="rgba(2,6,23,0.72)" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" />
+              <path d={path} fill="none" stroke={visited.has(fromId) && visited.has(toId) ? "rgba(96,165,250,0.92)" : "rgba(148,163,184,0.30)"} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
             </g>
-          );
-        })}
-        {leaderImage && currentPos ? <image href={leaderImage} x={currentPos.x - 28} y={currentPos.y - 84} width="56" height="56" preserveAspectRatio="xMidYMid contain" /> : null}
-      </svg>
-      <div style={{ color: "#9fb0c7", fontSize: 13 }}>지나간 장소 및 현재 위치만 표시됩니다.</div>
+          ))}
+          {visibleEntries.map(([nodeId, node]) => {
+            const p = positions[nodeId];
+            const isCurrent = nodeId === currentId;
+            const isVisited = visited.has(nodeId);
+            const nodeName = String(node.name || nodeId);
+            const labelWidth = Math.max(72, Math.min(220, nodeName.length * labelFontSize * 0.82 + 26));
+            const labelY = p.y + nodeRadius + 21;
+            return (
+              <g key={nodeId}>
+                <circle cx={p.x} cy={p.y} r={isCurrent ? currentNodeRadius + 5 : nodeRadius + 5} fill="rgba(2,6,23,0.50)" />
+                <circle cx={p.x} cy={p.y} r={isCurrent ? currentNodeRadius : nodeRadius} fill={isCurrent ? "rgba(37,99,235,0.98)" : isVisited ? "rgba(56,189,248,0.86)" : "rgba(71,85,105,0.88)"} stroke="rgba(255,255,255,0.22)" strokeWidth="3" />
+                {visitOrder[nodeId] ? <text x={p.x} y={p.y + 5} textAnchor="middle" fill="white" fontSize="13" fontWeight="900">{visitOrder[nodeId]}</text> : null}
+                <rect x={p.x - labelWidth / 2} y={labelY - 17} width={labelWidth} height="28" rx="14" fill="rgba(2,6,23,0.68)" stroke="rgba(147,197,253,0.18)" />
+                <text x={p.x} y={labelY + 2} textAnchor="middle" fill="#dbeafe" fontSize={labelFontSize} fontWeight="800">{nodeName}</text>
+              </g>
+            );
+          })}
+          {leaderImage && currentPos ? <image href={leaderImage} x={currentPos.x - 28} y={currentPos.y - 84} width="56" height="56" preserveAspectRatio="xMidYMid contain" /> : null}
+        </svg>
+      </div>
+      <div style={{ color: "#9fb0c7", fontSize: 13 }}>지나간 장소 및 현재 위치만 표시됩니다. 노드가 많을 때는 지도 안쪽을 가로로 스크롤해서 확인할 수 있습니다.</div>
     </div>
   );
 }
