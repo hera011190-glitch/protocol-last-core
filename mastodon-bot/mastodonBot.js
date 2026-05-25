@@ -173,6 +173,8 @@ class MastodonBot {
     this.fortunes = loadFortunes();
     this.timer = null;
     this.isTicking = false;
+    this.homeTimelineEnabled = true;
+    this.homeTimelineDisabledLogged = false;
   }
 
   async apiRequest(method, apiPath, { query, form } = {}) {
@@ -207,6 +209,18 @@ class MastodonBot {
     }
     if (!text) return null;
     return JSON.parse(text);
+  }
+
+  isScopeError(error) {
+    return /API 오류 403|authorized scopes/i.test(String(error && error.message ? error.message : error));
+  }
+
+  disableHomeTimeline(reason) {
+    this.homeTimelineEnabled = false;
+    if (!this.homeTimelineDisabledLogged) {
+      console.error(`[마스토돈 봇 경고] 홈 타임라인 감지를 끕니다. ${reason} / 멘션 명령어는 계속 작동합니다.`);
+      this.homeTimelineDisabledLogged = true;
+    }
   }
 
   async fetchMentions() {
@@ -456,8 +470,20 @@ class MastodonBot {
   }
 
   async initializeLastHomeStatusId() {
-    if (this.state.last_home_status_id) return;
-    const statuses = await this.fetchHomeTimeline();
+    if (!this.homeTimelineEnabled || this.state.last_home_status_id) return;
+
+    let statuses = [];
+    try {
+      statuses = await this.fetchHomeTimeline();
+    } catch (error) {
+      if (this.isScopeError(error)) {
+        this.disableHomeTimeline('현재 MASTODON_ACCESS_TOKEN에 홈 타임라인 읽기 권한(read:statuses 또는 read)이 없습니다.');
+        return;
+      }
+      console.error(`[마스토돈 봇 경고] 홈 타임라인 초기화 실패: ${error.message}`);
+      return;
+    }
+
     if (!statuses.length) return;
     const newestId = statuses
       .map((item) => String(item.id || '0'))
@@ -495,15 +521,29 @@ class MastodonBot {
         }
       }
 
-      const statuses = await this.fetchHomeTimeline();
-      statuses.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
-      for (const status of statuses) {
+      if (this.homeTimelineEnabled) {
+        let statuses = [];
         try {
-          await this.handleHomeStatus(status);
+          statuses = await this.fetchHomeTimeline();
         } catch (error) {
-          console.error(`[마스토돈 봇 오류] 홈 타임라인 처리 실패: ${error.message}`);
-        } finally {
-          if (status && status.id) this.updateLastHomeStatus(String(status.id));
+          if (this.isScopeError(error)) {
+            this.disableHomeTimeline('현재 MASTODON_ACCESS_TOKEN에 홈 타임라인 읽기 권한(read:statuses 또는 read)이 없습니다.');
+            statuses = [];
+          } else {
+            console.error(`[마스토돈 봇 오류] 홈 타임라인 조회 실패: ${error.message}`);
+            statuses = [];
+          }
+        }
+
+        statuses.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+        for (const status of statuses) {
+          try {
+            await this.handleHomeStatus(status);
+          } catch (error) {
+            console.error(`[마스토돈 봇 오류] 홈 타임라인 처리 실패: ${error.message}`);
+          } finally {
+            if (status && status.id) this.updateLastHomeStatus(String(status.id));
+          }
         }
       }
     } catch (error) {
