@@ -157,7 +157,9 @@ function normalizeAcct(acct) {
 }
 
 function extractMushroomTransferAcct(text) {
-  const normalized = normalizeCommandText(text);
+  const normalized = normalizeCommandText(text)
+    // Mastodon mention HTML can become '@ target' after tag stripping.
+    .replace(/@\s+([a-z0-9_])/gi, '@$1');
   const match = normalized.match(/(?:^|\s)(?:\/\s*버섯\s*양도|버섯\s*양도)\s+@?([a-z0-9_][a-z0-9_.-]*(?:@[a-z0-9.-]+)?)/i);
   return match ? normalizeAcct(match[1]) : '';
 }
@@ -189,6 +191,7 @@ class MastodonBot {
     this.isTicking = false;
     this.homeTimelineEnabled = true;
     this.homeTimelineDisabledLogged = false;
+    this.selfAccount = null;
   }
 
   async apiRequest(method, apiPath, { query, form } = {}) {
@@ -235,6 +238,33 @@ class MastodonBot {
       console.error(`[마스토돈 봇 경고] 홈 타임라인 감지를 끕니다. ${reason} / 멘션 명령어는 계속 작동합니다.`);
       this.homeTimelineDisabledLogged = true;
     }
+  }
+
+  async loadSelfAccount() {
+    if (this.selfAccount) return this.selfAccount;
+    try {
+      const account = await this.apiRequest('GET', '/api/v1/accounts/verify_credentials');
+      if (account && account.id) {
+        this.selfAccount = account;
+        console.log(`[마스토돈 봇 계정 확인] @${account.acct || account.username || account.id}`);
+      }
+    } catch (error) {
+      console.error(`[마스토돈 봇 경고] 봇 계정 확인 실패: ${error.message}`);
+    }
+    return this.selfAccount;
+  }
+
+  isSelfMention(mention) {
+    if (!mention || !this.selfAccount) return false;
+    const selfId = String(this.selfAccount.id || '');
+    const selfAcct = normalizeAcct(this.selfAccount.acct || '');
+    const selfUsername = normalizeAcct(this.selfAccount.username || '');
+    const mentionId = String(mention.id || '');
+    const mentionAcct = normalizeAcct(mention.acct || '');
+    const mentionUsername = normalizeAcct(mention.username || '');
+    return (!!selfId && mentionId === selfId)
+      || (!!selfAcct && mentionAcct === selfAcct)
+      || (!!selfUsername && mentionUsername === selfUsername);
   }
 
   async fetchMentions() {
@@ -340,19 +370,39 @@ class MastodonBot {
     const text = stripHtml(status && status.content ? status.content : '');
     const requestedAcct = extractMushroomTransferAcct(text);
     const mentions = Array.isArray(status && status.mentions) ? status.mentions : [];
+    const actorId = String(actorAccountId || '');
 
-    if (!requestedAcct) return null;
-
-    return mentions.find((mention) => {
+    const usableMentions = mentions.filter((mention) => {
       const mentionId = String(mention && mention.id ? mention.id : '');
-      if (!mentionId || mentionId === String(actorAccountId || '')) return false;
+      if (!mentionId || mentionId === actorId) return false;
+      if (this.isSelfMention(mention)) return false;
+      return true;
+    });
 
-      const acct = normalizeAcct(mention.acct || '');
-      const username = normalizeAcct(mention.username || '');
-      return acct === requestedAcct
-        || username === requestedAcct
-        || acct.split('@')[0] === requestedAcct;
-    }) || null;
+    if (requestedAcct) {
+      const matched = usableMentions.find((mention) => {
+        const acct = normalizeAcct(mention.acct || '');
+        const username = normalizeAcct(mention.username || '');
+        return acct === requestedAcct
+          || username === requestedAcct
+          || acct.split('@')[0] === requestedAcct;
+      });
+      if (matched) return matched;
+    }
+
+    // 멘션 HTML이 특이하게 파싱되어 텍스트에서 아이디를 못 잡아도,
+    // 글에 태그된 대상이 하나뿐이면 그 대상을 양도 대상으로 사용합니다.
+    if (usableMentions.length === 1) return usableMentions[0];
+
+    // 봇 멘션 정보 확인에 실패한 경우를 대비해, 명령어 뒤에 태그된 마지막 멘션을 우선 사용합니다.
+    if (!this.selfAccount && mentions.length >= 2) {
+      const fallback = mentions
+        .filter((mention) => String(mention && mention.id ? mention.id : '') !== actorId)
+        .at(-1);
+      if (fallback) return fallback;
+    }
+
+    return null;
   }
 
   makeDroneSearchReply(accountId) {
@@ -646,6 +696,7 @@ class MastodonBot {
     console.log(`[마스토돈 봇 서버] ${this.config.baseUrl}`);
     console.log(`[마스토돈 봇 확인 주기] ${this.config.pollIntervalSeconds}초`);
 
+    await this.loadSelfAccount();
     await this.initializeLastNotificationId();
     await this.initializeLastHomeStatusId();
     await this.tick();
