@@ -13,6 +13,8 @@ const DATA_DIR = path.join(ROOT_DIR, 'data');
 const STATE_PATH = path.join(DATA_DIR, 'state.json');
 const FORTUNES_PATH = path.join(DATA_DIR, 'fortunes.json');
 const FORTUNE_USAGE_PATH = path.join(DATA_DIR, 'fortune_usage.json');
+const DRONE_USAGE_PATH = path.join(DATA_DIR, 'drone_usage.json');
+const INVENTORY_PATH = path.join(DATA_DIR, 'inventory.json');
 const ENV_PATH = path.join(ROOT_DIR, '.env');
 
 let runningBot = null;
@@ -139,6 +141,8 @@ function loadFortunes() {
 
 function detectCommand(text) {
   const normalized = String(text || '').toLowerCase();
+  if (/(\/\s*드론\s*수색|드론\s*수색)/.test(normalized)) return 'droneSearch';
+  if (/(\/\s*버섯|버섯\s*(먹기|사용))/.test(normalized)) return 'mushroom';
   if (/(오늘\s*의\s*운세|오늘운세|운세)/.test(normalized)) return 'fortune';
   if (/(마법\s*의\s*라디오|마법라디오|y\s*\/\s*n|yes\s*or\s*no|예스\s*노)/.test(normalized)) return 'radio';
   if (/(다이스|dice|주사위)/.test(normalized)) return 'dice';
@@ -154,6 +158,8 @@ class MastodonBot {
     this.config = config;
     this.state = readJson(STATE_PATH, {});
     this.fortuneUsage = readJson(FORTUNE_USAGE_PATH, {});
+    this.droneUsage = readJson(DRONE_USAGE_PATH, {});
+    this.inventory = readJson(INVENTORY_PATH, {});
     this.fortunes = loadFortunes();
     this.timer = null;
     this.isTicking = false;
@@ -241,12 +247,87 @@ class MastodonBot {
     return parts.join('\n');
   }
 
+
+  getInventoryRecord(accountId) {
+    const key = String(accountId || 'unknown');
+    const record = this.inventory[key] && typeof this.inventory[key] === 'object'
+      ? this.inventory[key]
+      : {};
+    record.mushroom = Number.isFinite(Number(record.mushroom)) ? Math.max(0, Math.floor(Number(record.mushroom))) : 0;
+    this.inventory[key] = record;
+    return record;
+  }
+
+  addMushroom(accountId, amount = 1) {
+    const record = this.getInventoryRecord(accountId);
+    record.mushroom += Math.max(0, Math.floor(Number(amount) || 0));
+    writeJson(INVENTORY_PATH, this.inventory);
+    return record.mushroom;
+  }
+
+  consumeMushroom(accountId) {
+    const record = this.getInventoryRecord(accountId);
+    if (record.mushroom <= 0) return { ok: false, remaining: 0 };
+    record.mushroom -= 1;
+    writeJson(INVENTORY_PATH, this.inventory);
+    return { ok: true, remaining: record.mushroom };
+  }
+
+  makeDroneSearchReply(accountId) {
+    const today = todayKey(this.config.timezone);
+    const record = this.droneUsage[accountId];
+    if (record && record.date === today) {
+      return '🛰️ 드론 수색은 하루에 한 번만 가능합니다. 내일 다시 시도해 주세요.';
+    }
+
+    const roll = Math.random();
+    let resultText = '';
+    if (roll < 0.35) {
+      const remaining = this.addMushroom(accountId, 1);
+      resultText = [
+        '🛰️ 드론이 수색을 마치고 복귀했습니다.',
+        '습기 찬 잔해 틈에서 버섯 1개를 발견했습니다.',
+        `🍄 현재 보유 버섯: ${remaining}개`,
+        '/버섯 명령어로 하나를 사용할 수 있습니다.',
+      ].join('\n');
+    } else if (roll < 0.7) {
+      resultText = [
+        '🛰️ 드론이 수색을 마치고 복귀했습니다.',
+        '주변을 훑었지만 쓸 만한 물자는 발견하지 못했습니다.',
+      ].join('\n');
+    } else {
+      resultText = [
+        '🛰️ 드론이 수색을 마치고 복귀했습니다.',
+        '침식 안개가 짙어져 신호가 불안정했습니다. 오늘은 별다른 성과가 없습니다.',
+      ].join('\n');
+    }
+
+    this.droneUsage[accountId] = { date: today };
+    writeJson(DRONE_USAGE_PATH, this.droneUsage);
+    return resultText;
+  }
+
+  makeMushroomReply(accountId) {
+    const consumed = this.consumeMushroom(accountId);
+    if (!consumed.ok) {
+      return '🍄 보유한 버섯이 없습니다. /드론수색으로 버섯을 획득한 뒤 사용할 수 있습니다.';
+    }
+
+    return [
+      '🍄 버섯을 하나 사용했습니다.',
+      '묘하게 씁쓸한 향이 입안에 남습니다.',
+      `남은 버섯: ${consumed.remaining}개`,
+    ].join('\n');
+  }
+
   makeUnknownReply() {
     return [
       '사용 가능한 명령어는 다음과 같습니다.',
       '🎲 다이스: 1~99 랜덤 숫자',
       '🔮 오늘의운세: 계정당 하루 1회',
       '📻 마법의라디오: YES / NO',
+      '🛰️ /드론수색: 계정당 하루 1회 수색',
+      '🍄 /버섯: 보유한 버섯 1개 사용',
     ].join('\n');
   }
 
@@ -277,6 +358,8 @@ class MastodonBot {
     if (command === 'dice') reply = this.makeDiceReply();
     else if (command === 'fortune') reply = this.makeFortuneReply(accountId);
     else if (command === 'radio') reply = this.makeRadioReply();
+    else if (command === 'droneSearch') reply = this.makeDroneSearchReply(accountId);
+    else if (command === 'mushroom') reply = this.makeMushroomReply(accountId);
     else if (this.config.replyOnUnknown) reply = this.makeUnknownReply();
 
     if (reply) {
