@@ -149,10 +149,24 @@ function normalizeCommandText(text) {
     .trim();
 }
 
+function normalizeAcct(acct) {
+  return String(acct || '')
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .trim();
+}
+
+function extractMushroomTransferAcct(text) {
+  const normalized = normalizeCommandText(text);
+  const match = normalized.match(/(?:^|\s)(?:\/\s*버섯\s*양도|버섯\s*양도)\s+@?([a-z0-9_][a-z0-9_.-]*(?:@[a-z0-9.-]+)?)/i);
+  return match ? normalizeAcct(match[1]) : '';
+}
+
 function detectCommand(text) {
   const normalized = normalizeCommandText(text);
   if (/(\/\s*드론\s*수색|드론\s*수색)/.test(normalized)) return 'droneSearch';
-  if (/(\/\s*버섯|버섯\s*(먹기|사용))/.test(normalized)) return 'mushroom';
+  if (/(\/\s*버섯\s*양도|버섯\s*양도)/.test(normalized)) return 'mushroomTransfer';
+  if (/(?:^|\s)(?:\/\s*버섯|버섯\s*(먹기|사용))(?:\s|$)/.test(normalized)) return 'mushroom';
   if (/(오늘\s*의\s*운세|오늘운세|운세)/.test(normalized)) return 'fortune';
   if (/(마법\s*의\s*라디오|마법라디오|y\s*\/\s*n|yes\s*or\s*no|예스\s*노)/.test(normalized)) return 'radio';
   if (/(다이스|dice|주사위)/.test(normalized)) return 'dice';
@@ -304,6 +318,43 @@ class MastodonBot {
     return { ok: true, remaining: record.mushroom };
   }
 
+  transferMushroom(fromAccountId, toAccountId) {
+    const fromRecord = this.getInventoryRecord(fromAccountId);
+    const toRecord = this.getInventoryRecord(toAccountId);
+
+    if (String(fromAccountId || '') === String(toAccountId || '')) {
+      return { ok: false, reason: 'self', remaining: fromRecord.mushroom };
+    }
+
+    if (fromRecord.mushroom <= 0) {
+      return { ok: false, reason: 'empty', remaining: 0 };
+    }
+
+    fromRecord.mushroom -= 1;
+    toRecord.mushroom += 1;
+    writeJson(INVENTORY_PATH, this.inventory);
+    return { ok: true, remaining: fromRecord.mushroom, targetTotal: toRecord.mushroom };
+  }
+
+  findMushroomTransferTarget(status, actorAccountId) {
+    const text = stripHtml(status && status.content ? status.content : '');
+    const requestedAcct = extractMushroomTransferAcct(text);
+    const mentions = Array.isArray(status && status.mentions) ? status.mentions : [];
+
+    if (!requestedAcct) return null;
+
+    return mentions.find((mention) => {
+      const mentionId = String(mention && mention.id ? mention.id : '');
+      if (!mentionId || mentionId === String(actorAccountId || '')) return false;
+
+      const acct = normalizeAcct(mention.acct || '');
+      const username = normalizeAcct(mention.username || '');
+      return acct === requestedAcct
+        || username === requestedAcct
+        || acct.split('@')[0] === requestedAcct;
+    }) || null;
+  }
+
   makeDroneSearchReply(accountId) {
     const today = todayKey(this.config.timezone);
     const record = this.droneUsage[accountId];
@@ -341,8 +392,10 @@ class MastodonBot {
       '[손상된 무전기]를 발견했다.',
     ];
 
-    const resultText = randomChoice(droneSearchResults);
-    if (resultText === '[버섯]을 찾았다.') {
+    const mushroomResultText = '[버섯]을 찾았다.';
+    const nonMushroomResults = droneSearchResults.filter((item) => item !== mushroomResultText);
+    const resultText = Math.random() < 0.6 ? mushroomResultText : randomChoice(nonMushroomResults);
+    if (resultText === mushroomResultText) {
       this.addMushroom(accountId, 1);
     }
 
@@ -357,10 +410,42 @@ class MastodonBot {
       return '🍄 보유한 버섯이 없습니다. /드론수색으로 버섯을 획득한 뒤 사용할 수 있습니다.';
     }
 
+    const mushroomEffects = [
+      '...몸이 서서히 달아오른다. 숨결도 평소보다 뜨겁다. 상태 이상 [흥분] 획득',
+      '...환각이 보인다. 분명 방금 누군가 있었던 것 같은데, 착각이었을까? 상태 이상 [환각] 획득',
+      '...숨이 가빠진다. 주변의 모든 것이 위협적으로 느껴진다. 상태 이상 [불안] 획득',
+      '...무언가를 부수고 싶어진다. 이유 없는 분노가 치민다. 상태 이상 [폭력성] 획득',
+      '...머리가 몽롱하다. 기분이 이상할 정도로 좋아진다. 자꾸만 웃음이 새어 나온다. 상태 이상 [고양] 획득',
+      '...감각이 예민해진다. 멀리서 들리는 작은 소리도 유난히 크게 들린다. 상태 이상 [감각 과민] 획득',
+      '...어쩐지 거짓말을 하기 싫어진다. 마음속 이야기가 자연스럽게 내뱉어진다. 상태 이상 [솔직함] 획득',
+      '...자꾸만 주변을 두리번거리게 된다. 누군가 자신을 지켜보는 것만 같다. 상태 이상 [편집증] 획득',
+      '...사소한 소리에도 움찔하게 된다. 신경이 극도로 곤두서 있다. 상태 이상 [경계] 획득',
+      '...자꾸만 누군가와 이야기하고 싶어진다. 혼자 있는 것이 견디기 어렵다. 상태 이상 [의존] 획득',
+    ];
+
     return [
-      '🍄 버섯을 하나 사용했습니다.',
-      '묘하게 씁쓸한 향이 입안에 남습니다.',
+      randomChoice(mushroomEffects),
       `남은 버섯: ${consumed.remaining}개`,
+    ].join('\n');
+  }
+
+  makeMushroomTransferReply(fromAccountId, status) {
+    const target = this.findMushroomTransferTarget(status, fromAccountId);
+    if (!target || !target.id || !target.acct) {
+      return '🍄 버섯을 양도할 캐릭터 아이디를 태그해 주세요. 예: /버섯양도 @아이디';
+    }
+
+    const transferred = this.transferMushroom(fromAccountId, target.id);
+    if (!transferred.ok && transferred.reason === 'self') {
+      return '🍄 자기 자신에게는 버섯을 양도할 수 없습니다.';
+    }
+    if (!transferred.ok) {
+      return '🍄 보유한 버섯이 없습니다. /드론수색으로 버섯을 획득한 뒤 양도할 수 있습니다.';
+    }
+
+    return [
+      `🍄 @${target.acct} 님에게 버섯 1개를 양도했습니다.`,
+      `남은 버섯: ${transferred.remaining}개`,
     ].join('\n');
   }
 
@@ -372,6 +457,7 @@ class MastodonBot {
       '📻 마법의라디오: YES / NO',
       '🛰️ /드론수색: 계정당 하루 1회 수색',
       '🍄 /버섯: 보유한 버섯 1개 사용',
+      '🍄 /버섯양도 @아이디: 보유한 버섯 1개 양도',
     ].join('\n');
   }
 
@@ -391,7 +477,7 @@ class MastodonBot {
 
   isExplicitSlashCommand(text) {
     const normalized = normalizeCommandText(text);
-    return /(^|\s)\/\s*(드론\s*수색|버섯)(\s|$)/.test(normalized);
+    return /(^|\s)\/\s*(드론\s*수색|버섯|버섯\s*양도)(\s|$)/.test(normalized);
   }
 
   markStatusProcessed(statusId) {
@@ -428,6 +514,7 @@ class MastodonBot {
     else if (command === 'fortune') reply = this.makeFortuneReply(accountId);
     else if (command === 'radio') reply = this.makeRadioReply();
     else if (command === 'droneSearch') reply = this.makeDroneSearchReply(accountId);
+    else if (command === 'mushroomTransfer') reply = this.makeMushroomTransferReply(accountId, status);
     else if (command === 'mushroom') reply = this.makeMushroomReply(accountId);
     else if (this.config.replyOnUnknown) reply = this.makeUnknownReply();
 
@@ -460,6 +547,7 @@ class MastodonBot {
     let reply = '';
 
     if (command === 'droneSearch') reply = this.makeDroneSearchReply(accountId);
+    else if (command === 'mushroomTransfer') reply = this.makeMushroomTransferReply(accountId, status);
     else if (command === 'mushroom') reply = this.makeMushroomReply(accountId);
 
     if (reply) {
@@ -490,7 +578,7 @@ class MastodonBot {
       .sort((a, b) => Number(b) - Number(a))[0];
     this.state.last_home_status_id = newestId;
     writeJson(STATE_PATH, this.state);
-    console.log('[마스토돈 봇 초기화] 기존 홈 타임라인 글은 건너뛰고, 새 /드론수색·/버섯 글부터 응답합니다.');
+    console.log('[마스토돈 봇 초기화] 기존 홈 타임라인 글은 건너뛰고, 새 /드론수색·/버섯·/버섯양도 글부터 응답합니다.');
   }
 
   async initializeLastNotificationId() {
