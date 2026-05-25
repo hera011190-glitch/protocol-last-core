@@ -139,8 +139,18 @@ function loadFortunes() {
   return fortunes;
 }
 
+function normalizeCommandText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
+    .replace(/／/g, '/')
+    .replace(/ /g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function detectCommand(text) {
-  const normalized = String(text || '').toLowerCase();
+  const normalized = normalizeCommandText(text);
   if (/(\/\s*드론\s*수색|드론\s*수색)/.test(normalized)) return 'droneSearch';
   if (/(\/\s*버섯|버섯\s*(먹기|사용))/.test(normalized)) return 'mushroom';
   if (/(오늘\s*의\s*운세|오늘운세|운세)/.test(normalized)) return 'fortune';
@@ -204,6 +214,13 @@ class MastodonBot {
     if (this.state.last_notification_id) query.since_id = String(this.state.last_notification_id);
     const mentions = await this.apiRequest('GET', '/api/v1/notifications', { query });
     return Array.isArray(mentions) ? mentions : [];
+  }
+
+  async fetchHomeTimeline() {
+    const query = { limit: 40 };
+    if (this.state.last_home_status_id) query.since_id = String(this.state.last_home_status_id);
+    const statuses = await this.apiRequest('GET', '/api/v1/timelines/home', { query });
+    return Array.isArray(statuses) ? statuses : [];
   }
 
   async postReply(statusId, acct, message) {
@@ -280,26 +297,39 @@ class MastodonBot {
       return '🛰️ 드론 수색은 하루에 한 번만 가능합니다. 내일 다시 시도해 주세요.';
     }
 
-    const roll = Math.random();
-    let resultText = '';
-    if (roll < 0.35) {
-      const remaining = this.addMushroom(accountId, 1);
-      resultText = [
-        '🛰️ 드론이 수색을 마치고 복귀했습니다.',
-        '습기 찬 잔해 틈에서 버섯 1개를 발견했습니다.',
-        `🍄 현재 보유 버섯: ${remaining}개`,
-        '/버섯 명령어로 하나를 사용할 수 있습니다.',
-      ].join('\n');
-    } else if (roll < 0.7) {
-      resultText = [
-        '🛰️ 드론이 수색을 마치고 복귀했습니다.',
-        '주변을 훑었지만 쓸 만한 물자는 발견하지 못했습니다.',
-      ].join('\n');
-    } else {
-      resultText = [
-        '🛰️ 드론이 수색을 마치고 복귀했습니다.',
-        '침식 안개가 짙어져 신호가 불안정했습니다. 오늘은 별다른 성과가 없습니다.',
-      ].join('\n');
+    const droneSearchResults = [
+      '[부숴진 드론의 잔해]를 찾았다.',
+      '[버섯]을 찾았다.',
+      '[밧줄]을 찾았다.',
+      '[버려진 양말]을 찾았다.',
+      '[청테이프]를 찾았다.',
+      '[빈 물병]을 찾았다.',
+      '[건전지]를 찾았다.',
+      '[콜라]를 찾았다.',
+      '[낡은 손전등]을 찾았다.',
+      '[과자 봉지]를 찾았다.',
+      '[콘돔]을 찾았다.',
+      '[책]을 찾았다.',
+      '[낚싯줄]을 찾았다.',
+      '[선글라스]를 찾았다.',
+      '[부숴진 드론의 프로펠러]를 찾았다.',
+      '[부숴진 드론의 카메라 모듈]을 찾았다.',
+      '[러브레터]를 찾았다.',
+      '[코인]을 찾았다.',
+      '[곰팡이 핀 빵]을 찾았다.',
+      '[아무것도 찾지 못했다.]',
+      '[수상한 소리]를 들었다.',
+      '[수상한 발자국]을 발견했다.',
+      '[정체불명의 점액]을 발견했다.',
+      '[이비스트의 흔적]을 발견했다.',
+      '[피 묻은 천 조각]을 발견했다.',
+      '[누군가의 학생증]을 발견했다.',
+      '[손상된 무전기]를 발견했다.',
+    ];
+
+    const resultText = randomChoice(droneSearchResults);
+    if (resultText === '[버섯]을 찾았다.') {
+      this.addMushroom(accountId, 1);
     }
 
     this.droneUsage[accountId] = { date: today };
@@ -338,6 +368,31 @@ class MastodonBot {
     writeJson(STATE_PATH, this.state);
   }
 
+  updateLastHomeStatus(statusId) {
+    const current = Number(this.state.last_home_status_id || 0);
+    const next = Number(statusId || 0);
+    if (Number.isFinite(next) && next > current) this.state.last_home_status_id = String(statusId);
+    writeJson(STATE_PATH, this.state);
+  }
+
+  isExplicitSlashCommand(text) {
+    const normalized = normalizeCommandText(text);
+    return /(^|\s)\/\s*(드론\s*수색|버섯)(\s|$)/.test(normalized);
+  }
+
+  markStatusProcessed(statusId) {
+    const processedStatuses = new Set((this.state.processed_status_ids || []).map(String));
+    processedStatuses.add(String(statusId));
+    this.state.processed_status_ids = Array.from(processedStatuses)
+      .sort((a, b) => Number(a) - Number(b))
+      .slice(-500);
+    writeJson(STATE_PATH, this.state);
+  }
+
+  hasProcessedStatus(statusId) {
+    return new Set((this.state.processed_status_ids || []).map(String)).has(String(statusId));
+  }
+
   async handleMention(notification) {
     const notificationId = String(notification.id || '');
     const status = notification.status || {};
@@ -349,7 +404,7 @@ class MastodonBot {
     if (!notificationId || !statusId || !accountId || !acct) return;
 
     const processed = new Set((this.state.processed_notification_ids || []).map(String));
-    if (processed.has(notificationId)) return;
+    if (processed.has(notificationId) || this.hasProcessedStatus(statusId)) return;
 
     const text = stripHtml(status.content || '');
     const command = detectCommand(text);
@@ -371,7 +426,45 @@ class MastodonBot {
     this.state.processed_notification_ids = Array.from(processed)
       .sort((a, b) => Number(a) - Number(b))
       .slice(-300);
+    this.markStatusProcessed(statusId);
     this.updateLastNotification(notificationId);
+  }
+
+  async handleHomeStatus(status) {
+    const statusId = String(status.id || '');
+    const account = status.account || {};
+    const accountId = String(account.id || '');
+    const acct = String(account.acct || '').trim();
+
+    if (!statusId || !accountId || !acct) return;
+    if (this.hasProcessedStatus(statusId)) return;
+
+    const text = stripHtml(status.content || '');
+    if (!this.isExplicitSlashCommand(text)) return;
+
+    const command = detectCommand(text);
+    let reply = '';
+
+    if (command === 'droneSearch') reply = this.makeDroneSearchReply(accountId);
+    else if (command === 'mushroom') reply = this.makeMushroomReply(accountId);
+
+    if (reply) {
+      await this.postReply(statusId, acct, reply);
+      this.markStatusProcessed(statusId);
+      console.log(`[마스토돈 봇 응답 완료] @${acct} / home / ${command}`);
+    }
+  }
+
+  async initializeLastHomeStatusId() {
+    if (this.state.last_home_status_id) return;
+    const statuses = await this.fetchHomeTimeline();
+    if (!statuses.length) return;
+    const newestId = statuses
+      .map((item) => String(item.id || '0'))
+      .sort((a, b) => Number(b) - Number(a))[0];
+    this.state.last_home_status_id = newestId;
+    writeJson(STATE_PATH, this.state);
+    console.log('[마스토돈 봇 초기화] 기존 홈 타임라인 글은 건너뛰고, 새 /드론수색·/버섯 글부터 응답합니다.');
   }
 
   async initializeLastNotificationId() {
@@ -401,6 +494,18 @@ class MastodonBot {
           if (notification && notification.id) this.updateLastNotification(String(notification.id));
         }
       }
+
+      const statuses = await this.fetchHomeTimeline();
+      statuses.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+      for (const status of statuses) {
+        try {
+          await this.handleHomeStatus(status);
+        } catch (error) {
+          console.error(`[마스토돈 봇 오류] 홈 타임라인 처리 실패: ${error.message}`);
+        } finally {
+          if (status && status.id) this.updateLastHomeStatus(String(status.id));
+        }
+      }
     } catch (error) {
       console.error(`[마스토돈 봇 오류] ${error.message}`);
     } finally {
@@ -414,6 +519,7 @@ class MastodonBot {
     console.log(`[마스토돈 봇 확인 주기] ${this.config.pollIntervalSeconds}초`);
 
     await this.initializeLastNotificationId();
+    await this.initializeLastHomeStatusId();
     await this.tick();
     this.timer = setInterval(() => this.tick(), this.config.pollIntervalSeconds * 1000);
     return this;
