@@ -15,6 +15,7 @@ const FORTUNES_PATH = path.join(DATA_DIR, 'fortunes.json');
 const FORTUNE_USAGE_PATH = path.join(DATA_DIR, 'fortune_usage.json');
 const DRONE_USAGE_PATH = path.join(DATA_DIR, 'drone_usage.json');
 const INVENTORY_PATH = path.join(DATA_DIR, 'inventory.json');
+const DRONE_USAGE_RESET_VERSION = '2026-05-27-mushroom-effects-6';
 const ENV_PATH = path.join(ROOT_DIR, '.env');
 
 let runningBot = null;
@@ -186,12 +187,22 @@ class MastodonBot {
     this.fortuneUsage = readJson(FORTUNE_USAGE_PATH, {});
     this.droneUsage = readJson(DRONE_USAGE_PATH, {});
     this.inventory = readJson(INVENTORY_PATH, {});
+    this.applyDroneUsageReset();
     this.fortunes = loadFortunes();
     this.timer = null;
     this.isTicking = false;
     this.homeTimelineEnabled = true;
     this.homeTimelineDisabledLogged = false;
     this.selfAccount = null;
+  }
+
+  applyDroneUsageReset() {
+    if (this.state.drone_usage_reset_version === DRONE_USAGE_RESET_VERSION) return;
+    this.droneUsage = {};
+    this.state.drone_usage_reset_version = DRONE_USAGE_RESET_VERSION;
+    writeJson(DRONE_USAGE_PATH, this.droneUsage);
+    writeJson(STATE_PATH, this.state);
+    console.log('[마스토돈 봇] 드론수색 일일 사용 기록을 초기화했습니다.');
   }
 
   async apiRequest(method, apiPath, { query, form } = {}) {
