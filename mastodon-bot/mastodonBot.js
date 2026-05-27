@@ -13,9 +13,6 @@ const DATA_DIR = path.join(ROOT_DIR, 'data');
 const STATE_PATH = path.join(DATA_DIR, 'state.json');
 const FORTUNES_PATH = path.join(DATA_DIR, 'fortunes.json');
 const FORTUNE_USAGE_PATH = path.join(DATA_DIR, 'fortune_usage.json');
-const DRONE_USAGE_PATH = path.join(DATA_DIR, 'drone_usage.json');
-const INVENTORY_PATH = path.join(DATA_DIR, 'inventory.json');
-const DRONE_USAGE_RESET_VERSION = '2026-05-27-mushroom-effects-6';
 const ENV_PATH = path.join(ROOT_DIR, '.env');
 
 let runningBot = null;
@@ -150,26 +147,8 @@ function normalizeCommandText(text) {
     .trim();
 }
 
-function normalizeAcct(acct) {
-  return String(acct || '')
-    .toLowerCase()
-    .replace(/^@+/, '')
-    .trim();
-}
-
-function extractMushroomTransferAcct(text) {
-  const normalized = normalizeCommandText(text)
-    // Mastodon mention HTML can become '@ target' after tag stripping.
-    .replace(/@\s+([a-z0-9_])/gi, '@$1');
-  const match = normalized.match(/(?:^|\s)(?:\/\s*버섯\s*양도|버섯\s*양도)\s+@?([a-z0-9_][a-z0-9_.-]*(?:@[a-z0-9.-]+)?)/i);
-  return match ? normalizeAcct(match[1]) : '';
-}
-
 function detectCommand(text) {
   const normalized = normalizeCommandText(text);
-  if (/(\/\s*드론\s*수색|드론\s*수색)/.test(normalized)) return 'droneSearch';
-  if (/(\/\s*버섯\s*양도|버섯\s*양도)/.test(normalized)) return 'mushroomTransfer';
-  if (/(?:^|\s)(?:\/\s*버섯|버섯\s*(먹기|사용))(?:\s|$)/.test(normalized)) return 'mushroom';
   if (/(오늘\s*의\s*운세|오늘운세|운세)/.test(normalized)) return 'fortune';
   if (/(마법\s*의\s*라디오|마법라디오|y\s*\/\s*n|yes\s*or\s*no|예스\s*노)/.test(normalized)) return 'radio';
   if (/(다이스|dice|주사위)/.test(normalized)) return 'dice';
@@ -185,24 +164,9 @@ class MastodonBot {
     this.config = config;
     this.state = readJson(STATE_PATH, {});
     this.fortuneUsage = readJson(FORTUNE_USAGE_PATH, {});
-    this.droneUsage = readJson(DRONE_USAGE_PATH, {});
-    this.inventory = readJson(INVENTORY_PATH, {});
-    this.applyDroneUsageReset();
     this.fortunes = loadFortunes();
     this.timer = null;
     this.isTicking = false;
-    this.homeTimelineEnabled = true;
-    this.homeTimelineDisabledLogged = false;
-    this.selfAccount = null;
-  }
-
-  applyDroneUsageReset() {
-    if (this.state.drone_usage_reset_version === DRONE_USAGE_RESET_VERSION) return;
-    this.droneUsage = {};
-    this.state.drone_usage_reset_version = DRONE_USAGE_RESET_VERSION;
-    writeJson(DRONE_USAGE_PATH, this.droneUsage);
-    writeJson(STATE_PATH, this.state);
-    console.log('[마스토돈 봇] 드론수색 일일 사용 기록을 초기화했습니다.');
   }
 
   async apiRequest(method, apiPath, { query, form } = {}) {
@@ -239,57 +203,11 @@ class MastodonBot {
     return JSON.parse(text);
   }
 
-  isScopeError(error) {
-    return /API 오류 403|authorized scopes/i.test(String(error && error.message ? error.message : error));
-  }
-
-  disableHomeTimeline(reason) {
-    this.homeTimelineEnabled = false;
-    if (!this.homeTimelineDisabledLogged) {
-      console.error(`[마스토돈 봇 경고] 홈 타임라인 감지를 끕니다. ${reason} / 멘션 명령어는 계속 작동합니다.`);
-      this.homeTimelineDisabledLogged = true;
-    }
-  }
-
-  async loadSelfAccount() {
-    if (this.selfAccount) return this.selfAccount;
-    try {
-      const account = await this.apiRequest('GET', '/api/v1/accounts/verify_credentials');
-      if (account && account.id) {
-        this.selfAccount = account;
-        console.log(`[마스토돈 봇 계정 확인] @${account.acct || account.username || account.id}`);
-      }
-    } catch (error) {
-      console.error(`[마스토돈 봇 경고] 봇 계정 확인 실패: ${error.message}`);
-    }
-    return this.selfAccount;
-  }
-
-  isSelfMention(mention) {
-    if (!mention || !this.selfAccount) return false;
-    const selfId = String(this.selfAccount.id || '');
-    const selfAcct = normalizeAcct(this.selfAccount.acct || '');
-    const selfUsername = normalizeAcct(this.selfAccount.username || '');
-    const mentionId = String(mention.id || '');
-    const mentionAcct = normalizeAcct(mention.acct || '');
-    const mentionUsername = normalizeAcct(mention.username || '');
-    return (!!selfId && mentionId === selfId)
-      || (!!selfAcct && mentionAcct === selfAcct)
-      || (!!selfUsername && mentionUsername === selfUsername);
-  }
-
   async fetchMentions() {
     const query = { limit: 40, 'types[]': ['mention'] };
     if (this.state.last_notification_id) query.since_id = String(this.state.last_notification_id);
     const mentions = await this.apiRequest('GET', '/api/v1/notifications', { query });
     return Array.isArray(mentions) ? mentions : [];
-  }
-
-  async fetchHomeTimeline() {
-    const query = { limit: 40 };
-    if (this.state.last_home_status_id) query.since_id = String(this.state.last_home_status_id);
-    const statuses = await this.apiRequest('GET', '/api/v1/timelines/home', { query });
-    return Array.isArray(statuses) ? statuses : [];
   }
 
   async postReply(statusId, acct, message) {
@@ -333,188 +251,12 @@ class MastodonBot {
     return parts.join('\n');
   }
 
-
-  getInventoryRecord(accountId) {
-    const key = String(accountId || 'unknown');
-    const record = this.inventory[key] && typeof this.inventory[key] === 'object'
-      ? this.inventory[key]
-      : {};
-    record.mushroom = Number.isFinite(Number(record.mushroom)) ? Math.max(0, Math.floor(Number(record.mushroom))) : 0;
-    this.inventory[key] = record;
-    return record;
-  }
-
-  addMushroom(accountId, amount = 1) {
-    const record = this.getInventoryRecord(accountId);
-    record.mushroom += Math.max(0, Math.floor(Number(amount) || 0));
-    writeJson(INVENTORY_PATH, this.inventory);
-    return record.mushroom;
-  }
-
-  consumeMushroom(accountId) {
-    const record = this.getInventoryRecord(accountId);
-    if (record.mushroom <= 0) return { ok: false, remaining: 0 };
-    record.mushroom -= 1;
-    writeJson(INVENTORY_PATH, this.inventory);
-    return { ok: true, remaining: record.mushroom };
-  }
-
-  transferMushroom(fromAccountId, toAccountId) {
-    const fromRecord = this.getInventoryRecord(fromAccountId);
-    const toRecord = this.getInventoryRecord(toAccountId);
-
-    if (String(fromAccountId || '') === String(toAccountId || '')) {
-      return { ok: false, reason: 'self', remaining: fromRecord.mushroom };
-    }
-
-    if (fromRecord.mushroom <= 0) {
-      return { ok: false, reason: 'empty', remaining: 0 };
-    }
-
-    fromRecord.mushroom -= 1;
-    toRecord.mushroom += 1;
-    writeJson(INVENTORY_PATH, this.inventory);
-    return { ok: true, remaining: fromRecord.mushroom, targetTotal: toRecord.mushroom };
-  }
-
-  findMushroomTransferTarget(status, actorAccountId) {
-    const text = stripHtml(status && status.content ? status.content : '');
-    const requestedAcct = extractMushroomTransferAcct(text);
-    const mentions = Array.isArray(status && status.mentions) ? status.mentions : [];
-    const actorId = String(actorAccountId || '');
-
-    const usableMentions = mentions.filter((mention) => {
-      const mentionId = String(mention && mention.id ? mention.id : '');
-      if (!mentionId || mentionId === actorId) return false;
-      if (this.isSelfMention(mention)) return false;
-      return true;
-    });
-
-    if (requestedAcct) {
-      const matched = usableMentions.find((mention) => {
-        const acct = normalizeAcct(mention.acct || '');
-        const username = normalizeAcct(mention.username || '');
-        return acct === requestedAcct
-          || username === requestedAcct
-          || acct.split('@')[0] === requestedAcct;
-      });
-      if (matched) return matched;
-    }
-
-    // 멘션 HTML이 특이하게 파싱되어 텍스트에서 아이디를 못 잡아도,
-    // 글에 태그된 대상이 하나뿐이면 그 대상을 양도 대상으로 사용합니다.
-    if (usableMentions.length === 1) return usableMentions[0];
-
-    // 봇 멘션 정보 확인에 실패한 경우를 대비해, 명령어 뒤에 태그된 마지막 멘션을 우선 사용합니다.
-    if (!this.selfAccount && mentions.length >= 2) {
-      const fallback = mentions
-        .filter((mention) => String(mention && mention.id ? mention.id : '') !== actorId)
-        .at(-1);
-      if (fallback) return fallback;
-    }
-
-    return null;
-  }
-
-  makeDroneSearchReply(accountId) {
-    const today = todayKey(this.config.timezone);
-    const record = this.droneUsage[accountId];
-    if (record && record.date === today) {
-      return '🛰️ 드론 수색은 하루에 한 번만 가능합니다. 내일 다시 시도해 주세요.';
-    }
-
-    const droneSearchResults = [
-      '[부숴진 드론의 잔해]를 찾았다.',
-      '[버섯]을 찾았다.',
-      '[밧줄]을 찾았다.',
-      '[버려진 양말]을 찾았다.',
-      '[청테이프]를 찾았다.',
-      '[빈 물병]을 찾았다.',
-      '[건전지]를 찾았다.',
-      '[콜라]를 찾았다.',
-      '[낡은 손전등]을 찾았다.',
-      '[과자 봉지]를 찾았다.',
-      '[콘돔]을 찾았다.',
-      '[책]을 찾았다.',
-      '[낚싯줄]을 찾았다.',
-      '[선글라스]를 찾았다.',
-      '[부숴진 드론의 프로펠러]를 찾았다.',
-      '[부숴진 드론의 카메라 모듈]을 찾았다.',
-      '[러브레터]를 찾았다.',
-      '[코인]을 찾았다.',
-      '[곰팡이 핀 빵]을 찾았다.',
-      '[아무것도 찾지 못했다.]',
-      '[수상한 소리]를 들었다.',
-      '[수상한 발자국]을 발견했다.',
-      '[정체불명의 점액]을 발견했다.',
-      '[이비스트의 흔적]을 발견했다.',
-      '[피 묻은 천 조각]을 발견했다.',
-      '[누군가의 학생증]을 발견했다.',
-      '[손상된 무전기]를 발견했다.',
-    ];
-
-    const mushroomResultText = '[버섯]을 찾았다.';
-    const nonMushroomResults = droneSearchResults.filter((item) => item !== mushroomResultText);
-    const resultText = Math.random() < 0.6 ? mushroomResultText : randomChoice(nonMushroomResults);
-    if (resultText === mushroomResultText) {
-      this.addMushroom(accountId, 1);
-    }
-
-    this.droneUsage[accountId] = { date: today };
-    writeJson(DRONE_USAGE_PATH, this.droneUsage);
-    return resultText;
-  }
-
-  makeMushroomReply(accountId) {
-    const consumed = this.consumeMushroom(accountId);
-    if (!consumed.ok) {
-      return '🍄 보유한 버섯이 없습니다. /드론수색으로 버섯을 획득한 뒤 사용할 수 있습니다.';
-    }
-
-    const mushroomEffects = [
-      '...몸이 서서히 달아오른다. 숨결도 평소보다 뜨겁다. 상태 이상 [흥분] 획득',
-      '...무언가를 부수고 싶어진다. 이유 없는 분노가 치민다. 상태 이상 [폭력성] 획득',
-      '...머리가 몽롱하다. 기분이 이상할 정도로 좋아진다. 자꾸만 웃음이 새어 나온다. 상태 이상 [고양] 획득',
-      '...감각이 예민해진다. 멀리서 들리는 작은 소리도 유난히 크게 들린다. 상태 이상 [감각 과민] 획득',
-      '...어쩐지 거짓말을 하기 싫어진다. 마음속 이야기가 자연스럽게 내뱉어진다. 상태 이상 [솔직함] 획득',
-      '...자꾸만 누군가와 이야기하고 싶어진다. 혼자 있는 것이 견디기 어렵다. 상태 이상 [의존] 획득',
-    ];
-
-    return [
-      randomChoice(mushroomEffects),
-      `남은 버섯: ${consumed.remaining}개`,
-    ].join('\n');
-  }
-
-  makeMushroomTransferReply(fromAccountId, status) {
-    const target = this.findMushroomTransferTarget(status, fromAccountId);
-    if (!target || !target.id || !target.acct) {
-      return '🍄 버섯을 양도할 캐릭터 아이디를 태그해 주세요. 예: /버섯양도 @아이디';
-    }
-
-    const transferred = this.transferMushroom(fromAccountId, target.id);
-    if (!transferred.ok && transferred.reason === 'self') {
-      return '🍄 자기 자신에게는 버섯을 양도할 수 없습니다.';
-    }
-    if (!transferred.ok) {
-      return '🍄 보유한 버섯이 없습니다. /드론수색으로 버섯을 획득한 뒤 양도할 수 있습니다.';
-    }
-
-    return [
-      `🍄 @${target.acct} 님에게 버섯 1개를 양도했습니다.`,
-      `남은 버섯: ${transferred.remaining}개`,
-    ].join('\n');
-  }
-
   makeUnknownReply() {
     return [
       '사용 가능한 명령어는 다음과 같습니다.',
       '🎲 다이스: 1~99 랜덤 숫자',
       '🔮 오늘의운세: 계정당 하루 1회',
       '📻 마법의라디오: YES / NO',
-      '🛰️ /드론수색: 계정당 하루 1회 수색',
-      '🍄 /버섯: 보유한 버섯 1개 사용',
-      '🍄 /버섯양도 @아이디: 보유한 버섯 1개 양도',
     ].join('\n');
   }
 
@@ -523,18 +265,6 @@ class MastodonBot {
     const next = Number(notificationId || 0);
     if (Number.isFinite(next) && next > current) this.state.last_notification_id = String(notificationId);
     writeJson(STATE_PATH, this.state);
-  }
-
-  updateLastHomeStatus(statusId) {
-    const current = Number(this.state.last_home_status_id || 0);
-    const next = Number(statusId || 0);
-    if (Number.isFinite(next) && next > current) this.state.last_home_status_id = String(statusId);
-    writeJson(STATE_PATH, this.state);
-  }
-
-  isExplicitSlashCommand(text) {
-    const normalized = normalizeCommandText(text);
-    return /(^|\s)\/\s*(드론\s*수색|버섯|버섯\s*양도)(\s|$)/.test(normalized);
   }
 
   markStatusProcessed(statusId) {
@@ -570,9 +300,6 @@ class MastodonBot {
     if (command === 'dice') reply = this.makeDiceReply();
     else if (command === 'fortune') reply = this.makeFortuneReply(accountId);
     else if (command === 'radio') reply = this.makeRadioReply();
-    else if (command === 'droneSearch') reply = this.makeDroneSearchReply(accountId);
-    else if (command === 'mushroomTransfer') reply = this.makeMushroomTransferReply(accountId, status);
-    else if (command === 'mushroom') reply = this.makeMushroomReply(accountId);
     else if (this.config.replyOnUnknown) reply = this.makeUnknownReply();
 
     if (reply) {
@@ -586,56 +313,6 @@ class MastodonBot {
       .slice(-300);
     this.markStatusProcessed(statusId);
     this.updateLastNotification(notificationId);
-  }
-
-  async handleHomeStatus(status) {
-    const statusId = String(status.id || '');
-    const account = status.account || {};
-    const accountId = String(account.id || '');
-    const acct = String(account.acct || '').trim();
-
-    if (!statusId || !accountId || !acct) return;
-    if (this.hasProcessedStatus(statusId)) return;
-
-    const text = stripHtml(status.content || '');
-    if (!this.isExplicitSlashCommand(text)) return;
-
-    const command = detectCommand(text);
-    let reply = '';
-
-    if (command === 'droneSearch') reply = this.makeDroneSearchReply(accountId);
-    else if (command === 'mushroomTransfer') reply = this.makeMushroomTransferReply(accountId, status);
-    else if (command === 'mushroom') reply = this.makeMushroomReply(accountId);
-
-    if (reply) {
-      await this.postReply(statusId, acct, reply);
-      this.markStatusProcessed(statusId);
-      console.log(`[마스토돈 봇 응답 완료] @${acct} / home / ${command}`);
-    }
-  }
-
-  async initializeLastHomeStatusId() {
-    if (!this.homeTimelineEnabled || this.state.last_home_status_id) return;
-
-    let statuses = [];
-    try {
-      statuses = await this.fetchHomeTimeline();
-    } catch (error) {
-      if (this.isScopeError(error)) {
-        this.disableHomeTimeline('현재 MASTODON_ACCESS_TOKEN에 홈 타임라인 읽기 권한(read:statuses 또는 read)이 없습니다.');
-        return;
-      }
-      console.error(`[마스토돈 봇 경고] 홈 타임라인 초기화 실패: ${error.message}`);
-      return;
-    }
-
-    if (!statuses.length) return;
-    const newestId = statuses
-      .map((item) => String(item.id || '0'))
-      .sort((a, b) => Number(b) - Number(a))[0];
-    this.state.last_home_status_id = newestId;
-    writeJson(STATE_PATH, this.state);
-    console.log('[마스토돈 봇 초기화] 기존 홈 타임라인 글은 건너뛰고, 새 /드론수색·/버섯·/버섯양도 글부터 응답합니다.');
   }
 
   async initializeLastNotificationId() {
@@ -665,32 +342,6 @@ class MastodonBot {
           if (notification && notification.id) this.updateLastNotification(String(notification.id));
         }
       }
-
-      if (this.homeTimelineEnabled) {
-        let statuses = [];
-        try {
-          statuses = await this.fetchHomeTimeline();
-        } catch (error) {
-          if (this.isScopeError(error)) {
-            this.disableHomeTimeline('현재 MASTODON_ACCESS_TOKEN에 홈 타임라인 읽기 권한(read:statuses 또는 read)이 없습니다.');
-            statuses = [];
-          } else {
-            console.error(`[마스토돈 봇 오류] 홈 타임라인 조회 실패: ${error.message}`);
-            statuses = [];
-          }
-        }
-
-        statuses.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
-        for (const status of statuses) {
-          try {
-            await this.handleHomeStatus(status);
-          } catch (error) {
-            console.error(`[마스토돈 봇 오류] 홈 타임라인 처리 실패: ${error.message}`);
-          } finally {
-            if (status && status.id) this.updateLastHomeStatus(String(status.id));
-          }
-        }
-      }
     } catch (error) {
       console.error(`[마스토돈 봇 오류] ${error.message}`);
     } finally {
@@ -703,9 +354,7 @@ class MastodonBot {
     console.log(`[마스토돈 봇 서버] ${this.config.baseUrl}`);
     console.log(`[마스토돈 봇 확인 주기] ${this.config.pollIntervalSeconds}초`);
 
-    await this.loadSelfAccount();
     await this.initializeLastNotificationId();
-    await this.initializeLastHomeStatusId();
     await this.tick();
     this.timer = setInterval(() => this.tick(), this.config.pollIntervalSeconds * 1000);
     return this;

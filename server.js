@@ -3277,10 +3277,11 @@ function applyNodeEntryEffects(item, node) {
     const until = Date.now() + Number(node.onEnterMuteMinutes || 0) * 60 * 1000;
     participants.forEach((participant) => {
       const state = states[participant.name];
-      if (!state) return;
+      if (!state || Number(state.hp || 0) <= 0) return;
       state.mutedUntil = until;
+      setParticipantActionLock(state, until);
     });
-    addSharedLog(item, `[디버프] ${node.name} 진입 효과로 ${Number(node.onEnterMuteMinutes || 0)}분간 채팅 불가.`);
+    addSharedLog(item, `[디버프] ${node.name} 진입 효과로 ${Number(node.onEnterMuteMinutes || 0)}분간 기절 상태가 됩니다.`);
   }
   if (node?.npcScene?.lines?.length && !hasCompletedNpcScene(item, item.currentNodeId)) {
     item.activeNpcScene = node.npcScene;
@@ -3359,10 +3360,11 @@ function applyActionRewards(item, result, locationName) {
     const until = Date.now() + Number(result.muteMinutes) * 60 * 1000;
     (item.participants || []).forEach((participant) => {
       const state = item.participantStates?.[participant.name];
-      if (!state) return;
+      if (!state || Number(state.hp || 0) <= 0) return;
       state.mutedUntil = until;
+      setParticipantActionLock(state, until);
     });
-    textParts.push(`${result.muteMinutes}분간 채팅 금지`);
+    textParts.push(`${result.muteMinutes}분간 기절`);
     changed = true;
   }
 
@@ -3404,6 +3406,37 @@ function normalizeFaintedParticipantState(state) {
     state.status = "기절 상태";
     state.defending = false;
   }
+}
+
+function setParticipantActionLock(state, until) {
+  if (!state || !Number.isFinite(Number(until)) || Number(until) <= Date.now()) return;
+  state.actionLockedUntil = Math.max(Number(state.actionLockedUntil || 0), Number(until));
+  state.stunnedUntil = Math.max(Number(state.stunnedUntil || 0), Number(until));
+  state.defending = false;
+}
+
+function getParticipantActionLockUntil(state) {
+  if (!state || Number(state.hp || 0) <= 0) return 0;
+  return Math.max(Number(state.actionLockedUntil || 0), Number(state.stunnedUntil || 0));
+}
+
+function getInvestigationActionLockInfo(item) {
+  const now = Date.now();
+  const participants = Array.isArray(item?.participants) ? item.participants : [];
+  const states = item?.participantStates || {};
+  const until = participants.reduce((maxUntil, participant) => {
+    if (!isInvestigationPlayableParticipant(participant)) return maxUntil;
+    const state = states?.[participant.name];
+    const lockedUntil = getParticipantActionLockUntil(state);
+    return lockedUntil > now ? Math.max(maxUntil, lockedUntil) : maxUntil;
+  }, 0);
+  return { locked: until > now, until, remainingSeconds: until > now ? Math.ceil((until - now) / 1000) : 0 };
+}
+
+function getActionLockMessage(lockInfo) {
+  const seconds = Math.max(0, Number(lockInfo?.remainingSeconds || 0));
+  const minuteText = seconds >= 60 ? `${Math.ceil(seconds / 60)}분` : `${seconds}초`;
+  return `현재 기절 상태입니다. ${minuteText} 후 행동할 수 있습니다.`;
 }
 
 function normalizeFaintedParticipantStates(item) {
@@ -5207,6 +5240,8 @@ app.post("/moveInvestigation", (req, res) => {
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 이동할 수 있습니다." });
   const currentNode = item.data?.nodes?.[item.currentNodeId];
   if (currentNode?.battle) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없습니다." });
+  const actionLock = getInvestigationActionLockInfo(item);
+  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   const nextNode = item.data?.nodes?.[targetNodeId];
   if (!nextNode) return res.json({ success: false, message: "이동할 위치가 없습니다." });
   if (!canMoveBetweenNodes(item, item.currentNodeId, targetNodeId)) return res.json({ success: false, message: "현재 위치에서 연결되지 않은 구역입니다." });
@@ -5242,6 +5277,8 @@ app.post("/investigationAction", (req, res) => {
   if (item.activeNpcScene?.lines?.length) {
     return res.json({ success: false, message: "NPC 대화가 끝나야 행동할 수 있습니다." });
   }
+  const actionLock = getInvestigationActionLockInfo(item);
+  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   const currentNode = item.data?.nodes?.[item.currentNodeId];
   const locationName = currentNode?.name || "알 수 없는 장소";
   const flagKey = `${item.currentNodeId}:${actionName}`;
@@ -5288,6 +5325,8 @@ app.post("/setBattleAction", (req, res) => {
   const state = item.participantStates?.[characterName];
   if (!state) return res.json({ success: false, message: "참가자 상태를 찾을 수 없습니다." });
   if (Number(state.hp || 0) <= 0) return res.json({ success: false, message: "행동 불가능한 상태입니다." });
+  const actionLockedUntil = getParticipantActionLockUntil(state);
+  if (actionLockedUntil > Date.now()) return res.json({ success: false, message: getActionLockMessage({ until: actionLockedUntil, remainingSeconds: Math.ceil((actionLockedUntil - Date.now()) / 1000) }) });
   const parsedAction = parseBattleAction(actionName || "공격");
   if (parsedAction.type === "스킬") {
     const spec = getSkillSpec(parsedAction.payload, characterName);
@@ -5342,6 +5381,8 @@ app.post("/submitBattleTurn", (req, res) => {
   if (!item.pendingBattleActions || typeof item.pendingBattleActions !== "object") item.pendingBattleActions = {};
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  const actionLock = getInvestigationActionLockInfo(item);
+  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   announceNodeBattleStartIfReady(item);
   if (item.__battleResolving) return res.json({ success: true, pendingBattleActions: item.pendingBattleActions, investigation: buildPublicInvestigationState(item) });
   item.__battleResolving = true;
@@ -5373,6 +5414,8 @@ app.post("/battleAction", (req, res) => {
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  const actionLock = getInvestigationActionLockInfo(item);
+  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   announceNodeBattleStartIfReady(item);
   if (actionName === "도주" || actionName === "도주 선택" || actionName === "파티 도주") {
     const outcome = resolveFlee(item);
@@ -7224,7 +7267,7 @@ app.post("/shop/use", (req, res) => {
   const normalized = normalizeShopItem(item);
   const useType = String(normalized.useType || "none").toLowerCase();
   const useValue = Number(normalized.useValue || 0);
-  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "corrosionheal", "coin", "coins", "stat", "statboost", "statpoint", "skill"]);
+  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "corrosionheal", "corrosionup", "increasecorrosion", "corrosionincrease", "addcorrosion", "coin", "coins", "stat", "statboost", "statpoint", "skill"]);
   if (!usableTypes.has(useType)) {
     return res.json({ success: false, message: "사용 효과가 설정되지 않은 아이템입니다." });
   }
@@ -7239,6 +7282,10 @@ app.post("/shop/use", (req, res) => {
 
   if (useType === "corrosion" || useType === "corrosiondown" || useType === "reducecorrosion" || useType === "corrosionheal") {
     char.corrosion = Math.max(0, Number(char.corrosion || 0) - Math.max(0, useValue || 5));
+  }
+
+  if (useType === "corrosionup" || useType === "increasecorrosion" || useType === "corrosionincrease" || useType === "addcorrosion") {
+    char.corrosion = Math.max(0, Math.min(100, Number(char.corrosion || 0) + Math.max(0, useValue || 5)));
   }
 
   if (useType === "coin" || useType === "coins") {
