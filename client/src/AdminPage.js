@@ -534,6 +534,16 @@ export default function AdminPage({
     frameY: 28,
     frameScale: 1.12,
   });
+  const [globalCharacterConfig, setGlobalCharacterConfig] = useState({
+    hourlyCorrosionEnabled: false,
+    hourlyCorrosionDecrease: "0",
+    lastHourlyCorrosionAt: "",
+  });
+  const [bulkAdjust, setBulkAdjust] = useState({
+    coinsAmount: "0",
+    hpHealPercent: "10",
+    itemInput: "",
+  });
 
 
   const wrapTextareaSelection = (textarea, value, setter, openTag, closeTag = openTag) => {
@@ -747,9 +757,25 @@ export default function AdminPage({
     }
   };
 
+  const loadGlobalCharacterConfig = async () => {
+    try {
+      const res = await fetch(adminApi(`/admin/characterGlobalConfig?t=${Date.now()}`), { cache: "no-store" });
+      const data = await res.json();
+      const config = data?.config || {};
+      setGlobalCharacterConfig({
+        hourlyCorrosionEnabled: !!config.hourlyCorrosionEnabled,
+        hourlyCorrosionDecrease: String(config.hourlyCorrosionDecrease ?? 0),
+        lastHourlyCorrosionAt: String(config.lastHourlyCorrosionAt || ""),
+      });
+    } catch {
+      setGlobalCharacterConfig((prev) => ({ ...prev }));
+    }
+  };
+
   useEffect(() => {
     loadAll().catch(() => {});
     loadShopItems().catch(() => {});
+    loadGlobalCharacterConfig().catch(() => {});
     loadSiteBgm().catch(() => {});
   }, []);
 
@@ -1026,6 +1052,77 @@ export default function AdminPage({
     await loadAll();
   };
 
+  const saveGlobalCharacterConfig = async () => {
+    try {
+      const res = await fetch(adminApi("/admin/characterGlobalConfig"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hourlyCorrosionEnabled: !!globalCharacterConfig.hourlyCorrosionEnabled,
+          hourlyCorrosionDecrease: Math.max(0, Math.min(100, Number(globalCharacterConfig.hourlyCorrosionDecrease || 0))),
+        }),
+      });
+      const data = await res.json();
+      if (!data?.success) return setMessage(data?.message || "전체 캐릭터 설정 저장 실패");
+      const config = data.config || {};
+      setGlobalCharacterConfig({
+        hourlyCorrosionEnabled: !!config.hourlyCorrosionEnabled,
+        hourlyCorrosionDecrease: String(config.hourlyCorrosionDecrease ?? 0),
+        lastHourlyCorrosionAt: String(config.lastHourlyCorrosionAt || ""),
+      });
+      setMessage("전체 캐릭터 설정 저장 완료");
+    } catch {
+      setMessage("전체 캐릭터 설정 저장 실패");
+    }
+  };
+
+  const applyBulkCharacterAdjust = async (payload, confirmText) => {
+    if (confirmText && !window.confirm(confirmText)) return;
+    try {
+      const res = await fetch(adminApi("/admin/characters/bulkAdjust"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!data?.success) return setMessage(data?.message || "전체 캐릭터 조정 실패");
+      if (Array.isArray(data.characters)) setCharacters(data.characters);
+      setMessage(`${data.message || "전체 캐릭터 조정 완료"} (${data.changedCount || 0}명)`);
+      window.dispatchEvent(new CustomEvent("plc-character-updated", { detail: { all: true } }));
+      await loadAll();
+    } catch {
+      setMessage("전체 캐릭터 조정 실패");
+    }
+  };
+
+  const applyBulkCoins = (direction) => {
+    const raw = Math.abs(Number(bulkAdjust.coinsAmount || 0));
+    if (!Number.isFinite(raw) || raw <= 0) return setMessage("조정할 코인 수를 입력해주세요.");
+    const amount = direction === "subtract" ? -raw : raw;
+    applyBulkCharacterAdjust(
+      { action: "coins", amount },
+      amount >= 0 ? `모든 캐릭터에게 코인 ${raw}개를 지급할까요?` : `모든 캐릭터에게서 코인 ${raw}개를 차감할까요?`
+    );
+  };
+
+  const applyBulkHpRecovery = () => {
+    const percent = Number(bulkAdjust.hpHealPercent || 0);
+    if (!Number.isFinite(percent) || percent <= 0) return setMessage("회복할 HP 퍼센트를 입력해주세요.");
+    applyBulkCharacterAdjust(
+      { action: "healHpPercent", amount: percent },
+      `모든 캐릭터의 HP를 최대 HP 기준 ${percent}%만큼 회복할까요?`
+    );
+  };
+
+  const applyBulkItemGrant = () => {
+    const itemKey = String(bulkAdjust.itemInput || "").trim();
+    if (!itemKey) return setMessage("지급할 아이템을 선택하거나 입력해주세요.");
+    applyBulkCharacterAdjust(
+      { action: "grantItem", itemKey },
+      `모든 캐릭터에게 아이템 [${getAdminItemDisplayName(shopItems, itemKey)}]을 지급할까요?`
+    );
+  };
+
   const createFrame = { x: Number(form.frameX || 50), y: Number(form.frameY || 28), scale: Number(form.frameScale || 1.12) };
   const editFrame = { x: Number(edit.frameX || 50), y: Number(edit.frameY || 28), scale: Number(edit.frameScale || 1.12) };
 
@@ -1068,6 +1165,105 @@ export default function AdminPage({
         <MenuCard title="관계 승인" onClick={goRelations} />
         <MenuCard title="디자인 관리" onClick={goDesignEditor} />
         <MenuCard title="맵 관리" onClick={goMapManager} />
+      </div>
+
+      <div style={{ ...panelStyle, marginBottom: 18 }}>
+        <div className="section-eyebrow">GLOBAL CHARACTER CONTROL</div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>전체 캐릭터 조정</div>
+            <div style={{ marginTop: 6, color: "#5d7a95", fontSize: 13, lineHeight: 1.6 }}>
+              모든 캐릭터에게 동시에 적용되는 운영용 조정입니다. 침식 진행도 자동 감소는 매 정각 서버에서 한 번만 적용됩니다.
+            </div>
+          </div>
+          <button type="button" className="ghost-button" onClick={() => { loadAll().catch(() => {}); loadGlobalCharacterConfig().catch(() => {}); loadShopItems().catch(() => {}); }}>새로고침</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+          <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 900 }}>정각 침식 진행도 자동 감소</div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
+              <input
+                type="checkbox"
+                checked={!!globalCharacterConfig.hourlyCorrosionEnabled}
+                onChange={(e) => setGlobalCharacterConfig((prev) => ({ ...prev, hourlyCorrosionEnabled: e.target.checked }))}
+              />
+              사용
+            </label>
+            <label>정각마다 감소할 침식 진행도
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={globalCharacterConfig.hourlyCorrosionDecrease}
+                onChange={(e) => setGlobalCharacterConfig((prev) => ({ ...prev, hourlyCorrosionDecrease: e.target.value }))}
+                style={inputStyle}
+              />
+            </label>
+            <div style={{ fontSize: 12, color: "#5d7a95", lineHeight: 1.6 }}>
+              마지막 적용 시간: {globalCharacterConfig.lastHourlyCorrosionAt || "아직 없음"}
+            </div>
+            <button type="button" className="home-primary-button" onClick={saveGlobalCharacterConfig}>자동 감소 설정 저장</button>
+          </div>
+
+          <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 900 }}>전체 코인 조정</div>
+            <label>코인 수
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={bulkAdjust.coinsAmount}
+                onChange={(e) => setBulkAdjust((prev) => ({ ...prev, coinsAmount: e.target.value }))}
+                style={inputStyle}
+              />
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" className="home-primary-button" onClick={() => applyBulkCoins("add")}>모두에게 코인 지급</button>
+              <button type="button" className="ghost-button" onClick={() => applyBulkCoins("subtract")}>모두에게서 코인 차감</button>
+            </div>
+          </div>
+
+          <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 900 }}>전체 HP 회복</div>
+            <label>회복량 / 최대 HP 기준 %
+              <input
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={bulkAdjust.hpHealPercent}
+                onChange={(e) => setBulkAdjust((prev) => ({ ...prev, hpHealPercent: e.target.value }))}
+                style={inputStyle}
+              />
+            </label>
+            <button type="button" className="home-primary-button" onClick={applyBulkHpRecovery}>모두 HP 회복</button>
+          </div>
+
+          <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 900 }}>전체 아이템 지급</div>
+            <select
+              value={bulkAdjust.itemInput || ""}
+              onChange={(e) => setBulkAdjust((prev) => ({ ...prev, itemInput: e.target.value }))}
+              style={inputStyle}
+            >
+              <option value="">상점 아이템 선택</option>
+              {selectableShopItems.map((item) => {
+                const key = getAdminShopItemKey(item);
+                const label = item?.name || item?.label || item?.id || key;
+                return <option key={key} value={key}>{label}{item?.hidden ? " (숨김)" : ""}</option>;
+              })}
+            </select>
+            <input
+              value={bulkAdjust.itemInput || ""}
+              onChange={(e) => setBulkAdjust((prev) => ({ ...prev, itemInput: e.target.value }))}
+              placeholder="직접 입력도 가능"
+              style={inputStyle}
+            />
+            <button type="button" className="home-primary-button" onClick={applyBulkItemGrant}>모두에게 아이템 지급</button>
+          </div>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>

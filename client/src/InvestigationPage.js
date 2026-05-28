@@ -402,13 +402,16 @@ function InvestigationPage({ investigationId, character = {}, isAdmin, isSpectat
   currentNodeIdRef.current = currentNodeId;
   investigationRef.current = investigation;
   const currentNode = investigation?.data?.nodes?.[currentNodeId] || (investigation?.ended ? investigation?.data?.nodes?.[investigation?.data?.start] : null) || (investigation?.ended ? { id: "ended", name: "종료된 조사", connections: [] } : null);
+  const currentNodeLockInfo = investigation?.currentNodeLock || {};
+  const currentNodeRuntimeLocked = !!currentNodeLockInfo.locked;
+  const currentNodeLockMessage = currentNodeRuntimeLocked ? String(currentNodeLockInfo.message || "잠겨 있습니다. 필요한 열쇠를 먼저 획득해야 합니다.") : "";
   const playbackFallbackBattle = (battlePlaybackLocked || stagedBattleLogs.length > 0) && playbackSourceRef.current?.battle
     ? JSON.parse(JSON.stringify(playbackSourceRef.current.battle))
     : null;
-  const displayBattle = playbackState?.battle || playbackFallbackBattle || (currentNode?.battle ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
+  const displayBattle = playbackState?.battle || playbackFallbackBattle || (currentNode?.battle && !currentNodeRuntimeLocked ? JSON.parse(JSON.stringify(currentNode.battle)) : null);
   const playbackBattleActive = !!(playbackState?.battle || playbackFallbackBattle);
   const earlyActiveNpcScene = investigation?.activeNpcScene || null;
-  const battleActive = playbackBattleActive || (!investigation?.ended && !earlyActiveNpcScene && !!currentNode?.battle);
+  const battleActive = playbackBattleActive || (!investigation?.ended && !earlyActiveNpcScene && !currentNodeRuntimeLocked && !!currentNode?.battle);
   const liveDisplayLogs = useMemo(() => {
     if (!(battlePlaybackLocked && stagedBattleLogs.length > 0)) return logs;
     const visibleStagedLogs = stagedBattleLogs
@@ -993,6 +996,8 @@ useEffect(() => {
 
   const moveTo = async (target) => {
     if (!canControl) return blocked();
+    if (actionLocked) return alert(actionLockMessage);
+    if (currentNodeRuntimeLocked) return alert(currentNodeLockMessage);
     const res = await apiFetch("/moveInvestigation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1009,6 +1014,8 @@ useEffect(() => {
 
   const runInvestigationButton = async (label) => {
     if (!canControl) return blocked();
+    if (actionLocked) return alert(actionLockMessage);
+    if (currentNodeRuntimeLocked) return alert(currentNodeLockMessage);
     const res = await apiFetch("/investigationAction", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1025,6 +1032,8 @@ useEffect(() => {
 
   const fleeFromBattle = async () => {
     if (!canControl) return blocked();
+    if (actionLocked) return alert(actionLockMessage);
+    if (currentNodeRuntimeLocked) return alert(currentNodeLockMessage);
     const res = await apiFetch("/battleAction", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1048,6 +1057,10 @@ useEffect(() => {
     if (!character || battleActionSubmitting) return;
     if (!selfState || Number(selfState.hp || 0) <= 0) {
       alert("행동할 수 없는 상태입니다.");
+      return;
+    }
+    if (selfActionLocked) {
+      alert(selfActionLockMessage);
       return;
     }
     const nextAction = String(actionOverride || myBattleAction || "");
@@ -1109,6 +1122,7 @@ useEffect(() => {
 
   const chooseBattleAction = (actionName) => {
     if (battleInputLocked || battleActionSubmitting || !actionName) return;
+    if (selfActionLocked) return alert(selfActionLockMessage);
     skipAutoActionSyncRef.current = true;
     setTargetAction(null);
     setMyBattleAction(actionName);
@@ -1117,6 +1131,7 @@ useEffect(() => {
 
   const openBattleTargetPicker = (baseAction, targetType, title) => {
     if (battleInputLocked || battleActionSubmitting || !baseAction) return;
+    if (selfActionLocked) return alert(selfActionLockMessage);
     setTargetAction({ baseAction, targetType, title: title || "대상 선택" });
     setActionPicker("target");
   };
@@ -1128,6 +1143,8 @@ useEffect(() => {
 
   const submitBattleTurn = async () => {
     if (!canControl) return blocked();
+    if (actionLocked) return alert(actionLockMessage);
+    if (currentNodeRuntimeLocked) return alert(currentNodeLockMessage);
     const res = await apiFetch("/submitBattleTurn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1264,8 +1281,17 @@ useEffect(() => {
   const npcHasChoices = npcOptions.length > 0;
   const blockByReward = !!pendingReward && !isDaily;
   const blockByNpc = !!activeNpcScene;
-  const explorationLocked = blockByReward || blockByNpc || endedReadonly;
   const participantStates = investigation?.participantStates || {};
+  const actionLockUntil = Math.max(0, ...Object.values(participantStates || {}).map((state) => {
+    if (!state || Number(state.hp || 0) <= 0) return 0;
+    return Math.max(Number(state.actionLockedUntil || 0), Number(state.stunnedUntil || 0));
+  }));
+  const actionLocked = actionLockUntil > nowTick;
+  const actionLockMessage = actionLocked ? `현재 기절 상태입니다. ${formatCountdown(actionLockUntil - nowTick)} 후 행동할 수 있습니다.` : "";
+  const explorationLocked = blockByReward || blockByNpc || endedReadonly || actionLocked || currentNodeRuntimeLocked;
+  const selfActionLockUntil = selfState && Number(selfState.hp || 0) > 0 ? Math.max(Number(selfState.actionLockedUntil || 0), Number(selfState.stunnedUntil || 0)) : 0;
+  const selfActionLocked = selfActionLockUntil > nowTick;
+  const selfActionLockMessage = selfActionLocked ? `현재 기절 상태입니다. ${formatCountdown(selfActionLockUntil - nowTick)} 후 행동할 수 있습니다.` : actionLockMessage;
   const displayLogs = liveDisplayLogs;
   const animatedBattleRounds = battlePlaybackLocked
     ? stagedBattleLogs.filter((entry) => Number(entry?.appearedAt || 0) <= nowTick)
@@ -1373,7 +1399,7 @@ useEffect(() => {
     setBattleReadyUntil((prev) => Math.max(prev, Date.now() + 120));
   }, [battleActive, investigation?.battleTurn, currentNodeId]);
 
-  const battleInputLocked = battlePlaybackLocked || (battleActive && nowTick < battleReadyUntil);
+  const battleInputLocked = battlePlaybackLocked || selfActionLocked || (battleActive && nowTick < battleReadyUntil);
 
   useEffect(() => {
     if (!battleActive) return;
@@ -1387,7 +1413,7 @@ useEffect(() => {
   }, [battleActive, investigation?.pendingBattleActions, investigation?.battleTurn, character?.name]);
 
   useEffect(() => {
-    if (previewMode || !battleActive || battlePlaybackLocked || !battleTimeoutReached || !investigationId) return;
+    if (previewMode || !battleActive || battlePlaybackLocked || actionLocked || !battleTimeoutReached || !investigationId) return;
     const turnKey = `${investigationId}:${Number(investigation?.battleTurn || 1)}`;
     if (battleTimeoutHandlingRef.current === turnKey) return;
 
@@ -1455,7 +1481,7 @@ useEffect(() => {
     };
 
     fillAndSubmitBattleTurn();
-  }, [previewMode, battleActive, battlePlaybackLocked, battleTimeoutReached, investigationId, investigation?.battleTurn, livePendingBattleActions, aliveParticipants, isAdmin, canControl, character?.name]);
+  }, [previewMode, battleActive, battlePlaybackLocked, actionLocked, battleTimeoutReached, investigationId, investigation?.battleTurn, livePendingBattleActions, aliveParticipants, isAdmin, canControl, character?.name]);
 
   useEffect(() => {
     const rounds = Array.isArray(investigation?.lastBattleRound) ? investigation.lastBattleRound : [];
@@ -2245,6 +2271,8 @@ useEffect(() => {
 
                 {!battleActive ? (
                   <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
+                    {actionLocked ? <div style={{ ...dangerMessageStyle, textAlign: "center", marginBottom: 10 }}>{actionLockMessage}</div> : null}
+                    {currentNodeRuntimeLocked ? <div style={{ ...dangerMessageStyle, textAlign: "center", marginBottom: 10 }}>{currentNodeLockMessage}</div> : null}
                     <div style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
                       {directionalChoices.up ? <button type="button" onClick={() => moveTo(directionalChoices.up.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.up.text}</button> : null}
                       {directionalChoices.left ? <button type="button" onClick={() => moveTo(directionalChoices.left.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.left.text}</button> : null}
@@ -2274,6 +2302,7 @@ useEffect(() => {
                       </div>
                     </div>
                     <div style={{ position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)", width: isDaily ? "min(960px, calc(100% - 44px))" : "min(760px, calc(100% - 668px))", maxWidth: "calc(100% - 28px)", padding: "14px 18px", borderRadius: 28, background: "linear-gradient(180deg, rgba(4,10,22,0.44), rgba(4,10,22,0.72))", border: "none", boxShadow: "0 18px 40px rgba(2,6,23,0.16)", backdropFilter: "blur(16px)", zIndex: 1045 }}>
+                      {selfActionLocked ? <div style={{ ...dangerMessageStyle, textAlign: "center", marginBottom: 10 }}>{selfActionLockMessage}</div> : null}
                       {selfState && Number(selfState.hp || 0) > 0 ? (
                         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
                           <button type="button" className={`ghost-button ${myBattleAction.startsWith("공격") ? "is-tab-active" : ""}`} onClick={() => { if (aliveEnemyOptions.length > 1) openBattleTargetPicker("공격::attack", "enemy", "공격 대상 선택"); else chooseBattleAction(aliveEnemyOptions[0]?.id ? `공격::attack::${aliveEnemyOptions[0].id}` : "공격"); }} disabled={battleInputLocked}>공격</button>

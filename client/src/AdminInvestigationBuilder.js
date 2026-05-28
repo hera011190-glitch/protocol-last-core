@@ -144,7 +144,7 @@ function InvestigationImageFrameEditor({ image = "", frame = { x: 50, y: 50, sca
 }
 
 function emptyAction() {
-  return { label: "", log: "", rewardExp: 0, rewardCoins: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, onEnterDamage: 0, onEnterMuteMinutes: 0 };
+  return { label: "", log: "", rewardExp: 0, rewardCoins: 0, item: "", reward: "", clue: "", clueText: "", clueImage: "", statPoints: 0, damage: 0, muteMinutes: 0, unlockToken: "", unlockLabel: "", onEnterDamage: 0, onEnterMuteMinutes: 0 };
 }
 
 function createNode(id = `node-${Date.now()}`) {
@@ -163,6 +163,9 @@ function createNode(id = `node-${Date.now()}`) {
     clues: [],
     onEnterDamage: 0,
     onEnterMuteMinutes: 0,
+    locked: false,
+    requiredUnlockToken: "",
+    lockedMessage: "잠겨 있습니다. 필요한 열쇠를 먼저 획득해야 합니다.",
   };
 }
 
@@ -376,6 +379,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   rewardCoins: Number(option.rewardCoins || 0),
                   rewardStatPoints: Number(option.rewardStatPoints || 0),
                   clue: option.clue || "",
+                  unlockToken: String(option.unlockToken || option.unlockKey || "").trim(),
+                  unlockLabel: String(option.unlockLabel || "").trim(),
                 })),
               })),
             } : null,
@@ -388,6 +393,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             })),
             onEnterDamage: Number(node.onEnterDamage || 0),
             onEnterMuteMinutes: Number(node.onEnterMuteMinutes || 0),
+            locked: !!node.locked,
+            requiredUnlockToken: String(node.requiredUnlockToken || node.requiredKey || "").trim(),
+            lockedMessage: String(node.lockedMessage || node.description_locked || "잠겨 있습니다. 필요한 열쇠를 먼저 획득해야 합니다."),
             mapX: Number(node.mapX || 0),
             mapY: Number(node.mapY || 0),
             actionResults: Object.fromEntries(
@@ -404,6 +412,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                 statPoints: Number(value?.statPoints || 0),
                 damage: Number(value?.damage || 0),
                 muteMinutes: Number(value?.muteMinutes || 0),
+                unlockToken: String(value?.unlockToken || value?.unlockKey || "").trim(),
+                unlockLabel: String(value?.unlockLabel || "").trim(),
               }])
             ),
           }])
@@ -459,6 +469,9 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       clues: Array.isArray(node.clues) ? node.clues : [],
       onEnterDamage: Number(node.onEnterDamage || 0),
       onEnterMuteMinutes: Number(node.onEnterMuteMinutes || 0),
+      locked: !!(node.locked || node.isLocked || node.requiredUnlockToken || node.requiredKey || node.required_key),
+      requiredUnlockToken: String(node.requiredUnlockToken || node.requiredKey || node.required_key || node.required_unlock_token || "").trim(),
+      lockedMessage: String(node.lockedMessage || node.description_locked || "잠겨 있습니다. 필요한 열쇠를 먼저 획득해야 합니다."),
     }));
     const startNodeId = editSource?.data?.start || json?.data?.start || template?.data?.start || nodes[0]?.id || "start";
     const backgroundImage = editSource?.backgroundImage || editSource?.data?.backgroundImage || json?.backgroundImage || json?.data?.backgroundImage || template?.backgroundImage || template?.data?.backgroundImage || "";
@@ -537,7 +550,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       npcScene: {
         ...(node.npcScene || { name: "", image: "", lines: [] }),
         lines: ((node.npcScene?.lines) || []).map((line, idx) =>
-          idx === lineIndex ? { ...line, options: [...(line.options || []), { text: "", nextIndex: "", rewardItem: "", rewardStatPoints: 0, clue: "" }] } : line
+          idx === lineIndex ? { ...line, options: [...(line.options || []), { text: "", nextIndex: "", rewardItem: "", rewardStatPoints: 0, clue: "", unlockToken: "", unlockLabel: "" }] } : line
         ),
       },
     }));
@@ -784,6 +797,23 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             </div>
           </div>
 
+          <div className="section-eyebrow" style={{ marginTop: 12 }}>잠금 설정</div>
+          <div style={{ color: "#6a87a3", fontSize: 13, lineHeight: 1.7 }}>잠금 구역은 필요한 열쇠를 얻기 전까지 조사 버튼과 이동 버튼이 잠겨요. 열쇠는 아래 조사 버튼 결과 또는 NPC 선택지에서 지급할 수 있습니다.</div>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800, color: "#476885" }}>
+            <input type="checkbox" checked={!!selectedNode.locked} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, locked: e.target.checked }))} />
+            이 구역 잠금 사용
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={fieldLabelStyle}>필요한 열쇠 코드</div>
+              <input value={selectedNode.requiredUnlockToken || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, requiredUnlockToken: e.target.value }))} placeholder="예: basement-key" style={inputStyle} />
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={fieldLabelStyle}>잠금 상태 문구</div>
+              <input value={selectedNode.lockedMessage || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, lockedMessage: e.target.value }))} placeholder="예: 문이 잠겨 있습니다." style={inputStyle} />
+            </div>
+          </div>
+
           <div className="section-eyebrow" style={{ marginTop: 12 }}>이동 연결</div>
           <div style={{ color: "#6a87a3", fontSize: 13 }}>버튼 텍스트는 플레이어가 누르는 이동 버튼 이름이고, 이동 대상은 그 버튼을 눌렀을 때 도착할 구역입니다.</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -862,6 +892,16 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={fieldLabelStyle}>행동 실행 시 기절 시간(분)</div>
                     <input type="number" value={result.muteMinutes || 0} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, muteMinutes: Number(e.target.value || 0) } } }))} placeholder="기절(분)" style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={fieldLabelStyle}>획득 열쇠 코드</div>
+                    <input value={result.unlockToken || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, unlockToken: e.target.value } } }))} placeholder="예: basement-key" style={inputStyle} />
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={fieldLabelStyle}>획득 열쇠 표시 이름</div>
+                    <input value={result.unlockLabel || ""} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, actionResults: { ...(node.actionResults || {}), [label]: { ...result, unlockLabel: e.target.value } } }))} placeholder="예: 지하 통로 열쇠" style={inputStyle} />
                   </div>
                 </div>
               </div>
@@ -953,6 +993,16 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={fieldLabelStyle}>선택 시 보상 단서 제목</div>
                       <input value={option.clue || ""} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { clue: e.target.value })} placeholder="보상 단서" style={{ ...inputStyle, marginTop: 8 }} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={fieldLabelStyle}>선택 시 획득 열쇠 코드</div>
+                        <input value={option.unlockToken || ""} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { unlockToken: e.target.value })} placeholder="예: basement-key" style={inputStyle} />
+                      </div>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={fieldLabelStyle}>선택 시 획득 열쇠 표시 이름</div>
+                        <input value={option.unlockLabel || ""} onChange={(e) => updateNpcOption(lineIndex, optionIndex, { unlockLabel: e.target.value })} placeholder="예: 지하 통로 열쇠" style={inputStyle} />
+                      </div>
                     </div>
                     <button type="button" className="ghost-button" style={{ marginTop: 8 }} onClick={() => removeNpcOption(lineIndex, optionIndex)}>선택지 삭제</button>
                   </div>

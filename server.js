@@ -413,6 +413,11 @@ function ensureRuntimeFile(filename, fallbackValue) {
 
 ["users.json", "registeredUsers.json", "adminUserIndex.json", "characters.json", "relationRequests.json", "relations.json", "mails.json", "investigations.json"].forEach((filename) => ensureRuntimeFile(filename, []));
 ["designConfig.json", "customInvestigations.json", "shopItems.json", "shopConfig.json"].forEach((filename) => ensureRuntimeFile(filename));
+ensureRuntimeFile("adminCharacterConfig.json", {
+  hourlyCorrosionEnabled: false,
+  hourlyCorrosionDecrease: 0,
+  lastHourlyCorrosionAt: "",
+});
 
 if (IS_ASSET_COMPACT_CHILD) {
   const changedCount = compactAllTopLevelJsonImages();
@@ -1478,6 +1483,82 @@ function getSeoulDateKey(date = new Date()) {
   return shifted.toISOString().slice(0, 10);
 }
 
+function getSeoulHourKey(date = new Date()) {
+  const base = date instanceof Date ? date : new Date(date);
+  const shifted = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 13);
+}
+
+function getSeoulMinuteText(date = new Date()) {
+  const base = date instanceof Date ? date : new Date(date);
+  const shifted = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(14, 16);
+}
+
+const adminCharacterConfigPath = resolveDataPath("adminCharacterConfig.json");
+const DEFAULT_ADMIN_CHARACTER_CONFIG = {
+  hourlyCorrosionEnabled: false,
+  hourlyCorrosionDecrease: 0,
+  lastHourlyCorrosionAt: "",
+};
+
+function normalizeAdminCharacterConfig(config = {}) {
+  const decrease = Math.max(0, Math.min(100, Number(config?.hourlyCorrosionDecrease || 0)));
+  return {
+    hourlyCorrosionEnabled: !!config?.hourlyCorrosionEnabled,
+    hourlyCorrosionDecrease: decrease,
+    lastHourlyCorrosionAt: String(config?.lastHourlyCorrosionAt || ""),
+    updatedAt: Number(config?.updatedAt || 0),
+  };
+}
+
+let adminCharacterConfigDB = normalizeAdminCharacterConfig(readJsonFromPath(adminCharacterConfigPath, DEFAULT_ADMIN_CHARACTER_CONFIG));
+
+function saveAdminCharacterConfig() {
+  adminCharacterConfigDB = normalizeAdminCharacterConfig({ ...adminCharacterConfigDB, updatedAt: Date.now() });
+  scheduleJsonWrite(adminCharacterConfigPath, adminCharacterConfigDB);
+}
+
+function applyHourlyCorrosionDecreaseIfNeeded({ force = false } = {}) {
+  try {
+    adminCharacterConfigDB = normalizeAdminCharacterConfig(readJsonFromPath(adminCharacterConfigPath, adminCharacterConfigDB));
+    const amount = Math.max(0, Math.min(100, Number(adminCharacterConfigDB.hourlyCorrosionDecrease || 0)));
+    if (!force) {
+      if (!adminCharacterConfigDB.hourlyCorrosionEnabled || amount <= 0) return false;
+      if (getSeoulMinuteText() !== "00") return false;
+    }
+    if (amount <= 0) return false;
+
+    const hourKey = getSeoulHourKey();
+    if (!force && String(adminCharacterConfigDB.lastHourlyCorrosionAt || "") === hourKey) return false;
+
+    refreshProtectedRuntimeArraysIfNeeded();
+    let changed = false;
+    (Array.isArray(charactersDB) ? charactersDB : []).forEach((character) => {
+      if (!character || typeof character !== "object") return;
+      const before = Math.max(0, Math.min(100, Number(character.corrosion || 0)));
+      const after = Math.max(0, before - amount);
+      if (after !== before) {
+        character.corrosion = after;
+        character.updatedAt = Date.now();
+        character.assetVersion = character.updatedAt;
+        changed = true;
+      }
+    });
+
+    adminCharacterConfigDB.lastHourlyCorrosionAt = hourKey;
+    saveAdminCharacterConfig();
+    if (changed) {
+      publicCharacterSummaryCache = null;
+      writeRuntimeArray("characters.json", charactersDB);
+    }
+    return changed;
+  } catch (error) {
+    console.error("hourly corrosion decrease failed", error);
+    return false;
+  }
+}
+
 function normalizeDailyUseLimitsForCharacter(character, todayKey = getSeoulDateKey()) {
   if (!character || typeof character !== "object") return false;
   let changed = false;
@@ -1524,6 +1605,7 @@ function refreshDailyUseLimitsForAllCharacters({ save = true, forceDiskRefresh =
 }
 
 setInterval(() => refreshDailyUseLimitsForAllCharacters({ save: true }), 60 * 1000);
+setInterval(() => applyHourlyCorrosionDecreaseIfNeeded(), 60 * 1000);
 
 function mergeRuntimeUsers(...lists) {
   const merged = [];
@@ -2141,7 +2223,86 @@ function normalizeActionResult(result) {
     damage: Number(result?.damage || 0),
     muteMinutes: Number(result?.muteMinutes || 0),
     corrosionIncrease: Number(result?.corrosionIncrease || 0),
+    unlockToken: String(result?.unlockToken || result?.unlock_token || result?.unlockKey || result?.requiredKey || "").trim(),
+    unlockLabel: String(result?.unlockLabel || result?.unlockName || result?.keyName || "").trim(),
   };
+}
+
+function normalizeInvestigationUnlockToken(value) {
+  return String(value || "").trim();
+}
+
+function getNodeRequiredUnlockToken(node) {
+  return normalizeInvestigationUnlockToken(
+    node?.requiredUnlockToken ||
+    node?.required_unlock_token ||
+    node?.requiredKey ||
+    node?.required_key ||
+    node?.unlockToken ||
+    node?.unlock_token ||
+    ""
+  );
+}
+
+function getNodeLockedMessage(node) {
+  return String(node?.lockedMessage || node?.description_locked || node?.lockedLog || "잠겨 있습니다. 필요한 열쇠를 먼저 획득해야 합니다.").trim() || "잠겨 있습니다. 필요한 열쇠를 먼저 획득해야 합니다.";
+}
+
+function ensureInvestigationUnlockState(item) {
+  if (!item) return;
+  if (!Array.isArray(item.unlockedTokens)) item.unlockedTokens = [];
+  if (!Array.isArray(item.unlockedNodeIds)) item.unlockedNodeIds = [];
+}
+
+function hasInvestigationUnlockToken(item, token) {
+  const safeToken = normalizeInvestigationUnlockToken(token);
+  if (!safeToken) return false;
+  ensureInvestigationUnlockState(item);
+  return item.unlockedTokens.some((value) => normalizeInvestigationUnlockToken(value) === safeToken);
+}
+
+function isInvestigationNodeManuallyUnlocked(item, nodeId) {
+  const safeNodeId = String(nodeId || "").trim();
+  if (!safeNodeId) return false;
+  ensureInvestigationUnlockState(item);
+  return item.unlockedNodeIds.some((value) => String(value || "").trim() === safeNodeId);
+}
+
+function isInvestigationNodeLockEnabled(node) {
+  if (!node) return false;
+  return !!(node.locked || node.isLocked || node.requiredKey || node.required_key || node.requiredUnlockToken || node.required_unlock_token || node.unlockToken || node.unlock_token);
+}
+
+function getInvestigationNodeLockInfo(item, node, nodeId) {
+  ensureInvestigationUnlockState(item);
+  if (!isInvestigationNodeLockEnabled(node)) return { locked: false, message: "", requiredToken: "", unlockedNow: false };
+  const requiredToken = getNodeRequiredUnlockToken(node);
+  if (isInvestigationNodeManuallyUnlocked(item, nodeId)) return { locked: false, message: "", requiredToken, unlockedNow: false };
+  if (requiredToken && hasInvestigationUnlockToken(item, requiredToken)) {
+    const safeNodeId = String(nodeId || "").trim();
+    if (safeNodeId && !item.unlockedNodeIds.includes(safeNodeId)) item.unlockedNodeIds.push(safeNodeId);
+    return { locked: false, message: "", requiredToken, unlockedNow: true };
+  }
+  return { locked: true, message: getNodeLockedMessage(node), requiredToken, unlockedNow: false };
+}
+
+function getCurrentInvestigationNodeLockInfo(item) {
+  if (!item) return { locked: false, message: "", requiredToken: "", unlockedNow: false };
+  const node = item.data?.nodes?.[item.currentNodeId];
+  return getInvestigationNodeLockInfo(item, node, item.currentNodeId);
+}
+
+function grantInvestigationUnlockToken(item, token, label = "") {
+  const safeToken = normalizeInvestigationUnlockToken(token);
+  if (!item || !safeToken) return false;
+  ensureInvestigationUnlockState(item);
+  if (item.unlockedTokens.some((value) => normalizeInvestigationUnlockToken(value) === safeToken)) return false;
+  item.unlockedTokens.push(safeToken);
+  const displayLabel = String(label || safeToken).trim();
+  if (!Array.isArray(item.foundItems)) item.foundItems = [];
+  if (displayLabel && !item.foundItems.includes(displayLabel)) item.foundItems.push(displayLabel);
+  setEventBanner(item, `${displayLabel} 획득`, "success", 2400);
+  return true;
 }
 
 function normalizeBattleEnemy(enemy, index = 0) {
@@ -2238,6 +2399,9 @@ function normalizeNode(key, node) {
     clues: Array.isArray(node.clues) ? node.clues.map(normalizeClue) : [],
     onEnterDamage: Number(node?.onEnterDamage || 0),
     onEnterMuteMinutes: Number(node?.onEnterMuteMinutes || 0),
+    locked: !!(node?.locked || node?.isLocked),
+    requiredUnlockToken: getNodeRequiredUnlockToken(node),
+    lockedMessage: getNodeLockedMessage(node),
     mapX: typeof node.mapX === "number" ? node.mapX : Number(node?.mapX || 0),
     mapY: typeof node.mapY === "number" ? node.mapY : Number(node?.mapY || 0),
     actionResults: Object.fromEntries(Object.entries(node.actionResults || {}).map(([key, value]) => [key, normalizeActionResult(value)])),
@@ -2299,6 +2463,8 @@ function buildInvestigation(def) {
     routeHistory: [{ nodeId: startNodeId, name: startNode.name, time: new Date().toISOString() }],
     foundItems: [],
     foundNPCs: [],
+    unlockedTokens: [],
+    unlockedNodeIds: [],
     rewards: [],
     points: 0,
     discoveredFlags: {},
@@ -2336,6 +2502,8 @@ function mergePersistedInvestigationState(baseItem, persistedItem) {
     routeHistory: Array.isArray(persistedItem.routeHistory) && persistedItem.routeHistory.length ? persistedItem.routeHistory : (Array.isArray(baseItem.routeHistory) ? baseItem.routeHistory : []),
     foundItems: Array.isArray(persistedItem.foundItems) ? persistedItem.foundItems : (Array.isArray(baseItem.foundItems) ? baseItem.foundItems : []),
     foundNPCs: Array.isArray(persistedItem.foundNPCs) ? persistedItem.foundNPCs : (Array.isArray(baseItem.foundNPCs) ? baseItem.foundNPCs : []),
+    unlockedTokens: Array.isArray(persistedItem.unlockedTokens) ? persistedItem.unlockedTokens : (Array.isArray(baseItem.unlockedTokens) ? baseItem.unlockedTokens : []),
+    unlockedNodeIds: Array.isArray(persistedItem.unlockedNodeIds) ? persistedItem.unlockedNodeIds : (Array.isArray(baseItem.unlockedNodeIds) ? baseItem.unlockedNodeIds : []),
     rewards: Array.isArray(persistedItem.rewards) ? persistedItem.rewards : (Array.isArray(baseItem.rewards) ? baseItem.rewards : []),
     points: Number.isFinite(Number(persistedItem.points)) ? Number(persistedItem.points) : Number(baseItem.points || 0),
     discoveredFlags: persistedItem.discoveredFlags && typeof persistedItem.discoveredFlags === "object" ? persistedItem.discoveredFlags : (baseItem.discoveredFlags || {}),
@@ -2581,6 +2749,9 @@ function buildInvestigationLobbyState(item) {
     leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
     participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
     participantStates: item.participantStates || {},
+    unlockedTokens: item.unlockedTokens || [],
+    unlockedNodeIds: item.unlockedNodeIds || [],
+    currentNodeLock: getCurrentInvestigationNodeLockInfo(item),
     spectators: Array.isArray(item.spectators) ? item.spectators : [],
     currentNodeId: item.currentNodeId || item.data?.start || "",
     endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
@@ -2802,6 +2973,8 @@ function ensureRuntimeState(item) {
   }
   if (!Array.isArray(item.foundItems)) item.foundItems = [];
   if (!Array.isArray(item.foundNPCs)) item.foundNPCs = [];
+  if (!Array.isArray(item.unlockedTokens)) item.unlockedTokens = [];
+  if (!Array.isArray(item.unlockedNodeIds)) item.unlockedNodeIds = [];
   if (!Array.isArray(item.rewards)) item.rewards = [];
   if (!item.discoveredFlags) item.discoveredFlags = {};
   if (!item.participantStates) item.participantStates = {};
@@ -2952,6 +3125,8 @@ function resetInvestigationProgress(item) {
   item.lastBattleRound = [];
   item.pendingReward = null;
   item.pendingRewardQueue = [];
+  item.unlockedTokens = [];
+  item.unlockedNodeIds = [];
   item.activeNpcScene = null;
   item.npcLineIndex = 0;
   item.readyToEnd = false;
@@ -3311,6 +3486,13 @@ function applyActionRewards(item, result, locationName) {
       textParts.push(`${rewardTexts.join(", ")} 지급`);
       changed = true;
     }
+  }
+
+  if (result.unlockToken) {
+    const displayKeyName = result.unlockLabel || result.unlockToken;
+    const unlockedNow = grantInvestigationUnlockToken(item, result.unlockToken, displayKeyName);
+    textParts.push(unlockedNow ? `해금 열쇠 획득: ${displayKeyName}` : `이미 보유한 해금 열쇠: ${displayKeyName}`);
+    changed = true;
   }
 
   if (result.item) {
@@ -4857,6 +5039,90 @@ app.post("/updateCharacter", (req, res) => {
 
 app.get("/characters/:ownerId", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); refreshDailyUseLimitsForAllCharacters({ save: true }); return res.json(charactersDB.filter((c) => c.ownerId === req.params.ownerId).map(buildPublicCharacter)); });
 app.get("/characters", (req, res) => { refreshProtectedRuntimeArraysIfNeeded(); refreshDailyUseLimitsForAllCharacters({ save: true }); return res.json(charactersDB.map(buildPublicCharacter)); });
+
+app.get("/admin/characterGlobalConfig", (req, res) => {
+  adminCharacterConfigDB = normalizeAdminCharacterConfig(readJsonFromPath(adminCharacterConfigPath, adminCharacterConfigDB));
+  res.json({ success: true, config: adminCharacterConfigDB });
+});
+
+app.post("/admin/characterGlobalConfig", (req, res) => {
+  const previous = normalizeAdminCharacterConfig(readJsonFromPath(adminCharacterConfigPath, adminCharacterConfigDB));
+  adminCharacterConfigDB = normalizeAdminCharacterConfig({
+    ...previous,
+    hourlyCorrosionEnabled: !!req.body?.hourlyCorrosionEnabled,
+    hourlyCorrosionDecrease: Math.max(0, Math.min(100, Number(req.body?.hourlyCorrosionDecrease || 0))),
+    lastHourlyCorrosionAt: String(previous.lastHourlyCorrosionAt || ""),
+  });
+  saveAdminCharacterConfig();
+  res.json({ success: true, config: adminCharacterConfigDB });
+});
+
+app.post("/admin/characters/bulkAdjust", (req, res) => {
+  refreshProtectedRuntimeArraysIfNeeded();
+  const action = String(req.body?.action || "").trim();
+  const amount = Number(req.body?.amount || 0);
+  const rawItemKey = String(req.body?.itemKey || req.body?.itemName || req.body?.itemId || "").trim();
+  const now = Date.now();
+  let changedCount = 0;
+  let message = "전체 캐릭터 조정 완료";
+
+  const touch = (character) => {
+    character.updatedAt = now;
+    character.assetVersion = now;
+    changedCount += 1;
+  };
+
+  (Array.isArray(charactersDB) ? charactersDB : []).forEach((character) => {
+    if (!character || typeof character !== "object") return;
+
+    if (action === "coins") {
+      if (!Number.isFinite(amount) || amount === 0) return;
+      const before = Number(character.coins || 0);
+      const after = Math.max(0, before + amount);
+      if (after === before) return;
+      character.coins = after;
+      touch(character);
+      return;
+    }
+
+    if (action === "healHpPercent") {
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      const maxHp = getCharacterMaxHp(character?.stats?.hp);
+      const currentHp = Number.isFinite(Number(character.currentHp)) ? Number(character.currentHp) : maxHp;
+      const healAmount = Math.max(1, Math.ceil(maxHp * Math.min(100, amount) / 100));
+      const after = Math.max(0, Math.min(maxHp, currentHp + healAmount));
+      if (after === currentHp) return;
+      character.currentHp = after;
+      touch(character);
+      return;
+    }
+
+    if (action === "grantItem") {
+      if (!rawItemKey) return;
+      const item = findShopItemByLooseId(rawItemKey);
+      const itemValue = item?.name || item?.id || rawItemKey;
+      character.items = Array.isArray(character.items) ? character.items : [];
+      character.items.push(itemValue);
+      touch(character);
+    }
+  });
+
+  if (action === "coins") message = amount >= 0 ? `전체 캐릭터에게 코인 ${amount}개를 지급했습니다.` : `전체 캐릭터에게서 코인 ${Math.abs(amount)}개를 차감했습니다.`;
+  if (action === "healHpPercent") message = `전체 캐릭터의 HP를 최대 HP 기준 ${Math.max(0, amount)}%만큼 회복했습니다.`;
+  if (action === "grantItem") message = rawItemKey ? `전체 캐릭터에게 아이템을 지급했습니다: ${rawItemKey}` : "지급할 아이템을 선택해주세요.";
+  if (!["coins", "healHpPercent", "grantItem"].includes(action)) {
+    return res.json({ success: false, message: "지원하지 않는 전체 조정입니다." });
+  }
+
+  if (changedCount > 0) {
+    publicCharacterSummaryCache = null;
+    const saved = writeRuntimeArray("characters.json", charactersDB);
+    if (!saved) return res.json({ success: false, message: "캐릭터 저장이 차단되었습니다. 기존 데이터 보호 중입니다." });
+  }
+
+  res.json({ success: true, changedCount, message, characters: getPublicCharacterSummaries({ refresh: false }) });
+});
+
 app.delete("/admin/characters/:id", (req, res) => {
   const id = String(req.params.id || "");
   const target = charactersDB.find((character) => String(character.id) === id);
@@ -5235,10 +5501,13 @@ app.post("/moveInvestigation", (req, res) => {
   const { investigationId, targetNodeId } = req.body;
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
+  ensureRuntimeState(item);
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.pendingReward) return res.json({ success: false, message: "보상 배분이 끝나야 다음 진행을 할 수 있습니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 이동할 수 있습니다." });
   const currentNode = item.data?.nodes?.[item.currentNodeId];
+  const currentLock = getCurrentInvestigationNodeLockInfo(item);
+  if (currentLock.locked) return res.json({ success: false, message: currentLock.message || "잠금 상태에서는 이동할 수 없습니다." });
   if (currentNode?.battle) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없습니다." });
   const actionLock = getInvestigationActionLockInfo(item);
   if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
@@ -5247,21 +5516,36 @@ app.post("/moveInvestigation", (req, res) => {
   if (!canMoveBetweenNodes(item, item.currentNodeId, targetNodeId)) return res.json({ success: false, message: "현재 위치에서 연결되지 않은 구역입니다." });
 
   item.currentNodeId = targetNodeId;
-  addSharedLog(item, `[이동] ${nextNode.name} - ${nextNode.log || ""}`);
+  const nextLock = getInvestigationNodeLockInfo(item, nextNode, targetNodeId);
   item.routeHistory.push({ nodeId: targetNodeId, name: nextNode.name, time: new Date().toISOString() });
+
+  if (nextLock.locked) {
+    item.sharedLog = `[잠금] ${nextLock.message}`;
+    item.sharedLogs.push(createLogEntry(item.sharedLog));
+    setEventBanner(item, "잠금 구역", "danger", 2400);
+    refreshInvestigationCompletionState(item);
+    saveInvestigationsRuntimeState();
+    emitInvestigationState(investigationId);
+    return res.json({ success: true, locked: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, investigation: buildPublicInvestigationState(item) });
+  }
+
+  if (nextLock.unlockedNow) {
+    addSharedLog(item, `[해금] ${nextNode.name}의 잠금이 해제되었습니다.`);
+  }
+  addSharedLog(item, `[이동] ${nextNode.name} - ${nextNode.log || ""}`);
   applyNodeEntryEffects(item, nextNode);
   if (allParticipantsDown(item)) {
     finishInvestigation(item, "전멸", "패배하였습니다. 활동할 수 있는 인원이 없습니다. 조사가 종료됩니다.");
     emitParticipantsUpdated();
     emitInvestigationState(investigationId);
-    return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, ended: true });
+    return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, ended: true, investigation: buildPublicInvestigationState(item) });
   }
   announceNodeBattleStartIfReady(item, nextNode);
 
   refreshInvestigationCompletionState(item);
-
+  saveInvestigationsRuntimeState();
   emitInvestigationState(investigationId);
-  res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog });
+  res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, investigation: buildPublicInvestigationState(item) });
 });
 
 app.post("/investigationAction", (req, res) => {
@@ -5279,6 +5563,8 @@ app.post("/investigationAction", (req, res) => {
   }
   const actionLock = getInvestigationActionLockInfo(item);
   if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
+  const currentNodeLock = getCurrentInvestigationNodeLockInfo(item);
+  if (currentNodeLock.locked) return res.json({ success: false, message: currentNodeLock.message || "잠금 상태에서는 조사할 수 없습니다." });
   const currentNode = item.data?.nodes?.[item.currentNodeId];
   const locationName = currentNode?.name || "알 수 없는 장소";
   const flagKey = `${item.currentNodeId}:${actionName}`;
@@ -5307,8 +5593,9 @@ app.post("/investigationAction", (req, res) => {
     return res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, ended: true });
   }
   refreshInvestigationCompletionState(item);
+  saveInvestigationsRuntimeState();
   emitInvestigationState(investigationId);
-  res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog });
+  res.json({ success: true, currentNodeId: item.currentNodeId, sharedLog: item.sharedLog, investigation: buildPublicInvestigationState(item) });
 });
 
 app.post("/setBattleAction", (req, res) => {
@@ -5319,6 +5606,8 @@ app.post("/setBattleAction", (req, res) => {
   if (!item.pendingBattleActions || typeof item.pendingBattleActions !== "object") item.pendingBattleActions = {};
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  const currentNodeLock = getCurrentInvestigationNodeLockInfo(item);
+  if (currentNodeLock.locked) return res.json({ success: false, message: currentNodeLock.message || "잠금 상태에서는 전투 행동을 할 수 없습니다." });
   const node = item.data?.nodes?.[item.currentNodeId];
   announceNodeBattleStartIfReady(item, node);
   if (!node?.battle) return res.json({ success: false, message: "현재 전투 중이 아닙니다." });
@@ -5381,6 +5670,8 @@ app.post("/submitBattleTurn", (req, res) => {
   if (!item.pendingBattleActions || typeof item.pendingBattleActions !== "object") item.pendingBattleActions = {};
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  const currentNodeLock = getCurrentInvestigationNodeLockInfo(item);
+  if (currentNodeLock.locked) return res.json({ success: false, message: currentNodeLock.message || "잠금 상태에서는 전투를 진행할 수 없습니다." });
   const actionLock = getInvestigationActionLockInfo(item);
   if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   announceNodeBattleStartIfReady(item);
@@ -5414,6 +5705,8 @@ app.post("/battleAction", (req, res) => {
   if (!item) return res.json({ success: false, message: "조사를 찾을 수 없습니다." });
   if (item.ended) return res.json({ success: false, message: "이미 종료된 조사입니다." });
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 전투를 시작할 수 있습니다." });
+  const currentNodeLock = getCurrentInvestigationNodeLockInfo(item);
+  if (currentNodeLock.locked) return res.json({ success: false, message: currentNodeLock.message || "잠금 상태에서는 전투 행동을 할 수 없습니다." });
   const actionLock = getInvestigationActionLockInfo(item);
   if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   announceNodeBattleStartIfReady(item);
@@ -5467,6 +5760,12 @@ app.post("/assignInvestigationReward", (req, res) => {
 
 function applyNpcOptionOutcome(item, option) {
   if (!item || !option) return;
+  const npcUnlockToken = normalizeInvestigationUnlockToken(option.unlockToken || option.unlock_token || option.unlockKey || "");
+  if (npcUnlockToken) {
+    const displayKeyName = String(option.unlockLabel || option.unlockName || npcUnlockToken).trim();
+    const unlockedNow = grantInvestigationUnlockToken(item, npcUnlockToken, displayKeyName);
+    addSharedLog(item, unlockedNow ? `[해금] ${displayKeyName}을(를) 획득했습니다.` : `[해금] ${displayKeyName}은(는) 이미 보유하고 있습니다.`);
+  }
   if (option.rewardItem) queueRewardAssignment(item, { type: "item", label: option.rewardItem, value: option.rewardItem });
   if (option.rewardStatPoints) queueRewardAssignment(item, { type: "statPoints", label: `스탯 포인트 +${option.rewardStatPoints}`, value: Number(option.rewardStatPoints) });
   const rewardExp = normalizeProgressRewardValue(option.rewardExp ?? option.exp ?? 0);
@@ -6704,6 +7003,9 @@ function buildPublicInvestigationState(item) {
     mapBackgroundImage: item.data?.backgroundImage || "",
     foundItems: item.foundItems || [],
     foundNPCs: item.foundNPCs || [],
+    unlockedTokens: item.unlockedTokens || [],
+    unlockedNodeIds: item.unlockedNodeIds || [],
+    currentNodeLock: getCurrentInvestigationNodeLockInfo(item),
     rewards: item.rewards || [],
     points: 0,
     participantStates: item.participantStates || {},
