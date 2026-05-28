@@ -3676,8 +3676,28 @@ function canMoveBetweenNodes(item, fromNodeId, toNodeId) {
 
 function getPreviousRouteNodeId(item) {
   const history = Array.isArray(item.routeHistory) ? item.routeHistory : [];
-  if (history.length >= 2) return history[history.length - 2]?.nodeId || item.data.start;
-  return item.data.start;
+  const currentNodeId = String(item?.currentNodeId || "");
+  for (let index = history.length - 2; index >= 0; index -= 1) {
+    const nodeId = String(history[index]?.nodeId || "");
+    if (nodeId && nodeId !== currentNodeId) return nodeId;
+  }
+  return item?.data?.start;
+}
+
+function isBacktrackTargetFromCurrentLockedNode(item, targetNodeId) {
+  const safeTargetNodeId = String(targetNodeId || "").trim();
+  if (!item || !safeTargetNodeId) return false;
+  const currentLock = getCurrentInvestigationNodeLockInfo(item);
+  if (!currentLock.locked) return false;
+  if (!canMoveBetweenNodes(item, item.currentNodeId, safeTargetNodeId)) return false;
+  const currentNodeId = String(item.currentNodeId || "");
+  const history = Array.isArray(item.routeHistory) ? item.routeHistory : [];
+  const visitedBeforeCurrent = history
+    .slice(0, Math.max(0, history.length - 1))
+    .some((entry) => String(entry?.nodeId || "") === safeTargetNodeId);
+  if (visitedBeforeCurrent) return true;
+  const previousRouteNodeId = String(getPreviousRouteNodeId(item) || "");
+  return !!previousRouteNodeId && previousRouteNodeId !== currentNodeId && previousRouteNodeId === safeTargetNodeId;
 }
 
 const PRESET_BATTLE_HEAL_ITEMS = {
@@ -5510,12 +5530,11 @@ app.post("/moveInvestigation", (req, res) => {
   const nextNode = item.data?.nodes?.[targetNodeId];
   if (!nextNode) return res.json({ success: false, message: "이동할 위치가 없습니다." });
   if (!canMoveBetweenNodes(item, item.currentNodeId, targetNodeId)) return res.json({ success: false, message: "현재 위치에서 연결되지 않은 구역입니다." });
-  const previousRouteNodeId = String(getPreviousRouteNodeId(item) || "");
-  const movingBackFromLockedNode = !!(currentLock.locked && previousRouteNodeId && String(targetNodeId || "") === previousRouteNodeId);
+  const movingBackFromLockedNode = isBacktrackTargetFromCurrentLockedNode(item, targetNodeId);
   if (currentLock.locked && !movingBackFromLockedNode) return res.json({ success: false, message: currentLock.message || "잠금 상태에서는 이동할 수 없습니다." });
   if (currentNode?.battle && !movingBackFromLockedNode) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없습니다." });
   const actionLock = getInvestigationActionLockInfo(item);
-  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
+  if (actionLock.locked && !movingBackFromLockedNode) return res.json({ success: false, message: getActionLockMessage(actionLock) });
 
   item.currentNodeId = targetNodeId;
   const nextLock = getInvestigationNodeLockInfo(item, nextNode, targetNodeId);

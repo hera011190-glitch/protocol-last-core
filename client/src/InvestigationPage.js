@@ -995,8 +995,9 @@ useEffect(() => {
 
   const moveTo = async (target) => {
     if (!canControl) return blocked();
-    if (actionLocked) return alert(actionLockMessage);
-    if (currentNodeRuntimeLocked && !canMoveBackFromCurrentNodeLock(target)) return alert(currentNodeLockMessage);
+    const movingBackFromLockedNode = canMoveBackFromCurrentNodeLock(target);
+    if (actionLocked && !movingBackFromLockedNode) return alert(actionLockMessage);
+    if (currentNodeRuntimeLocked && !movingBackFromLockedNode) return alert(currentNodeLockMessage);
     const res = await apiFetch("/moveInvestigation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1211,14 +1212,34 @@ useEffect(() => {
 
   const investigationButtons = currentNode?.investigations || [];
   const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
-  const previousRouteNodeId = routeHistory.length >= 2
-    ? String(routeHistory[routeHistory.length - 2]?.nodeId || "")
-    : String(investigation?.data?.start || "");
-  const canMoveBackFromCurrentNodeLock = (targetNodeId) => !!(
-    currentNodeRuntimeLocked &&
-    previousRouteNodeId &&
-    String(targetNodeId || "") === previousRouteNodeId
-  );
+  const previousRouteNodeId = (() => {
+    const current = String(currentNodeId || "");
+    for (let index = routeHistory.length - 2; index >= 0; index -= 1) {
+      const nodeId = String(routeHistory[index]?.nodeId || "");
+      if (nodeId && nodeId !== current) return nodeId;
+    }
+    return String(investigation?.data?.start || "");
+  })();
+  const areNodesConnected = (fromNodeId, toNodeId) => {
+    const nodes = investigation?.data?.nodes || {};
+    const fromNode = nodes?.[fromNodeId];
+    const toNode = nodes?.[toNodeId];
+    if (!fromNode || !toNode) return false;
+    const forward = Array.isArray(fromNode?.choices) && fromNode.choices.some((choice) => String(choice?.target || "") === String(toNodeId || ""));
+    const backward = Array.isArray(toNode?.choices) && toNode.choices.some((choice) => String(choice?.target || "") === String(fromNodeId || ""));
+    return forward || backward;
+  };
+  const canMoveBackFromCurrentNodeLock = (targetNodeId) => {
+    if (!currentNodeRuntimeLocked) return false;
+    const safeTargetNodeId = String(targetNodeId || "");
+    const safeCurrentNodeId = String(currentNodeId || "");
+    if (!safeTargetNodeId || !safeCurrentNodeId || safeTargetNodeId === safeCurrentNodeId) return false;
+    if (!areNodesConnected(safeCurrentNodeId, safeTargetNodeId)) return false;
+    const visitedBeforeCurrent = routeHistory
+      .slice(0, Math.max(0, routeHistory.length - 1))
+      .some((entry) => String(entry?.nodeId || "") === safeTargetNodeId);
+    return visitedBeforeCurrent || (!!previousRouteNodeId && previousRouteNodeId === safeTargetNodeId);
+  };
   const effectiveChoices = (() => {
     if (!currentNode) return [];
     const direct = Array.isArray(currentNode?.choices) ? currentNode.choices.map((choice) => ({ ...choice })) : [];
@@ -1297,7 +1318,10 @@ useEffect(() => {
   const actionLockMessage = actionLocked ? `현재 기절 상태입니다. ${formatCountdown(actionLockUntil - nowTick)} 후 행동할 수 있습니다.` : "";
   const baseExplorationLocked = blockByReward || blockByNpc || endedReadonly || actionLocked;
   const explorationLocked = baseExplorationLocked || currentNodeRuntimeLocked;
-  const isMoveChoiceLocked = (targetNodeId) => baseExplorationLocked || (currentNodeRuntimeLocked && !canMoveBackFromCurrentNodeLock(targetNodeId));
+  const isMoveChoiceLocked = (targetNodeId) => {
+    if (currentNodeRuntimeLocked && canMoveBackFromCurrentNodeLock(targetNodeId)) return false;
+    return baseExplorationLocked || (currentNodeRuntimeLocked && !canMoveBackFromCurrentNodeLock(targetNodeId));
+  };
   const selfActionLockUntil = selfState && Number(selfState.hp || 0) > 0 ? Math.max(Number(selfState.actionLockedUntil || 0), Number(selfState.stunnedUntil || 0)) : 0;
   const selfActionLocked = selfActionLockUntil > nowTick;
   const selfActionLockMessage = selfActionLocked ? `현재 기절 상태입니다. ${formatCountdown(selfActionLockUntil - nowTick)} 후 행동할 수 있습니다.` : actionLockMessage;
