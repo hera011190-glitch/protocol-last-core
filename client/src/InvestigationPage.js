@@ -908,8 +908,7 @@ useEffect(() => {
   const blocked = () => alert("리더 또는 운영자만 사용할 수 있습니다.");
 
   const selfState = investigation?.participantStates?.[character?.name || ""] || null;
-  const muted = !!(selfState?.mutedUntil && Number(selfState.mutedUntil) > Date.now());
-  const canSpeak = (!selfState || Number(selfState.hp || 0) > 0) && !muted && investigation?.type !== "daily";
+  const canSpeak = (!selfState || Number(selfState.hp || 0) > 0) && investigation?.type !== "daily";
   const livePendingBattleActions = investigation?.pendingBattleActions || {};
 
   useEffect(() => {
@@ -955,7 +954,7 @@ useEffect(() => {
     if (!text) return;
     if (!character) return;
     if (!canSpeak) {
-      alert(muted ? "현재 채팅할 수 없는 상태입니다." : "HP가 0인 상태에서는 채팅할 수 없습니다.");
+      alert(investigation?.type === "daily" ? "일일조사에서는 채팅을 사용할 수 없습니다." : "HP가 0인 상태에서는 채팅할 수 없습니다.");
       return;
     }
     setInput("");
@@ -997,7 +996,7 @@ useEffect(() => {
   const moveTo = async (target) => {
     if (!canControl) return blocked();
     if (actionLocked) return alert(actionLockMessage);
-    if (currentNodeRuntimeLocked) return alert(currentNodeLockMessage);
+    if (currentNodeRuntimeLocked && !canMoveBackFromCurrentNodeLock(target)) return alert(currentNodeLockMessage);
     const res = await apiFetch("/moveInvestigation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1211,6 +1210,15 @@ useEffect(() => {
   }, [investigation?.battleTurn, character?.name, battlePlaybackLocked, playbackState, investigation?.lastBattleRound]);
 
   const investigationButtons = currentNode?.investigations || [];
+  const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
+  const previousRouteNodeId = routeHistory.length >= 2
+    ? String(routeHistory[routeHistory.length - 2]?.nodeId || "")
+    : String(investigation?.data?.start || "");
+  const canMoveBackFromCurrentNodeLock = (targetNodeId) => !!(
+    currentNodeRuntimeLocked &&
+    previousRouteNodeId &&
+    String(targetNodeId || "") === previousRouteNodeId
+  );
   const effectiveChoices = (() => {
     if (!currentNode) return [];
     const direct = Array.isArray(currentNode?.choices) ? currentNode.choices.map((choice) => ({ ...choice })) : [];
@@ -1230,7 +1238,6 @@ useEffect(() => {
   const directionalChoices = buildDirectionalChoices(effectiveChoices);
   const isSelfInvestigationParticipant = !!(character?.name && participants.some((participant) => String(participant?.name || "") === String(character.name)));
   const endedReadonly = !!isSpectator && !!investigation?.ended && !isSelfInvestigationParticipant;
-  const routeHistory = Array.isArray(investigation?.routeHistory) ? investigation.routeHistory : [];
   const endConfirmations = Array.isArray(investigation?.endConfirmations) ? investigation.endConfirmations : [];
   const hasConfirmedExit = character?.name ? endConfirmations.includes(character.name) : false;
   const progressNodeIds = getProgressReachableNodeIds(investigation);
@@ -1288,7 +1295,9 @@ useEffect(() => {
   }));
   const actionLocked = actionLockUntil > nowTick;
   const actionLockMessage = actionLocked ? `현재 기절 상태입니다. ${formatCountdown(actionLockUntil - nowTick)} 후 행동할 수 있습니다.` : "";
-  const explorationLocked = blockByReward || blockByNpc || endedReadonly || actionLocked || currentNodeRuntimeLocked;
+  const baseExplorationLocked = blockByReward || blockByNpc || endedReadonly || actionLocked;
+  const explorationLocked = baseExplorationLocked || currentNodeRuntimeLocked;
+  const isMoveChoiceLocked = (targetNodeId) => baseExplorationLocked || (currentNodeRuntimeLocked && !canMoveBackFromCurrentNodeLock(targetNodeId));
   const selfActionLockUntil = selfState && Number(selfState.hp || 0) > 0 ? Math.max(Number(selfState.actionLockedUntil || 0), Number(selfState.stunnedUntil || 0)) : 0;
   const selfActionLocked = selfActionLockUntil > nowTick;
   const selfActionLockMessage = selfActionLocked ? `현재 기절 상태입니다. ${formatCountdown(selfActionLockUntil - nowTick)} 후 행동할 수 있습니다.` : actionLockMessage;
@@ -2274,12 +2283,12 @@ useEffect(() => {
                     {actionLocked ? <div style={{ ...dangerMessageStyle, textAlign: "center", marginBottom: 10 }}>{actionLockMessage}</div> : null}
                     {currentNodeRuntimeLocked ? <div style={{ ...dangerMessageStyle, textAlign: "center", marginBottom: 10 }}>{currentNodeLockMessage}</div> : null}
                     <div style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
-                      {directionalChoices.up ? <button type="button" onClick={() => moveTo(directionalChoices.up.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.up.text}</button> : null}
-                      {directionalChoices.left ? <button type="button" onClick={() => moveTo(directionalChoices.left.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.left.text}</button> : null}
-                      {directionalChoices.right ? <button type="button" onClick={() => moveTo(directionalChoices.right.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.right.text}</button> : null}
-                      {directionalChoices.down ? <button type="button" onClick={() => moveTo(directionalChoices.down.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{directionalChoices.down.text}</button> : null}
+                      {directionalChoices.up ? <button type="button" onClick={() => moveTo(directionalChoices.up.target)} disabled={isMoveChoiceLocked(directionalChoices.up.target)} style={{ ...moveButtonStyle, opacity: isMoveChoiceLocked(directionalChoices.up.target) ? 0.55 : 1 }}>{directionalChoices.up.text}</button> : null}
+                      {directionalChoices.left ? <button type="button" onClick={() => moveTo(directionalChoices.left.target)} disabled={isMoveChoiceLocked(directionalChoices.left.target)} style={{ ...moveButtonStyle, opacity: isMoveChoiceLocked(directionalChoices.left.target) ? 0.55 : 1 }}>{directionalChoices.left.text}</button> : null}
+                      {directionalChoices.right ? <button type="button" onClick={() => moveTo(directionalChoices.right.target)} disabled={isMoveChoiceLocked(directionalChoices.right.target)} style={{ ...moveButtonStyle, opacity: isMoveChoiceLocked(directionalChoices.right.target) ? 0.55 : 1 }}>{directionalChoices.right.text}</button> : null}
+                      {directionalChoices.down ? <button type="button" onClick={() => moveTo(directionalChoices.down.target)} disabled={isMoveChoiceLocked(directionalChoices.down.target)} style={{ ...moveButtonStyle, opacity: isMoveChoiceLocked(directionalChoices.down.target) ? 0.55 : 1 }}>{directionalChoices.down.text}</button> : null}
                       {directionalChoices.misc.map((choice) => (
-                        <button key={`${choice.text}-${choice.target}`} type="button" onClick={() => moveTo(choice.target)} disabled={explorationLocked} style={{ ...moveButtonStyle, opacity: explorationLocked ? 0.55 : 1 }}>{choice.text}</button>
+                        <button key={`${choice.text}-${choice.target}`} type="button" onClick={() => moveTo(choice.target)} disabled={isMoveChoiceLocked(choice.target)} style={{ ...moveButtonStyle, opacity: isMoveChoiceLocked(choice.target) ? 0.55 : 1 }}>{choice.text}</button>
                       ))}
                     </div>
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center", marginTop: 12 }}>

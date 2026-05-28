@@ -5261,8 +5261,8 @@ app.post("/investigationChat", (req, res) => {
   const item = investigationsDB.find((v) => v.id === investigationId);
   if (item?.type === "daily") return res.json({ success: false, message: "일일조사에서는 채팅을 사용할 수 없습니다." });
   const state = item?.participantStates?.[message?.name || ""];
-  if (!message?.isAdminNotice && state?.mutedUntil && Number(state.mutedUntil) > Date.now()) {
-    return res.json({ success: false, message: "현재 채팅할 수 없는 상태입니다." });
+  if (!message?.isAdminNotice && state && Number(state.hp || 0) <= 0) {
+    return res.json({ success: false, message: "HP가 0인 상태에서는 채팅할 수 없습니다." });
   }
   const safeMessage = buildRoomChatMessage(investigationId, message);
   if (!roomChats[investigationId]) roomChats[investigationId] = [];
@@ -5507,13 +5507,15 @@ app.post("/moveInvestigation", (req, res) => {
   if (item.activeNpcScene?.lines?.length) return res.json({ success: false, message: "NPC 대화가 끝나야 이동할 수 있습니다." });
   const currentNode = item.data?.nodes?.[item.currentNodeId];
   const currentLock = getCurrentInvestigationNodeLockInfo(item);
-  if (currentLock.locked) return res.json({ success: false, message: currentLock.message || "잠금 상태에서는 이동할 수 없습니다." });
-  if (currentNode?.battle) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없습니다." });
-  const actionLock = getInvestigationActionLockInfo(item);
-  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
   const nextNode = item.data?.nodes?.[targetNodeId];
   if (!nextNode) return res.json({ success: false, message: "이동할 위치가 없습니다." });
   if (!canMoveBetweenNodes(item, item.currentNodeId, targetNodeId)) return res.json({ success: false, message: "현재 위치에서 연결되지 않은 구역입니다." });
+  const previousRouteNodeId = String(getPreviousRouteNodeId(item) || "");
+  const movingBackFromLockedNode = !!(currentLock.locked && previousRouteNodeId && String(targetNodeId || "") === previousRouteNodeId);
+  if (currentLock.locked && !movingBackFromLockedNode) return res.json({ success: false, message: currentLock.message || "잠금 상태에서는 이동할 수 없습니다." });
+  if (currentNode?.battle && !movingBackFromLockedNode) return res.json({ success: false, message: "전투가 끝나기 전에는 다음 구역으로 갈 수 없습니다." });
+  const actionLock = getInvestigationActionLockInfo(item);
+  if (actionLock.locked) return res.json({ success: false, message: getActionLockMessage(actionLock) });
 
   item.currentNodeId = targetNodeId;
   const nextLock = getInvestigationNodeLockInfo(item, nextNode, targetNodeId);
