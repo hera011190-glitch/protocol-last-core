@@ -1173,7 +1173,7 @@ export default function AdminPage({
           <div>
             <div style={{ fontSize: 20, fontWeight: 900 }}>전체 캐릭터 조정</div>
             <div style={{ marginTop: 6, color: "#5d7a95", fontSize: 13, lineHeight: 1.6 }}>
-              모든 캐릭터에게 동시에 적용되는 운영용 조정입니다. 침식 진행도 자동 감소는 매 정각 서버에서 한 번만 적용됩니다.
+              모든 캐릭터에게 동시에 적용되는 운영용 조정입니다. 침식 진행도 자동 감소는 매일 00:00에 서버에서 한 번만 적용됩니다.
             </div>
           </div>
           <button type="button" className="ghost-button" onClick={() => { loadAll().catch(() => {}); loadGlobalCharacterConfig().catch(() => {}); loadShopItems().catch(() => {}); }}>새로고침</button>
@@ -1181,7 +1181,7 @@ export default function AdminPage({
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
           <div style={{ padding: 14, borderRadius: 18, background: "rgba(244,250,255,0.9)", display: "grid", gap: 10 }}>
-            <div style={{ fontWeight: 900 }}>정각 침식 진행도 자동 감소</div>
+            <div style={{ fontWeight: 900 }}>매일 00시 침식 진행도 자동 감소</div>
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
               <input
                 type="checkbox"
@@ -1190,7 +1190,7 @@ export default function AdminPage({
               />
               사용
             </label>
-            <label>정각마다 감소할 침식 진행도
+            <label>매일 00시에 감소할 침식 진행도
               <input
                 type="number"
                 min="0"
@@ -1202,7 +1202,7 @@ export default function AdminPage({
               />
             </label>
             <div style={{ fontSize: 12, color: "#5d7a95", lineHeight: 1.6 }}>
-              마지막 적용 시간: {globalCharacterConfig.lastHourlyCorrosionAt || "아직 없음"}
+              마지막 적용 날짜: {globalCharacterConfig.lastHourlyCorrosionAt || "아직 없음"}
             </div>
             <button type="button" className="home-primary-button" onClick={saveGlobalCharacterConfig}>자동 감소 설정 저장</button>
           </div>

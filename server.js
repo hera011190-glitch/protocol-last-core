@@ -1489,6 +1489,12 @@ function getSeoulHourKey(date = new Date()) {
   return shifted.toISOString().slice(0, 13);
 }
 
+function getSeoulHourText(date = new Date()) {
+  const base = date instanceof Date ? date : new Date(date);
+  const shifted = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(11, 13);
+}
+
 function getSeoulMinuteText(date = new Date()) {
   const base = date instanceof Date ? date : new Date(date);
   const shifted = new Date(base.getTime() + 9 * 60 * 60 * 1000);
@@ -1525,12 +1531,12 @@ function applyHourlyCorrosionDecreaseIfNeeded({ force = false } = {}) {
     const amount = Math.max(0, Math.min(100, Number(adminCharacterConfigDB.hourlyCorrosionDecrease || 0)));
     if (!force) {
       if (!adminCharacterConfigDB.hourlyCorrosionEnabled || amount <= 0) return false;
-      if (getSeoulMinuteText() !== "00") return false;
+      if (getSeoulHourText() !== "00" || getSeoulMinuteText() !== "00") return false;
     }
     if (amount <= 0) return false;
 
-    const hourKey = getSeoulHourKey();
-    if (!force && String(adminCharacterConfigDB.lastHourlyCorrosionAt || "") === hourKey) return false;
+    const dailyKey = getSeoulDateKey();
+    if (!force && String(adminCharacterConfigDB.lastHourlyCorrosionAt || "") === dailyKey) return false;
 
     refreshProtectedRuntimeArraysIfNeeded();
     let changed = false;
@@ -1546,7 +1552,7 @@ function applyHourlyCorrosionDecreaseIfNeeded({ force = false } = {}) {
       }
     });
 
-    adminCharacterConfigDB.lastHourlyCorrosionAt = hourKey;
+    adminCharacterConfigDB.lastHourlyCorrosionAt = dailyKey;
     saveAdminCharacterConfig();
     if (changed) {
       publicCharacterSummaryCache = null;
