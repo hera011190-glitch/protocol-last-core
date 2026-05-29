@@ -2154,10 +2154,24 @@ function baseParticipantState(character) {
 }
 
 function normalizeChoice(choice) {
-  return {
-    text: String(choice?.text || ""),
-    target: String(choice?.target || ""),
-  };
+  if (typeof choice === "string") {
+    const target = String(choice || "").trim();
+    return { text: target ? "이동" : "", target };
+  }
+  const target = String(choice?.target || choice?.to || choice?.nodeId || choice?.node || choice?.id || choice?.value || "").trim();
+  const text = String(choice?.text || choice?.label || choice?.name || choice?.title || (target ? "이동" : "")).trim();
+  return { text, target };
+}
+
+function normalizeNodeChoices(node) {
+  const choices = Array.isArray(node?.choices) ? node.choices : [];
+  const legacyConnections = Array.isArray(node?.connections)
+    ? node.connections
+    : (node?.connections && typeof node.connections === "object"
+      ? Object.entries(node.connections).map(([target, label]) => ({ target, text: typeof label === "string" ? label : "이동" }))
+      : []);
+  const list = choices.length ? choices : legacyConnections;
+  return list.map(normalizeChoice).filter((choice) => choice.text && choice.target);
 }
 
 function normalizeClue(clue) {
@@ -2399,7 +2413,7 @@ function normalizeNode(key, node) {
     image: String(node?.image || ""),
     investigations: Array.isArray(node.investigations) ? node.investigations.filter(Boolean) : [],
     battle: normalizeBattle(node.battle),
-    choices: Array.isArray(node.choices) ? node.choices.map(normalizeChoice).filter((choice) => choice.text) : [],
+    choices: normalizeNodeChoices(node),
     npc: Array.isArray(node.npc) ? node.npc : [],
     npcScene: normalizeNpcScene(node.npcScene),
     clues: Array.isArray(node.clues) ? node.clues.map(normalizeClue) : [],
@@ -6149,13 +6163,43 @@ function writeCustomInvestigationsToFile(list) {
 }
 
 function normalizeCustomTemplate(template) {
-  return {
-    id: template.id || `custom-${Date.now()}`,
-    title: template.title || "새 조사",
-    type: template.type || "group",
-    createdAt: template.createdAt || new Date().toISOString(),
-    json: template.json || template,
+  const source = template && typeof template === "object" ? template : {};
+  const normalized = {
+    id: source.id || `custom-${Date.now()}`,
+    title: source.title || "새 조사",
+    type: source.type || "group",
+    createdAt: source.createdAt || new Date().toISOString(),
+    json: source.json || source,
   };
+  if (source.published === false) normalized.published = false;
+  if (source.runtimeDeleted === true || source.unpublished === true) normalized.runtimeDeleted = true;
+  return normalized;
+}
+
+function isCustomTemplateRuntimeDeleted(template) {
+  return !!(template && (template.published === false || template.runtimeDeleted === true || template.unpublished === true));
+}
+
+function markCustomTemplateRuntimeDeleted(id, deleted = true) {
+  const safeId = String(id || "").trim();
+  if (!safeId) return false;
+  let changed = false;
+  customInvestigationsDB = customInvestigationsDB.map((entry) => {
+    const entryId = String(entry?.id || entry?.json?.id || "").trim();
+    if (entryId !== safeId) return entry;
+    changed = true;
+    const next = { ...(entry || {}) };
+    if (deleted) {
+      next.published = false;
+      next.runtimeDeleted = true;
+    } else {
+      next.published = true;
+      delete next.runtimeDeleted;
+      delete next.unpublished;
+    }
+    return next;
+  });
+  return changed;
 }
 
 const INVESTIGATION_CARD_VISUALS_FILE = "investigationCardVisuals.json";
@@ -6338,6 +6382,7 @@ function upsertPublishedInvestigation(def, options = {}) {
 
 const persistedInvestigationsAtStartup = readRuntimeArray("investigations.json");
 customInvestigationsDB.forEach((template) => {
+  if (isCustomTemplateRuntimeDeleted(template)) return;
   if (template?.json?.data?.nodes) {
     try {
       upsertPublishedInvestigation(template.json, { save: false, emit: false });
@@ -6357,7 +6402,14 @@ app.get("/admin/customInvestigations", (req, res) => {
 });
 
 app.post("/admin/customInvestigations", (req, res) => {
-  const template = normalizeCustomTemplate(req.body || {});
+  const incoming = req.body || {};
+  const existing = customInvestigationsDB.find((item) => String(item?.id || item?.json?.id || "") === String(incoming?.id || incoming?.json?.id || ""));
+  const template = normalizeCustomTemplate({
+    ...(existing || {}),
+    ...incoming,
+    published: incoming.published !== undefined ? incoming.published : existing?.published,
+    runtimeDeleted: incoming.runtimeDeleted !== undefined ? incoming.runtimeDeleted : existing?.runtimeDeleted,
+  });
   const nextList = [
     ...customInvestigationsDB.filter((item) => item.id !== template.id),
     template,
@@ -6398,6 +6450,8 @@ app.post("/admin/publishInvestigation", (req, res) => {
       title: persistedDef.title,
       type: persistedDef.type || "group",
       json: persistedDef,
+      published: true,
+      runtimeDeleted: false,
     });
 
     customInvestigationsDB = [
@@ -7748,17 +7802,48 @@ app.post("/deleteInvestigation", (req, res) => {
   if (!safeId) return res.json({ success: false, message: "삭제할 조사를 찾지 못했습니다." });
   const beforeRuntimeCount = investigationsDB.length;
   investigationsDB = investigationsDB.filter((v) => String(v?.id || "") !== safeId);
-  const beforeTemplateCount = customInvestigationsDB.length;
-  customInvestigationsDB = customInvestigationsDB.filter((item) => String(item?.id || item?.json?.id || "") !== safeId);
-  if (investigationsDB.length === beforeRuntimeCount && customInvestigationsDB.length === beforeTemplateCount) {
+  const templateMarked = markCustomTemplateRuntimeDeleted(safeId, true);
+  if (investigationsDB.length === beforeRuntimeCount && !templateMarked) {
     return res.json({ success: false, message: "조사를 찾지 못했습니다." });
   }
   delete roomChats[safeId];
   saveInvestigationsRuntimeState();
-  writeCustomInvestigationsToFile(customInvestigationsDB);
+  if (templateMarked) writeCustomInvestigationsToFile(customInvestigationsDB);
   emitParticipantsUpdated();
   emitInvestigationState(safeId);
-  res.json({ success: true });
+  res.json({ success: true, templatePreserved: templateMarked });
+});
+
+app.post("/admin/resetEndedInvestigation", (req, res) => {
+  const { id } = req.body || {};
+  const safeId = String(id || "").trim();
+  if (!safeId) return res.json({ success: false, message: "초기화할 조사를 찾지 못했습니다." });
+  const item = investigationsDB.find((v) => String(v?.id || "") === safeId);
+  if (!item) return res.json({ success: false, message: "조사를 찾지 못했습니다." });
+  if (!item.ended) return res.json({ success: false, message: "종료된 조사만 초기화할 수 있습니다." });
+
+  const wasDailyRuntimeInstance = isDailyRuntimeInstance(item);
+  const dailySourceId = item.dailySourceId;
+  const wasHidden = !!item.hidden;
+  resetInvestigationProgress(item);
+  item.started = false;
+  item.ended = false;
+  item.endedAt = "";
+  item.endedReason = "";
+  item.resultSummary = "";
+  item.readyToEnd = false;
+  item.endNoticeDismissed = false;
+  item.endConfirmations = [];
+  if (wasDailyRuntimeInstance) {
+    item.dailyRuntimeInstance = true;
+    item.dailySourceId = dailySourceId;
+    item.hidden = wasHidden;
+  }
+  roomChats[safeId] = [];
+  saveInvestigationsRuntimeState();
+  emitParticipantsUpdated();
+  emitInvestigationState(safeId);
+  res.json({ success: true, item: getInvestigationSummary(item) });
 });
 
 app.post("/endInvestigationOnly", (req, res) => {

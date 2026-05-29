@@ -74,7 +74,7 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
 
   const deleteInvestigation = async (item) => {
     if (!item?.id) return;
-    const ok = window.confirm(`${item.title || item.id} 조사를 삭제하시겠습니까? 삭제 후에는 조사 목록에서 사라집니다.`);
+    const ok = window.confirm(`${item.title || item.id} 조사를 목록에서 삭제하시겠습니까? 조사 제작기의 템플릿은 삭제되지 않고 그대로 남습니다.`);
     if (!ok) return;
     const res = await apiFetch("/deleteInvestigation", {
       method: "POST",
@@ -84,6 +84,23 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
     const data = await res.json().catch(() => ({}));
     if (!data.success) {
       alert(data.message || "조사 삭제에 실패했습니다.");
+      return;
+    }
+    load();
+  };
+
+  const resetEndedInvestigation = async (item) => {
+    if (!item?.id) return;
+    const ok = window.confirm(`${item.title || item.id} 종료 상태를 초기화해서 다시 조사할 수 있게 만들까요? 참여자, 로그, 진행도, 전투 상태가 초기화됩니다.`);
+    if (!ok) return;
+    const res = await apiFetch("/admin/resetEndedInvestigation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!data.success) {
+      alert(data.message || "종료된 조사 초기화에 실패했습니다.");
       return;
     }
     load();
@@ -151,6 +168,9 @@ export default function AdminInvestigations({ goBack, goBuilder }) {
                 <button type="button" className="ghost-button" onClick={() => patchToggle(item, { opened: !item.opened })}>{item.opened ? "비활성화" : "활성화"}</button>
                 {item.type === "group" ? (
                   <button type="button" className="ghost-button" onClick={() => patchToggle(item, { hidden: !item.hidden })}>{item.hidden ? "숨김 해제" : "숨김"}</button>
+                ) : null}
+                {item.ended ? (
+                  <button type="button" className="home-primary-button" onClick={() => resetEndedInvestigation(item)}>종료 초기화</button>
                 ) : null}
                 <button type="button" className="ghost-button" onClick={() => deleteInvestigation(item)} style={{ color: "#fecaca", background: "rgba(127,29,29,0.72)", border: "1px solid rgba(254,202,202,0.22)" }}>조사 삭제</button>
               </div>

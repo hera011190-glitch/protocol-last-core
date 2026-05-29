@@ -169,6 +169,69 @@ function createNode(id = `node-${Date.now()}`) {
   };
 }
 
+function makeSafeNodeId(rawValue, fallback = "node") {
+  const base = String(rawValue || "").trim().replace(/\s+/g, "-");
+  return base || fallback;
+}
+
+function makeUniqueNodeId(rawValue, nodes = [], excludeId = "") {
+  const fallback = `node-${Date.now()}`;
+  const base = makeSafeNodeId(rawValue, fallback);
+  const used = new Set(
+    (Array.isArray(nodes) ? nodes : [])
+      .map((node) => String(node?.id || "").trim())
+      .filter((id) => id && id !== String(excludeId || ""))
+  );
+  if (!used.has(base)) return base;
+  let index = 2;
+  let next = `${base}-${index}`;
+  while (used.has(next)) {
+    index += 1;
+    next = `${base}-${index}`;
+  }
+  return next;
+}
+
+function normalizeBuilderChoice(choice) {
+  if (typeof choice === "string") {
+    const target = String(choice || "").trim();
+    return target ? { text: "이동", target } : { text: "", target: "" };
+  }
+  const target = String(choice?.target || choice?.to || choice?.nodeId || choice?.node || choice?.id || choice?.value || "").trim();
+  const text = String(choice?.text || choice?.label || choice?.name || choice?.title || (target ? "이동" : "")).trim();
+  return { text, target };
+}
+
+function normalizeBuilderChoices(node) {
+  const choices = Array.isArray(node?.choices) ? node.choices : [];
+  const legacyConnections = Array.isArray(node?.connections)
+    ? node.connections
+    : (node?.connections && typeof node.connections === "object" ? Object.entries(node.connections).map(([target, label]) => ({ target, text: typeof label === "string" ? label : "이동" })) : []);
+  const list = choices.length ? choices : legacyConnections;
+  return list.map(normalizeBuilderChoice).filter((choice) => choice.text || choice.target);
+}
+
+function prepareBuilderNodesForSave(nodes = []) {
+  const sourceNodes = Array.isArray(nodes) ? nodes : [];
+  const used = new Set();
+  const idMap = new Map();
+  const safeNodes = sourceNodes.map((node, index) => {
+    const rawId = String(node?.id || "").trim();
+    const baseId = makeSafeNodeId(rawId, `node-${index + 1}`);
+    let safeId = baseId;
+    let suffix = 2;
+    while (used.has(safeId)) {
+      safeId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(safeId);
+    if (rawId && !idMap.has(rawId)) idMap.set(rawId, safeId);
+    idMap.set(`${index}`, safeId);
+    return { ...node, id: safeId, choices: normalizeBuilderChoices(node) };
+  });
+  return { safeNodes, idMap };
+}
+
 function emptyBuilder() {
   return {
     id: `custom-${Date.now()}`,
@@ -304,15 +367,34 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     setBuilder((prev) => ({ ...prev, nodes: prev.nodes.map((node) => node.id === nodeId ? updater(node) : node) }));
   };
 
+  const updateNodeId = (oldId, nextRawId) => {
+    const nextId = String(nextRawId || "");
+    setBuilder((prev) => ({
+      ...prev,
+      start: prev.start === oldId ? nextId : prev.start,
+      nodes: prev.nodes.map((node) => {
+        if (node.id === oldId) return { ...node, id: nextId };
+        return {
+          ...node,
+          choices: normalizeBuilderChoices(node).map((choice) => choice.target === oldId ? { ...choice, target: nextId } : choice),
+        };
+      }),
+    }));
+    setSelectedNodeId(nextId);
+  };
+
   const addNode = () => {
-    const node = createNode();
-    setBuilder((prev) => ({ ...prev, nodes: [...prev.nodes, node] }));
-    setSelectedNodeId(node.id);
+    setBuilder((prev) => {
+      const id = makeUniqueNodeId(`node-${Date.now()}`, prev.nodes || []);
+      const node = createNode(id);
+      setSelectedNodeId(id);
+      return { ...prev, nodes: [...prev.nodes, node] };
+    });
   };
 
   const removeNode = (nodeId) => {
     if (builder.nodes.length <= 1) return;
-    const nextNodes = builder.nodes.filter((node) => node.id !== nodeId).map((node) => ({ ...node, choices: (node.choices || []).filter((choice) => choice.target !== nodeId) }));
+    const nextNodes = builder.nodes.filter((node) => node.id !== nodeId).map((node) => ({ ...node, choices: normalizeBuilderChoices(node).filter((choice) => choice.target !== nodeId) }));
     setBuilder((prev) => ({ ...prev, nodes: nextNodes, start: prev.start === nodeId ? nextNodes[0].id : prev.start }));
     setSelectedNodeId(nextNodes[0].id);
   };
@@ -320,9 +402,14 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
   const serialize = () => {
     const safeId = String(builder.id || `custom-${Date.now()}`).trim();
     const safeTitle = String(builder.title || "새 조사").trim() || "새 조사";
-    const nodeIds = (Array.isArray(builder.nodes) ? builder.nodes : []).map((node) => String(node?.id || "").trim()).filter(Boolean);
+    const { safeNodes, idMap } = prepareBuilderNodesForSave(builder.nodes);
+    const nodeIds = safeNodes.map((node) => node.id).filter(Boolean);
     const rawStart = String(builder.start || builder.nodes?.[0]?.id || "start").trim() || "start";
-    const safeStart = nodeIds.includes(rawStart) ? rawStart : (nodeIds[0] || "start");
+    const safeStart = idMap.get(rawStart) || (nodeIds.includes(rawStart) ? rawStart : (nodeIds[0] || "start"));
+    const retargetChoice = (choice) => ({
+      text: String(choice?.text || "").trim(),
+      target: idMap.get(String(choice?.target || "").trim()) || String(choice?.target || "").trim(),
+    });
     return {
       id: safeId,
       title: safeTitle,
@@ -348,12 +435,12 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
         entryCorrosion: Number(builder.entryCorrosion || 0),
         endCorrosion: Number(builder.endCorrosion || 0),
         nodes: Object.fromEntries(
-          builder.nodes.map((node) => [node.id, {
+          safeNodes.map((node) => [node.id, {
             name: node.name || node.id,
             log: node.log || "",
             image: node.image || "",
             investigations: (node.investigations || []).map((value) => String(value || "").trim()).filter(Boolean),
-            choices: (node.choices || []).map((choice) => ({ text: String(choice.text || "").trim(), target: String(choice.target || "").trim() })).filter((choice) => choice.text),
+            choices: normalizeBuilderChoices(node).map(retargetChoice).filter((choice) => choice.text && choice.target && nodeIds.includes(choice.target)),
             battle: node.battle ? {
               ...node.battle,
               hp: Number(node.battle.hp || 0),
@@ -461,7 +548,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       image: node.image || "",
       mapX: node.mapX ?? 30,
       mapY: node.mapY ?? 30,
-      choices: Array.isArray(node.choices) ? node.choices : [],
+      choices: normalizeBuilderChoices(node),
       investigations: Array.isArray(node.investigations) ? node.investigations : [],
       actionResults: node.actionResults || {},
       battle: node.battle || null,
@@ -736,7 +823,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           <div ref={previewRef} onMouseMove={onMapPreviewMouseMove} onMouseLeave={endNodeDrag} style={{ position: "relative", height: 580, borderRadius: 24, background: "linear-gradient(180deg, rgba(245,252,255,0.96), rgba(232,246,255,0.96))", border: "1px solid rgba(98,176,220,0.18)", overflow: "auto" }}>
             <div style={{ position: "relative", width: mapCanvasWidth, height: mapCanvasHeight, minWidth: "100%", minHeight: "100%" }}>
             <svg width={mapCanvasWidth} height={mapCanvasHeight} style={{ position: "absolute", left: 0, top: 0 }}>
-              {builder.nodes.flatMap((node) => (node.choices || []).map((choice, idx) => {
+              {builder.nodes.flatMap((node) => normalizeBuilderChoices(node).map((choice, idx) => {
                 const target = builder.nodes.find((v) => v.id === choice.target);
                 if (!target) return null;
                 return <line key={`${node.id}-${choice.target}-${idx}`} x1={Number(node.mapX || 430)} y1={Number(node.mapY || 260)} x2={Number(target.mapX || 430)} y2={Number(target.mapY || 260)} stroke="rgba(30,167,255,0.45)" strokeWidth="3" />;
@@ -769,7 +856,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
             <button type="button" className="ghost-button" onClick={() => removeNode(selectedNode.id)}>노드 삭제</button>
           </div>
           <div style={{ color: "#6a87a3", fontSize: 13, lineHeight: 1.7 }}>노드 id는 내부 식별용, 구역 이름은 실제 화면 표시용이야. 진입 로그는 이 구역에 들어왔을 때 바로 보이는 설명 문장이야.</div>
-          <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>노드 id (내부 식별용)</div><input value={selectedNode.id} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, id: e.target.value }))} placeholder="노드 id" style={inputStyle} /></div>
+          <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>노드 id (내부 식별용)</div><input value={selectedNode.id} onChange={(e) => updateNodeId(selectedNode.id, e.target.value)} onBlur={(e) => updateNodeId(selectedNode.id, makeUniqueNodeId(e.target.value, builder.nodes, selectedNode.id))} placeholder="노드 id" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>구역 이름 (실제 표시 이름)</div><input value={selectedNode.name} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, name: e.target.value }))} placeholder="구역 이름" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>진입 로그 (이 구역에 들어오면 보이는 설명)</div><textarea value={selectedNode.log} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, log: e.target.value }))} placeholder="진입 로그" style={textareaStyle} /></div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -817,18 +904,18 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           <div className="section-eyebrow" style={{ marginTop: 12 }}>이동 연결</div>
           <div style={{ color: "#6a87a3", fontSize: 13 }}>버튼 텍스트는 플레이어가 누르는 이동 버튼 이름이고, 이동 대상은 그 버튼을 눌렀을 때 도착할 구역입니다.</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, choices: [...(node.choices || []), { text: "이동", target: "" }] }))}>연결 추가</button>
+            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, choices: [...normalizeBuilderChoices(node), { text: "이동", target: "" }] }))}>연결 추가</button>
           </div>
-          {(selectedNode.choices || []).map((choice, idx) => <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginTop: 8, alignItems: "end" }}>
+          {normalizeBuilderChoices(selectedNode).map((choice, idx) => <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginTop: 8, alignItems: "end" }}>
             <div style={{ display: "grid", gap: 6 }}>
               <div style={fieldLabelStyle}>이동 버튼 이름</div>
-              <input value={choice.text} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, choices: node.choices.map((v, i) => i === idx ? { ...v, text: e.target.value } : v) }))} placeholder="버튼 텍스트" style={inputStyle} />
+              <input value={choice.text} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, choices: normalizeBuilderChoices(node).map((v, i) => i === idx ? { ...v, text: e.target.value } : v) }))} placeholder="버튼 텍스트" style={inputStyle} />
             </div>
             <div style={{ display: "grid", gap: 6 }}>
               <div style={fieldLabelStyle}>도착할 노드</div>
-              <select value={choice.target} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, choices: node.choices.map((v, i) => i === idx ? { ...v, target: e.target.value } : v) }))} style={inputStyle}><option value="">이동 대상</option>{builder.nodes.filter((node) => node.id !== selectedNode.id).map((node) => <option key={node.id} value={node.id}>{node.name || node.id}</option>)}</select>
+              <select value={choice.target} onChange={(e) => updateNode(selectedNode.id, (node) => ({ ...node, choices: normalizeBuilderChoices(node).map((v, i) => i === idx ? { ...v, target: e.target.value } : v) }))} style={inputStyle}><option value="">이동 대상</option>{builder.nodes.filter((node) => node.id !== selectedNode.id).map((node) => <option key={node.id} value={node.id}>{node.name || node.id}</option>)}</select>
             </div>
-            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, choices: node.choices.filter((_, i) => i !== idx) }))}>삭제</button>
+            <button type="button" className="ghost-button" onClick={() => updateNode(selectedNode.id, (node) => ({ ...node, choices: normalizeBuilderChoices(node).filter((_, i) => i !== idx) }))}>삭제</button>
           </div>)}
 
           <div className="section-eyebrow" style={{ marginTop: 12 }}>조사 버튼</div>
