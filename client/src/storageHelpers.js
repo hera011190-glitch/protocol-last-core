@@ -41,6 +41,7 @@ export function toLightCharacter(character) {
     level: normalizedCharacter.level || 1,
     statPoints: normalizedCharacter.statPoints || 0,
     corrosion: normalizedCharacter.corrosion || 0,
+    syncRate: Math.max(0, Math.min(100, Number(normalizedCharacter.syncRate ?? normalizedCharacter.synchronizationRate ?? 0))),
     coins: normalizedCharacter.coins || 0,
     exp: normalizedCharacter.exp || 0,
     stats: normalizedCharacter.stats || { atk: 0, hp: 0, def: 0, agi: 0 },

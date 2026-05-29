@@ -232,6 +232,7 @@ function mergeCharacterStates(prevList, freshList, maps, activeCharacter = null)
 function SDInfoModal({ character, onClose, theme }) {
   if (!character) return null;
   const corrosion = clamp(Number(character?.corrosion || 0), 0, 100);
+  const syncRate = clamp(Number(character?.syncRate ?? character?.synchronizationRate ?? 0), 0, 100);
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.44)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "24px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "520px", maxWidth: "100%", borderRadius: "28px", background: theme?.panelStrong || "rgba(255,255,255,0.94)", border: `1px solid ${theme?.line || "rgba(98,176,220,0.18)"}`, boxShadow: theme?.shadow || "0 24px 60px rgba(73,132,170,0.16)", color: theme?.textMain || "#13324b", padding: "24px" }}>
@@ -247,6 +248,7 @@ function SDInfoModal({ character, onClose, theme }) {
         </div>
         <div style={{ marginBottom: "8px", display: "flex", justifyContent: "space-between", fontSize: "13px" }}><span>침식 진행도</span><span>{corrosion}%</span></div>
         <div style={{ height: "12px", borderRadius: "999px", overflow: "hidden", background: "rgba(255,255,255,0.72)" }}><div style={{ width: `${corrosion}%`, height: "100%", background: "linear-gradient(90deg, #93c5fd, #ef4444)" }} /></div>
+        {syncRate > 0 ? <><div style={{ marginTop: "12px", marginBottom: "8px", display: "flex", justifyContent: "space-between", fontSize: "13px" }}><span>■■■</span><span>{syncRate}%</span></div><div style={{ height: "12px", borderRadius: "999px", overflow: "hidden", background: "rgba(255,255,255,0.72)" }}><div style={{ width: `${syncRate}%`, height: "100%", background: "linear-gradient(90deg, #a78bfa, #38bdf8)" }} /></div></> : null}
         <button type="button" onClick={onClose} style={{ marginTop: "20px", width: "100%", padding: "12px 16px", borderRadius: "16px", cursor: "pointer", fontWeight: 800, ...buttonLook(theme, "primary") }}>닫기</button>
       </div>
     </div>

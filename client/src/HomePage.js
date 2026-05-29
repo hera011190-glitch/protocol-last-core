@@ -351,6 +351,17 @@ function CurrentCharacter({ activeCharacter, openMy, height }) {
                 }}
               />
             </div>
+            {Math.max(0, Math.min(100, Number(activeCharacter?.syncRate ?? activeCharacter?.synchronizationRate ?? 0))) > 0 ? (
+              <div style={{ height: 12, borderRadius: 999, background: "rgba(255,255,255,0.66)", overflow: "hidden" }} title="■■■">
+                <div
+                  style={{
+                    width: `${Math.max(0, Math.min(100, Number(activeCharacter?.syncRate ?? activeCharacter?.synchronizationRate ?? 0)))}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #a78bfa, #38bdf8)",
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
         </>
       ) : <div style={{ color: "#4f7390" }}>선택된 캐릭터가 없습니다.</div>}

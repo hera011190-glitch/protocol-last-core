@@ -141,6 +141,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
   const expLimit = Math.max(100, level * 100);
   const expPercent = Math.max(0, Math.min(100, ((exp % expLimit) / expLimit) * 100));
   const corrosion = Math.max(0, Math.min(100, Number(viewCharacter?.corrosion || 0)));
+  const syncRate = Math.max(0, Math.min(100, Number(viewCharacter?.syncRate ?? viewCharacter?.synchronizationRate ?? 0)));
   const hpPercent = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
   const relations = Array.isArray(viewCharacter?.relations) ? viewCharacter.relations : [];
   const skills = Array.isArray(viewCharacter?.skills) ? viewCharacter.skills : [];
@@ -344,6 +345,7 @@ export default function CharacterProfile({ character, goBack, theme, design, pag
               {meter("EXP", `${exp % expLimit} / ${expLimit}`, expPercent, "linear-gradient(90deg, #fcd34d, #f59e0b)")}
               {meter("HP", `${hp} / ${maxHp}`, hpPercent, "linear-gradient(90deg, #86efac, #22c55e)")}
               {meter("침식 진행도", `${corrosion}%`, corrosion, "linear-gradient(90deg, #fda4af, #ef4444)")}
+              {syncRate > 0 ? meter("■■■", `${syncRate}%`, syncRate, "linear-gradient(90deg, #a78bfa, #38bdf8)") : null}
             </div>
           </div>
 

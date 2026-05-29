@@ -490,6 +490,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
   const expLimit = Math.max(100, Number(currentUser?.level || 1) * 100);
   const exp = Number(currentUser?.exp || 0);
   const corrosion = Math.max(0, Math.min(100, Number(currentUser?.corrosion || 0)));
+  const syncRate = Math.max(0, Math.min(100, Number(currentUser?.syncRate ?? currentUser?.synchronizationRate ?? 0)));
   const inventory = Array.isArray(currentUser?.items) ? currentUser.items : [];
   const rawProfileImageSrc = currentUser?.image || currentUser?.profileImage || currentUser?.mainImage || currentUser?.investigationImage || "";
   const myProfileImageSrc = rawProfileImageSrc && rawProfileImageSrc !== brokenProfileImageSrc
@@ -1002,6 +1003,7 @@ export default function MyPage({ currentUser = {}, ownerUser = {}, onUpdateUser,
                   <Meter label="HP" value={`${currentHp} / ${previewMaxHp}`} percent={(currentHp / Math.max(previewMaxHp, 1)) * 100} fill="linear-gradient(90deg, #4ade80, #16a34a)" track="rgba(220,252,231,0.92)" />
                   <Meter label="경험치" value={`${exp} / ${expLimit}`} percent={(exp / expLimit) * 100} fill="linear-gradient(90deg, #fbbf24, #f59e0b)" track="rgba(254,249,195,0.94)" />
                   <Meter label="침식 진행도" value={`${corrosion}%`} percent={corrosion} fill="linear-gradient(90deg, #fb7185, #e11d48)" track="rgba(255,228,230,0.94)" danger />
+                  {syncRate > 0 ? <Meter label="■■■" value={`${syncRate}%`} percent={syncRate} fill="linear-gradient(90deg, #a78bfa, #38bdf8)" track="rgba(237,233,254,0.94)" /> : null}
                 </div>
                 <div style={{ display: "grid", gap: "12px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>

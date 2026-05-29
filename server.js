@@ -1967,6 +1967,22 @@ function applyCharacterCorrosion(character, amount = 0) {
   return character;
 }
 
+function getCharacterSyncRate(character) {
+  return Math.max(0, Math.min(100, Number(character?.syncRate ?? character?.synchronizationRate ?? 0)));
+}
+
+function setCharacterSyncRate(character, value = 0) {
+  if (!character) return character;
+  character.syncRate = Math.max(0, Math.min(100, Number(value || 0)));
+  return character;
+}
+
+function applyCharacterSyncRate(character, amount = 0) {
+  const delta = Number(amount || 0);
+  if (!character || !Number.isFinite(delta) || delta === 0) return character;
+  return setCharacterSyncRate(character, getCharacterSyncRate(character) + delta);
+}
+
 function createLogEntry(text) {
   return {
     id: Date.now() + Math.random(),
@@ -2449,6 +2465,7 @@ function buildInvestigation(def) {
     imageUpdatedAt: Number(def?.imageUpdatedAt ?? def?.data?.imageUpdatedAt ?? 0),
     entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
     endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
+    dailySyncRateGain: Number(def?.dailySyncRateGain ?? def?.data?.dailySyncRateGain ?? 0),
     bgmUrl,
     bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
     data: {
@@ -2461,6 +2478,7 @@ function buildInvestigation(def) {
       imageUpdatedAt: Number(def?.imageUpdatedAt ?? def?.data?.imageUpdatedAt ?? 0),
       entryCorrosion: Number(def?.entryCorrosion ?? def?.data?.entryCorrosion ?? 0),
       endCorrosion: Number(def?.endCorrosion ?? def?.data?.endCorrosion ?? 0),
+      dailySyncRateGain: Number(def?.dailySyncRateGain ?? def?.data?.dailySyncRateGain ?? 0),
       bgmUrl,
       bgmVolume: Number(def?.bgmVolume ?? def?.data?.bgmVolume ?? 1),
       nodes: normalizedNodes,
@@ -2495,6 +2513,7 @@ function buildInvestigation(def) {
     lastBattleRound: [],
     pendingRewardQueue: [],
     endCorrosionApplied: false,
+    dailySyncRateApplied: false,
     originalTemplate: clone(def),
   };
 }
@@ -2534,6 +2553,7 @@ function mergePersistedInvestigationState(baseItem, persistedItem) {
     lastBattleRound: Array.isArray(persistedItem.lastBattleRound) ? persistedItem.lastBattleRound : (Array.isArray(baseItem.lastBattleRound) ? baseItem.lastBattleRound : []),
     pendingRewardQueue: Array.isArray(persistedItem.pendingRewardQueue) ? persistedItem.pendingRewardQueue : (Array.isArray(baseItem.pendingRewardQueue) ? baseItem.pendingRewardQueue : []),
     endCorrosionApplied: persistedItem.endCorrosionApplied !== undefined ? !!persistedItem.endCorrosionApplied : !!baseItem.endCorrosionApplied,
+    dailySyncRateApplied: persistedItem.dailySyncRateApplied !== undefined ? !!persistedItem.dailySyncRateApplied : !!baseItem.dailySyncRateApplied,
     scheduleEnabled: persistedItem.scheduleEnabled !== undefined ? !!persistedItem.scheduleEnabled : !!baseItem.scheduleEnabled,
     openAt: String(persistedItem.openAt || baseItem.openAt || ""),
     closeAt: String(persistedItem.closeAt || baseItem.closeAt || ""),
@@ -2544,6 +2564,7 @@ function mergePersistedInvestigationState(baseItem, persistedItem) {
     imageUpdatedAt: Number(persistedItem.imageUpdatedAt || baseItem.imageUpdatedAt || 0),
     entryCorrosion: Number(persistedItem.entryCorrosion ?? baseItem.entryCorrosion ?? 0),
     endCorrosion: Number(persistedItem.endCorrosion ?? baseItem.endCorrosion ?? 0),
+    dailySyncRateGain: Number(persistedItem.dailySyncRateGain ?? baseItem.dailySyncRateGain ?? 0),
     bgmUrl: String(persistedItem.bgmUrl || baseItem.bgmUrl || ""),
     bgmVolume: Number(persistedItem.bgmVolume ?? baseItem.bgmVolume ?? 1),
   };
@@ -2565,6 +2586,7 @@ function mergePersistedInvestigationState(baseItem, persistedItem) {
     imageUpdatedAt: merged.imageUpdatedAt || baseItem.data?.imageUpdatedAt || 0,
     entryCorrosion: merged.entryCorrosion,
     endCorrosion: merged.endCorrosion,
+    dailySyncRateGain: merged.dailySyncRateGain,
     bgmUrl: merged.bgmUrl,
     bgmVolume: merged.bgmVolume,
   };
@@ -2740,6 +2762,7 @@ function getInvestigationSummary(item) {
     dailyResumeOwnerKey: String(item.dailyResumeOwnerKey || ""),
     entryCorrosion: Number(item.entryCorrosion || item.data?.entryCorrosion || 0),
     endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
+    dailySyncRateGain: Number(item.dailySyncRateGain || item.data?.dailySyncRateGain || 0),
     leaders: Array.isArray(item.leaders) ? [...item.leaders] : [],
     participants: (Array.isArray(item.participants) ? item.participants : []).map(buildPublicCharacterSummary),
   };
@@ -2775,6 +2798,7 @@ function buildInvestigationLobbyState(item) {
     spectators: Array.isArray(item.spectators) ? item.spectators : [],
     currentNodeId: item.currentNodeId || item.data?.start || "",
     endCorrosion: Number(item.endCorrosion || item.data?.endCorrosion || 0),
+    dailySyncRateGain: Number(item.dailySyncRateGain || item.data?.dailySyncRateGain || 0),
   };
   return mapDataImages(payload, (pathKey) => toInvestigationAssetUrl(item.id, pathKey));
 }
@@ -2926,6 +2950,8 @@ function getOrCreateDailyRuntimeInstance(templateItem, sourceCharacter) {
     existing.scheduleEnabled = !!templateItem.scheduleEnabled;
     existing.openAt = String(templateItem.openAt || "");
     existing.closeAt = String(templateItem.closeAt || "");
+    existing.dailySyncRateGain = Number(templateItem.dailySyncRateGain ?? templateItem.data?.dailySyncRateGain ?? existing.dailySyncRateGain ?? 0);
+    existing.data = { ...(existing.data || {}), dailySyncRateGain: existing.dailySyncRateGain };
     existing.hidden = true;
     return existing;
   }
@@ -2947,6 +2973,7 @@ function getOrCreateDailyRuntimeInstance(templateItem, sourceCharacter) {
   templateSource.imageUpdatedAt = Number(templateItem.imageUpdatedAt || templateSource.imageUpdatedAt || 0);
   templateSource.entryCorrosion = Number(templateItem.entryCorrosion ?? templateSource.entryCorrosion ?? templateItem.data?.entryCorrosion ?? 0);
   templateSource.endCorrosion = Number(templateItem.endCorrosion ?? templateSource.endCorrosion ?? templateItem.data?.endCorrosion ?? 0);
+  templateSource.dailySyncRateGain = Number(templateItem.dailySyncRateGain ?? templateSource.dailySyncRateGain ?? templateItem.data?.dailySyncRateGain ?? 0);
   templateSource.bgmUrl = String(templateItem.bgmUrl || templateSource.bgmUrl || templateItem.data?.bgmUrl || "");
   templateSource.bgmVolume = Number(templateItem.bgmVolume ?? templateSource.bgmVolume ?? templateItem.data?.bgmVolume ?? 1);
   templateSource.opened = templateItem.opened;
@@ -3157,6 +3184,7 @@ function resetInvestigationProgress(item) {
   item.eventBannerUntil = 0;
   item.completedNpcScenes = {};
   item.endCorrosionApplied = false;
+  item.dailySyncRateApplied = false;
 }
 
 function applyInvestigationEndCorrosion(item) {
@@ -3169,6 +3197,22 @@ function applyInvestigationEndCorrosion(item) {
       || charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
     if (char) applyCharacterCorrosion(char, delta);
   });
+  markCharactersDirty();
+  writeRuntimeArray("characters.json", charactersDB);
+}
+
+function applyDailyInvestigationSyncRateGain(item) {
+  if (!item || item.dailySyncRateApplied) return;
+  item.dailySyncRateApplied = true;
+  const isDaily = item.type === "daily" || item.dailyRuntimeInstance;
+  const delta = Number(item.dailySyncRateGain ?? item.data?.dailySyncRateGain ?? 0);
+  if (!isDaily || !(delta > 0)) return;
+  (Array.isArray(item.participants) ? item.participants : []).forEach((participant) => {
+    const char = charactersDB.find((character) => String(character?.id || "") === String(participant?.id || ""))
+      || charactersDB.find((character) => String(character?.name || "") === String(participant?.name || ""));
+    if (char) applyCharacterSyncRate(char, delta);
+  });
+  publicCharacterSummaryCache = null;
   markCharactersDirty();
   writeRuntimeArray("characters.json", charactersDB);
 }
@@ -3219,6 +3263,7 @@ function finishInvestigation(item, reason, summary) {
   applyFaintedEndRecovery(item);
   syncInvestigationParticipantHpToCharacters(item);
   applyInvestigationEndCorrosion(item);
+  applyDailyInvestigationSyncRateGain(item);
   saveInvestigationsRuntimeState();
 }
 
@@ -4836,6 +4881,7 @@ app.post("/createCharacter", (req, res) => {
     level: 1,
     statPoints: 0,
     corrosion: 0,
+    syncRate: 0,
     coins: 0,
     exp: 0,
     stats: { atk: 0, hp: 0, def: 0, agi: 0 },
@@ -4950,6 +4996,8 @@ app.post("/updateCharacter", (req, res) => {
     level,
     statPoints,
     corrosion,
+    syncRate,
+    synchronizationRate,
     coins,
     exp,
     stats,
@@ -5008,6 +5056,7 @@ app.post("/updateCharacter", (req, res) => {
   if (level !== undefined) char.level = Number(level);
   if (statPoints !== undefined) char.statPoints = Number(statPoints);
   if (corrosion !== undefined) char.corrosion = Number(corrosion);
+  if (syncRate !== undefined || synchronizationRate !== undefined) setCharacterSyncRate(char, syncRate ?? synchronizationRate);
   if (coins !== undefined) char.coins = Number(coins);
   if (exp !== undefined) char.exp = Number(exp);
   if (stats !== undefined) char.stats = normalizeCharacterStats(stats);
@@ -5498,6 +5547,7 @@ app.post("/startInvestigation", (req, res) => {
     item.leaders = preservedLeaders.filter((leaderName) => preservedParticipants.some((participant) => participant?.name === leaderName));
     item.participantStates = {};
     item.endCorrosionApplied = false;
+    item.dailySyncRateApplied = false;
     item.started = true;
     item.ended = false;
     item.endedReason = "";
@@ -6125,6 +6175,7 @@ function serializeInvestigationForPersistence(item) {
     bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
     entryCorrosion: Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? templateSource?.entryCorrosion ?? templateSource?.data?.entryCorrosion ?? 0),
     endCorrosion: Number(item?.endCorrosion ?? item?.data?.endCorrosion ?? templateSource?.endCorrosion ?? templateSource?.data?.endCorrosion ?? 0),
+    dailySyncRateGain: Number(item?.dailySyncRateGain ?? item?.data?.dailySyncRateGain ?? templateSource?.dailySyncRateGain ?? templateSource?.data?.dailySyncRateGain ?? 0),
     data: {
       ...(templateSource?.data || {}),
       ...(clone(item?.data || {})),
@@ -6140,6 +6191,7 @@ function serializeInvestigationForPersistence(item) {
       bgmVolume: Number(item?.bgmVolume ?? item?.data?.bgmVolume ?? templateSource?.bgmVolume ?? templateSource?.data?.bgmVolume ?? 1),
       entryCorrosion: Number(item?.entryCorrosion ?? item?.data?.entryCorrosion ?? templateSource?.entryCorrosion ?? templateSource?.data?.entryCorrosion ?? 0),
       endCorrosion: Number(item?.endCorrosion ?? item?.data?.endCorrosion ?? templateSource?.endCorrosion ?? templateSource?.data?.endCorrosion ?? 0),
+      dailySyncRateGain: Number(item?.dailySyncRateGain ?? item?.data?.dailySyncRateGain ?? templateSource?.dailySyncRateGain ?? templateSource?.data?.dailySyncRateGain ?? 0),
     },
   };
 }
@@ -6633,6 +6685,7 @@ function summarizeCharacter(character) {
     oneLine: character.oneLine || "",
     rank: character.rank || "",
     corrosion: Number(character.corrosion || 0),
+    syncRate: getCharacterSyncRate(character),
     level: Number(character.level || 1),
     x: typeof character.x === "number" ? character.x : undefined,
     y: typeof character.y === "number" ? character.y : undefined,
@@ -6777,6 +6830,7 @@ function getPublicCharacterSummarySignature(rows = []) {
     Number(character?.moveCooldownMs ?? ""),
     JSON.stringify(character?.hiddenSdQuotes || []),
     Number(character?.corrosion || 0),
+    getCharacterSyncRate(character),
     Number(character?.dailyAttemptsLeft ?? DAILY_INVESTIGATION_ATTEMPTS_PER_DAY),
     String(character?.dailyAttemptsResetDate || ""),
     Number(character?.gambleCountLeft ?? DAILY_GAMBLE_COUNT_PER_DAY),
@@ -7650,7 +7704,7 @@ app.post("/shop/use", (req, res) => {
   const normalized = normalizeShopItem(item);
   const useType = String(normalized.useType || "none").toLowerCase();
   const useValue = Number(normalized.useValue || 0);
-  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "corrosionheal", "corrosionup", "increasecorrosion", "corrosionincrease", "addcorrosion", "coin", "coins", "stat", "statboost", "statpoint", "skill"]);
+  const usableTypes = new Set(["heal", "hp", "corrosion", "corrosiondown", "reducecorrosion", "corrosionheal", "corrosionup", "increasecorrosion", "corrosionincrease", "addcorrosion", "syncrate", "syncratedown", "reducesyncrate", "syncrateheal", "syncrateup", "increasesyncrate", "syncrateincrease", "addsyncrate", "coin", "coins", "stat", "statboost", "statpoint", "skill"]);
   if (!usableTypes.has(useType)) {
     return res.json({ success: false, message: "사용 효과가 설정되지 않은 아이템입니다." });
   }
@@ -7669,6 +7723,14 @@ app.post("/shop/use", (req, res) => {
 
   if (useType === "corrosionup" || useType === "increasecorrosion" || useType === "corrosionincrease" || useType === "addcorrosion") {
     char.corrosion = Math.max(0, Math.min(100, Number(char.corrosion || 0) + Math.max(0, useValue || 5)));
+  }
+
+  if (useType === "syncrate" || useType === "syncratedown" || useType === "reducesyncrate" || useType === "syncrateheal") {
+    setCharacterSyncRate(char, getCharacterSyncRate(char) - Math.max(0, useValue || 5));
+  }
+
+  if (useType === "syncrateup" || useType === "increasesyncrate" || useType === "syncrateincrease" || useType === "addsyncrate") {
+    setCharacterSyncRate(char, getCharacterSyncRate(char) + Math.max(0, useValue || 5));
   }
 
   if (useType === "coin" || useType === "coins") {
@@ -7865,6 +7927,7 @@ app.post("/endInvestigationOnly", (req, res) => {
   applyFaintedEndRecovery(item);
   syncInvestigationParticipantHpToCharacters(item);
   applyInvestigationEndCorrosion(item);
+  applyDailyInvestigationSyncRateGain(item);
   saveInvestigationsRuntimeState();
   emitParticipantsUpdated();
   emitInvestigationState(id);

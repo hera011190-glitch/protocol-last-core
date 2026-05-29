@@ -246,6 +246,7 @@ function emptyBuilder() {
     bgmVolume: 1,
     entryCorrosion: 0,
     endCorrosion: 0,
+    dailySyncRateGain: 0,
     start: "start",
     nodes: [createNode("start")],
   };
@@ -423,6 +424,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
       bgmVolume: builder.bgmVolume,
       entryCorrosion: Number(builder.entryCorrosion || 0),
       endCorrosion: Number(builder.endCorrosion || 0),
+      dailySyncRateGain: Number(builder.dailySyncRateGain || 0),
       data: {
         start: safeStart,
         backgroundImage: builder.backgroundImage,
@@ -434,6 +436,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
         bgmVolume: builder.bgmVolume,
         entryCorrosion: Number(builder.entryCorrosion || 0),
         endCorrosion: Number(builder.endCorrosion || 0),
+        dailySyncRateGain: Number(builder.dailySyncRateGain || 0),
         nodes: Object.fromEntries(
           safeNodes.map((node) => [node.id, {
             name: node.name || node.id,
@@ -570,7 +573,8 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
     const bgmVolume = Math.max(0, Math.min(1, Number(editSource?.bgmVolume ?? editSource?.data?.bgmVolume ?? json?.bgmVolume ?? json?.data?.bgmVolume ?? template?.bgmVolume ?? template?.data?.bgmVolume ?? 1) || 1));
     const entryCorrosion = Number(editSource?.entryCorrosion ?? editSource?.data?.entryCorrosion ?? json?.entryCorrosion ?? json?.data?.entryCorrosion ?? template?.entryCorrosion ?? template?.data?.entryCorrosion ?? 0);
     const endCorrosion = Number(editSource?.endCorrosion ?? editSource?.data?.endCorrosion ?? json?.endCorrosion ?? json?.data?.endCorrosion ?? template?.endCorrosion ?? template?.data?.endCorrosion ?? 0);
-    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, listImage, listImageFrame, entryImageFrame, imageUpdatedAt, bgmUrl, bgmVolume, entryCorrosion, endCorrosion, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
+    const dailySyncRateGain = Number(editSource?.dailySyncRateGain ?? editSource?.data?.dailySyncRateGain ?? json?.dailySyncRateGain ?? json?.data?.dailySyncRateGain ?? template?.dailySyncRateGain ?? template?.data?.dailySyncRateGain ?? 0);
+    setBuilder({ id: template.id, title: template.title || "", type: template.type || "group", backgroundImage, listImage, listImageFrame, entryImageFrame, imageUpdatedAt, bgmUrl, bgmVolume, entryCorrosion, endCorrosion, dailySyncRateGain, start: startNodeId, nodes: nodes.length ? nodes : [createNode("start")] });
     setSelectedNodeId(startNodeId);
     setMessage(`${template.title} 불러오기 완료`);
   };
@@ -782,6 +786,7 @@ export default function AdminInvestigationBuilder({ goBack, initialInvestigation
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 종류</div><select value={builder.type} onChange={(e) => setBuilder((prev) => ({ ...prev, type: e.target.value }))} style={inputStyle}><option value="group">단체조사</option><option value="daily">일일조사</option></select></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>최초 진입 침식 진행도</div><input type="number" min="0" value={builder.entryCorrosion || 0} onChange={(e) => setBuilder((prev) => ({ ...prev, entryCorrosion: Number(e.target.value || 0) }))} placeholder="0" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>조사 종료 시 침식 진행도</div><input type="number" min="0" value={builder.endCorrosion || 0} onChange={(e) => setBuilder((prev) => ({ ...prev, endCorrosion: Number(e.target.value || 0) }))} placeholder="0" style={inputStyle} /></div>
+          <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>일일조사 완료 시 ■■■</div><input type="number" min="0" max="100" value={builder.dailySyncRateGain || 0} onChange={(e) => setBuilder((prev) => ({ ...prev, dailySyncRateGain: Number(e.target.value || 0) }))} placeholder="0" style={inputStyle} /></div>
           <div style={{ display: "grid", gap: 6 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#476885" }}>시작 노드</div><select value={builder.start} onChange={(e) => setBuilder((prev) => ({ ...prev, start: e.target.value }))} style={inputStyle}>{builder.nodes.map((node) => <option key={node.id} value={node.id}>{node.name || node.id}</option>)}</select></div>
           <div style={{ display: "grid", gap: 8 }}>
             <label>조사 카드 이미지</label>
